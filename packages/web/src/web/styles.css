@@ -1,0 +1,149 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --font-display: "Sora", ui-sans-serif, system-ui;
+  --font-sans: "Poppins", ui-sans-serif, system-ui;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-volt: var(--volt);
+  --color-amber: var(--amber);
+  --color-sky: var(--sky);
+  --color-rose: var(--rose);
+  --color-danger: var(--danger);
+}
+
+:root {
+  --bg: #0c0e0d;
+  --surface: #141715;
+  --surface-2: #1b1f1c;
+  --line: #262b27;
+  --ink: #eef2ea;
+  --ink-2: #9aa39b;
+  --ink-3: #636b64;
+  --volt: #c6f432;
+  --amber: #f5a524;
+  --sky: #38bdf8;
+  --rose: #f472b6;
+  --danger: #f05252;
+  color-scheme: dark;
+}
+
+@layer base {
+  * { border-color: var(--line); }
+  html, body { background: var(--bg); color: var(--ink); font-family: var(--font-sans); font-size: 14px; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.02em; }
+  ::selection { background: var(--volt); color: #0c0e0d; }
+  input, select, textarea, button { font: inherit; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #262b27; border-radius: 10px; border: 2px solid var(--bg); }
+}
+
+@layer components {
+  .card { @apply rounded-[14px] border border-line bg-surface; }
+  .label-mono { @apply font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3; }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .input { @apply h-10 w-full rounded-[10px] border border-line bg-bg px-3 text-ink outline-none transition placeholder:text-ink-3 focus:border-volt/60 focus:ring-2 focus:ring-volt/15; }
+  textarea.input { @apply h-auto py-2; }
+  select.input { @apply appearance-none bg-[length:14px] bg-[right_10px_center] bg-no-repeat pr-8; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa39b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+  .btn { @apply inline-flex h-10 items-center justify-center gap-2 rounded-[10px] px-4 text-[13px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply bg-volt text-[#0c0e0d] hover:brightness-110; }
+  .btn-ghost { @apply border border-line bg-surface-2 text-ink hover:border-ink-3; }
+  .btn-danger { @apply border border-danger/30 bg-danger/10 text-danger hover:bg-danger/20; }
+  .btn-icon { @apply inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-2 transition hover:bg-surface-2 hover:text-ink; }
+  .tbl { @apply w-full text-left text-[13px]; }
+  .tbl th { @apply border-b border-line px-4 py-3 font-mono text-[10.5px] font-normal uppercase tracking-[0.12em] text-ink-3; }
+  .tbl td { @apply border-b border-line/60 px-4 py-3.5 align-middle; }
+  .tbl tbody tr { @apply transition hover:bg-surface-2/60; }
+  .tbl tbody tr:last-child td { @apply border-b-0; }
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+.grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(198, 244, 50, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(198, 244, 50, 0.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.noise::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.05; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.skeleton { @apply animate-pulse rounded-md bg-surface-2; }
+
+/* Organigrama — árvore top-down com conectores */
+.org-tree,
+.org-tree ul {
+  display: flex;
+  justify-content: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.org-tree ul {
+  padding-top: 28px;
+  position: relative;
+}
+.org-tree li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 8px 0;
+}
+.org-tree > li {
+  padding-top: 0;
+}
+.org-tree li::before,
+.org-tree li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 28px;
+  border-top: 1px solid #3a403b;
+}
+.org-tree li::after {
+  right: auto;
+  left: 50%;
+  border-left: 1px solid #3a403b;
+}
+.org-tree li:only-child::before,
+.org-tree li:only-child::after {
+  display: none;
+}
+.org-tree li:only-child {
+  padding-top: 0;
+}
+.org-tree li:first-child::before,
+.org-tree li:last-child::after {
+  border: 0 none;
+}
+.org-tree li:last-child::before {
+  border-right: 1px solid #3a403b;
+  border-top-right-radius: 8px;
+}
+.org-tree li:first-child::after {
+  border-top-left-radius: 8px;
+}
+.org-tree > li::before,
+.org-tree > li::after {
+  display: none;
+}
+.org-tree ul::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 28px;
+  border-left: 1px solid #3a403b;
+}

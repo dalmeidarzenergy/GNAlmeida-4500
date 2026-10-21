@@ -1,0 +1,221 @@
+import { useState } from "react";
+import { Loader2, Check, Plus, CalendarCog, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useUpdateUser, useUsers, useMe } from "../queries/me";
+import { useEmployeeOptions, useTeams } from "../queries/hr";
+import { orpc } from "../lib/api";
+import { PageHeader, Avatar, TableSkeleton, Empty, Modal, Field } from "../components/ui/kit";
+import { ROLE_LABEL } from "../lib/labels";
+import { fmtDate } from "../lib/format";
+
+type U = NonNullable<ReturnType<typeof useUsers>["data"]>[number];
+type Role = "admin" | "diretor" | "rh" | "backoffice" | "coordenador" | "chefe" | "vendedor";
+
+const ROLE_CARDS: [string, string][] = [
+  ["Administrador", "Acesso total: RH, vendas, metas, relatórios, agenda e gestão de utilizadores."],
+  ["Diretor", "Acesso total, incluindo a agenda completa e as atribuições de calendários."],
+  ["Recursos Humanos", "RH completo. Na agenda, vê só os calendários que lhe forem atribuídos."],
+  ["Backoffice", "Na agenda, vê só os calendários que lhe forem atribuídos; cria utilizadores (exceto Administrador e Diretor)."],
+  ["Coordenador", "Vê na agenda as equipas que coordena e os seus membros."],
+  ["Chefe de Equipa", "Vê só ele e a sua equipa. Na agenda pode editar os eventos da sua equipa."],
+  ["Gestor Comercial", "Vê o seu painel, clientes e vendas (só leitura) e o seu calendário pessoal."],
+];
+
+function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; canEdit: boolean; canAssign: boolean }) {
+  const emps = useEmployeeOptions();
+  const update = useUpdateUser();
+  const qc = useQueryClient();
+  const remove = useMutation(orpc.users.remove.mutationOptions({ onSuccess: () => qc.invalidateQueries({ predicate: (q) => JSON.stringify(q.queryKey).includes("users") }) }));
+  const [err, setErr] = useState<string | null>(null);
+  const [role, setRole] = useState<Role>((u.role ?? "vendedor") as Role);
+  const [emp, setEmp] = useState<number | null>(u.employeeId ?? null);
+  const [name, setName] = useState(u.name ?? "");
+  const [email, setEmail] = useState(u.email ?? "");
+  const dirty = role !== (u.role ?? "vendedor") || emp !== (u.employeeId ?? null) || name !== (u.name ?? "") || email !== (u.email ?? "");
+  const [saved, setSaved] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const disabled = isSelf || !canEdit;
+  const isAssignable = role === "backoffice" || role === "rh";
+  return (
+    <tr>
+      <td>
+        <div className="flex items-center gap-3">
+          <Avatar name={name || email} />
+          <div className="space-y-1.5">
+            <input aria-label="Nome" className="input h-8 w-44 text-[13px]" value={name} onChange={(e) => setName(e.target.value)} disabled={disabled} />
+            <input aria-label="Email" className="input h-8 w-44 text-[12px]" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={disabled} />
+          </div>
+          {isSelf && <span className="text-[11px] text-ink-3">(você)</span>}
+        </div>
+      </td>
+      <td className="num text-[12.5px] text-ink-2">{fmtDate(u.createdAt)}</td>
+      <td>
+        <select className="input h-9 w-48" value={role} disabled={disabled} onChange={(e) => setRole(e.target.value as Role)}>
+          {Object.entries(ROLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </td>
+      <td>
+        <select className="input h-9 w-56" value={emp ?? ""} disabled={disabled} onChange={(e) => setEmp(e.target.value ? Number(e.target.value) : null)}>
+          <option value="">Sem ficha associada</option>
+          {emps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}{x.isSeller ? " · vendedor" : ""}</option>)}
+        </select>
+      </td>
+      <td className="w-40 text-right">
+        <div className="flex items-center justify-end gap-2">
+          {canAssign && isAssignable && (
+            <button className="btn btn-ghost h-9 px-2.5" title="Calendários atribuídos" onClick={() => setAssignOpen(true)}>
+              <CalendarCog size={15} />
+            </button>
+          )}
+          {dirty && canEdit ? (
+            <button className="btn btn-primary h-9" disabled={update.isPending} onClick={async () => { await update.mutateAsync({ userId: u.id, role, employeeId: emp, name: name || undefined, email: email || undefined }); setSaved(true); setTimeout(() => setSaved(false), 1500); }}>
+              {update.isPending ? <Loader2 size={14} className="animate-spin" /> : "Guardar"}
+            </button>
+          ) : saved ? <span className="inline-flex items-center gap-1 text-[12px] text-volt"><Check size={14} /> Guardado</span> : null}
+          {!isSelf && canEdit && (
+            <button
+              className="btn btn-ghost h-9 px-2.5 text-danger"
+              title="Eliminar utilizador"
+              disabled={remove.isPending}
+              onClick={async () => {
+                if (!confirm(`Eliminar ${u.name ?? u.email}? Perde o acesso de imediato e o seu calendário pessoal e respetivos eventos são apagados.`)) return;
+                try { await remove.mutateAsync({ userId: u.id }); } catch (e) { setErr(e instanceof Error ? e.message : "Não foi possível eliminar."); }
+              }}
+            >
+              {remove.isPending ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={15} />}
+            </button>
+          )}
+        </div>
+        {err && <div className="mt-1 text-right text-[12px] text-danger">{err}</div>}
+        {assignOpen && <AssignModal userId={u.id} userName={u.name ?? u.email ?? ""} onClose={() => setAssignOpen(false)} />}
+      </td>
+    </tr>
+  );
+}
+
+/** Atribuição de calendários (equipas e/ou funcionários) a um utilizador Backoffice/RH. Só admin/diretor. */
+function AssignModal({ userId, userName, onClose }: { userId: string; userName: string; onClose: () => void }) {
+  const qc = useQueryClient();
+  const teams = useTeams();
+  const emps = useEmployeeOptions();
+  const current = useQuery(orpc.agenda.assignments.list.queryOptions({ input: { userId } }));
+  const [teamIds, setTeamIds] = useState<Set<number> | null>(null);
+  const [empIds, setEmpIds] = useState<Set<number> | null>(null);
+  const save = useMutation(orpc.agenda.assignments.set.mutationOptions({ onSuccess: () => { qc.invalidateQueries(); onClose(); } }));
+  if (current.data && teamIds === null) {
+    setTeamIds(new Set(current.data.filter((a) => a.teamId != null).map((a) => a.teamId!)));
+    setEmpIds(new Set(current.data.filter((a) => a.employeeId != null).map((a) => a.employeeId!)));
+  }
+  const toggle = (set: Set<number>, id: number) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); return n; };
+  return (
+    <Modal open onClose={onClose} title={`Calendários atribuídos · ${userName}`}>
+      {teamIds === null || empIds === null ? <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-volt" /></div> : (
+        <form className="flex flex-col gap-4" onSubmit={async (e) => { e.preventDefault(); await save.mutateAsync({ userId, teamIds: [...teamIds], employeeIds: [...empIds] }); }}>
+          <Field label="Equipas (inclui o calendário da equipa e os dos membros)">
+            <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-[10px] border border-line p-2">
+              {(teams.data ?? []).map((t) => (
+                <label key={t.id} className="flex items-center gap-2 text-[13px]">
+                  <input aria-label={t.name} type="checkbox" checked={teamIds.has(t.id)} onChange={() => setTeamIds(toggle(teamIds, t.id))} /> {t.name}
+                </label>
+              ))}
+            </div>
+          </Field>
+          <Field label="Funcionários individuais">
+            <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-[10px] border border-line p-2">
+              {(emps.data ?? []).map((x) => (
+                <label key={x.id} className="flex items-center gap-2 text-[13px]">
+                  <input aria-label={x.name} type="checkbox" checked={empIds.has(x.id)} onChange={() => setEmpIds(toggle(empIds, x.id))} /> {x.name}
+                </label>
+              ))}
+            </div>
+          </Field>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={save.isPending}>{save.isPending ? <Loader2 size={15} className="animate-spin" /> : "Guardar"}</button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+/** Criação de utilizadores com palavra-passe temporária. */
+function CreateModal({ onClose, canCreatePrivileged }: { onClose: () => void; canCreatePrivileged: boolean }) {
+  const qc = useQueryClient();
+  const emps = useEmployeeOptions();
+  const create = useMutation(orpc.users.create.mutationOptions({ onSuccess: () => { qc.invalidateQueries(); onClose(); } }));
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState(() => Math.random().toString(36).slice(-8) + "Aa1");
+  const [role, setRole] = useState<Role>("vendedor");
+  const [emp, setEmp] = useState<number | "">("");
+  const [err, setErr] = useState<string | null>(null);
+  const roles = Object.entries(ROLE_LABEL).filter(([k]) => canCreatePrivileged || (k !== "admin" && k !== "diretor"));
+  return (
+    <Modal open onClose={onClose} title="Novo utilizador">
+      <form className="flex flex-col gap-4" onSubmit={async (e) => {
+        e.preventDefault();
+        setErr(null);
+        try {
+          await create.mutateAsync({ name, email, password, role, employeeId: emp === "" ? null : emp });
+        } catch (x) {
+          setErr(x instanceof Error ? x.message : "Não foi possível criar.");
+        }
+      }}>
+        <Field label="Nome"><input aria-label="Nome" className="input" value={name} onChange={(e) => setName(e.target.value)} required /></Field>
+        <Field label="Email"><input aria-label="Email" className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>
+        <Field label="Palavra-passe temporária">
+          <input aria-label="Palavra-passe temporária" className="input" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
+          <span className="mt-1 block text-[11.5px] text-ink-3">Comunique-a à pessoa; ela deve alterá-la depois de entrar.</span>
+        </Field>
+        <Field label="Perfil">
+          <select className="input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            {roles.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        <Field label={`Ficha de funcionário${role === "chefe" || role === "vendedor" ? " (obrigatória)" : ""}`}>
+          <select className="input" value={emp} onChange={(e) => setEmp(e.target.value ? Number(e.target.value) : "")}>
+            <option value="">Sem ficha associada</option>
+            {emps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}{x.isSeller ? " · vendedor" : ""}</option>)}
+          </select>
+        </Field>
+        {err && <div className="text-[12.5px] text-danger">{err}</div>}
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn btn-primary" disabled={create.isPending}>{create.isPending ? <Loader2 size={15} className="animate-spin" /> : "Criar utilizador"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+export default function UsersPage() {
+  const users = useUsers();
+  const me = useMe();
+  const [createOpen, setCreateOpen] = useState(false);
+  const canEdit = me.data?.role === "admin" || me.data?.role === "diretor";
+  const canCreate = canEdit || me.data?.role === "backoffice";
+  return (
+    <div>
+      <PageHeader eyebrow="Administração" title="Utilizadores e perfis">
+        {canCreate && <button className="btn btn-primary" onClick={() => setCreateOpen(true)}><Plus size={15} /> Novo utilizador</button>}
+      </PageHeader>
+      <div className="rise mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {ROLE_CARDS.map(([t, s]) => (
+          <div key={t} className="card p-4"><div className="font-display text-[14px] font-semibold">{t}</div><div className="mt-1 text-[12.5px] leading-relaxed text-ink-2">{s}</div></div>
+        ))}
+      </div>
+      <div className="card overflow-hidden">
+        {users.isLoading ? <TableSkeleton cols={4} /> : !users.data?.length ? <Empty title="Sem utilizadores" /> : (
+          <div className="overflow-x-auto">
+            <table className="tbl">
+              <thead><tr><th>Utilizador</th><th>Registo</th><th>Perfil</th><th>Ficha de funcionário</th><th aria-label="Ações" /></tr></thead>
+              <tbody>{users.data.map((u) => <UserRow key={u.id} u={u} isSelf={u.id === me.data?.id} canEdit={canEdit} canAssign={canEdit} />)}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {createOpen && <CreateModal onClose={() => setCreateOpen(false)} canCreatePrivileged={me.data?.role === "admin" || me.data?.role === "diretor"} />}
+    </div>
+  );
+}
