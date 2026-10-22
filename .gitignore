@@ -20,7 +20,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # local databases
 *.db
-!packages/web/src/data.db
 
 # dotenv environment variable files
 .env

@@ -7,6 +7,8 @@ start_server() {
   pgrep -f "start-server" > /dev/null && return 0
   echo "[auto-update] A arrancar servidor..."
   bun install --frozen-lockfile 2>/dev/null || true
+  # Sincroniza o schema da BD (cria tabelas novas, p.e. d2d_*) sem tocar nos dados.
+  (cd packages/web && bun --env-file=../../.env drizzle-kit push) 2>/dev/null || true
   bun run build 2>/dev/null || true
   bun --env-file=.env packages/web/src/start-server.ts &
   sleep 4
@@ -26,7 +28,7 @@ while true; do
     kill $(pgrep -f "start-server") 2>/dev/null || true
     sleep 2
     git checkout auto-update.sh 2>/dev/null || true
-    git pull origin main
+    git pull origin main || { echo "[auto-update] git pull falhou — a tentar de novo em 60s."; sleep 60; continue; }
     start_server
     echo "[auto-update] Servidor reiniciado."
   fi
