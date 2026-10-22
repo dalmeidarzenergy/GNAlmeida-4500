@@ -10,9 +10,11 @@ export default function SimuladorPage() {
   const { data: me } = useMe();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // Envia dados do user e tema quando o iframe carrega e quando me muda
   useEffect(() => {
-    if (!me || !iframeRef.current?.contentWindow) return;
-    const t = setTimeout(() => {
+    if (!me || !iframeRef.current) return;
+    const sendUser = () => {
+      const theme = document.documentElement.getAttribute("data-theme") || "dark";
       iframeRef.current?.contentWindow?.postMessage(
         {
           type: "rz-user",
@@ -26,17 +28,20 @@ export default function SimuladorPage() {
         },
         location.origin,
       );
-    }, 400);
-    return () => clearTimeout(t);
+      iframeRef.current?.contentWindow?.postMessage({ type: "theme", theme }, location.origin);
+    };
+    // iframe pode já estar loaded — tenta já
+    sendUser();
+    iframeRef.current.addEventListener("load", sendUser);
+    return () => iframeRef.current?.removeEventListener("load", sendUser);
   }, [me]);
 
-  // Envia tema inicial e escuta mudanças
+  // Escuta mudanças de tema e propaga ao iframe
   useEffect(() => {
     const sendTheme = () => {
       const theme = document.documentElement.getAttribute("data-theme") || "dark";
       iframeRef.current?.contentWindow?.postMessage({ type: "theme", theme }, location.origin);
     };
-    sendTheme();
     const observer = new MutationObserver(sendTheme);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => observer.disconnect();
