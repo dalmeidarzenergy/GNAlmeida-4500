@@ -5,7 +5,14 @@ import { adminOnly, salesAccess, salesWrite } from "../middleware/auth";
 import { db } from "../database";
 import { campaigns as tbl } from "../database/schema";
 import { SALE_COUNTED, SERVICE_LABELS } from "../shared/client-forms";
-import { deleteObject, fileUrl, presignPut } from "../lib/s3";
+import { deleteObject, presignPut } from "../lib/s3";
+
+/** URL local para PDFs de campanha guardados em public/uploads/. */
+function localPdfUrl(pdfKey: string | null | undefined) {
+  if (!pdfKey) return null;
+  const filename = pdfKey.replace("campaigns/", "");
+  return `/uploads/campaigns/${encodeURIComponent(filename)}`;
+}
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().optional();
 const input = z.object({
@@ -57,7 +64,7 @@ export const campaigns = {
       })
       .from(tbl)
       .orderBy(tbl.code);
-    return Promise.all(rows.map(async (r) => ({ ...r, pdfUrl: await fileUrl(r.pdfKey, r.pdfName) })));
+    return Promise.all(rows.map(async (r) => ({ ...r, pdfUrl: r.pdfKey ? localPdfUrl(r.pdfKey) : null })));
   }),
   /** URL assinado para enviar o PDF da campanha diretamente para o armazenamento. */
   pdfUpload: adminOnly.handler(async () => {
