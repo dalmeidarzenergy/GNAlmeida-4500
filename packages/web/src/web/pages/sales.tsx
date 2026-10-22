@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, FileSpreadsheet } from "lucide-react";
 import { Link } from "wouter";
 import { useOrders, useRemoveOrders, useSetOrderStatus } from "../queries/sales";
 import { ConfirmDeleteModal, RowBox, SelectAllBox, SelectionBar, useSelection } from "../components/bulk-select";
 import { useMe } from "../queries/me";
-import { PageHeader, Modal, SearchBox, Empty, TableSkeleton, Tabs, Stat } from "../components/ui/kit";
+import { PageHeader, Modal, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pagination } from "../components/ui/kit";
 import { SALE_STATUS } from "../lib/labels";
 import { errMsg, fmtDate } from "../lib/format";
 import { SALE_STATUS as STATUS_LIST } from "../../api/shared/client-forms";
@@ -53,6 +53,8 @@ function StatusSelect({ value, onChange, label }: { value: string; onChange: (v:
   );
 }
 
+const PAGE_SIZE = 20;
+
 export default function SalesPage() {
   const me = useMe();
   const orders = useOrders();
@@ -69,6 +71,7 @@ export default function SalesPage() {
   const inTeam = useTeamMatcher(team);
   const [services, setServices] = useState<string[]>(SERVICE_LABELS);
   const [edit, setEdit] = useState<Order | null | "new">(null);
+  const [page, setPage] = useState(1);
 
   const scoped = useMemo(
     () => (orders.data ?? []).filter((o) => (!month || o.date.startsWith(month)) && (seller == null || o.sellerId === seller) && (inTeam == null || inTeam(o.sellerId, o.date)) && services.includes(o.service ?? "")),
@@ -82,8 +85,10 @@ export default function SalesPage() {
         (!s || o.number.toLowerCase().includes(s) || o.clientName.toLowerCase().includes(s) || (o.sellerName ?? "").toLowerCase().includes(s) || (o.clientNif ?? "").includes(s) || (o.service ?? "").toLowerCase().includes(s)),
     );
   }, [scoped, q, tab]);
+  useEffect(() => setPage(1), [q, tab, month, seller, team, services]);
+  const paged = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const cnt = (g: "todas" | Group) => scoped.filter((o) => g === "todas" || inGroup(g, o.status)).length;
-  const listIds = useMemo(() => list.map((o) => o.id), [list]);
+  const listIds = useMemo(() => paged.map((o) => o.id), [paged]);
   const sel = useSelection(listIds);
   const removeMany = useRemoveOrders();
   const [toDelete, setToDelete] = useState<Order[] | null>(null);
@@ -128,16 +133,17 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {isAdmin && <SelectionBar count={sel.selected.length} total={list.length} noun={["venda", "vendas"]} onClear={sel.clear} onDelete={() => setToDelete(list.filter((o) => sel.has(o.id)))} />}
+      {isAdmin && <SelectionBar count={sel.selected.length} total={paged.length} noun={["venda", "vendas"]} onClear={sel.clear} onDelete={() => setToDelete(list.filter((o) => sel.has(o.id)))} />}
       <div className="card overflow-hidden">
         {orders.isLoading ? <TableSkeleton cols={6} /> : orders.isError ? <Empty title="Não foi possível carregar" text={errMsg(ordersError)} /> : !list.length ? (
           <Empty title="Sem vendas" text="Nenhuma venda corresponde aos filtros." action={write && <button className="btn btn-primary" onClick={() => setEdit("new")}><Plus size={15} /> Nova venda</button>} />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <table className="tbl">
               <thead><tr>{isAdmin && <th className="w-10"><SelectAllBox label="Selecionar todas as vendas" checked={sel.all} indeterminate={sel.some} onChange={sel.toggleAll} /></th>}<th>Nº</th><th>Data</th><th>Cliente</th><th>Serviço</th><th>Vendedor</th><th>Estado da venda</th><th aria-label="Ações" /></tr></thead>
               <tbody>
-                {list.slice(0, 300).map((o) => (
+                {paged.map((o) => (
                   <tr key={o.id} className={sel.has(o.id) ? "bg-volt/5" : undefined}>
                     {isAdmin && <td className="w-10"><RowBox label={`Selecionar ${o.number}`} checked={sel.has(o.id)} onChange={() => sel.toggle(o.id)} /></td>}
                     <td className="num text-[12.5px] text-ink-2">{o.number}</td>
@@ -164,6 +170,8 @@ export default function SalesPage() {
               </tbody>
             </table>
           </div>
+            <Pagination page={page} total={list.length} pageSize={PAGE_SIZE} onChange={setPage} />
+          </>
         )}
       </div>
 

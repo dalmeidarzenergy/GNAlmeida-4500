@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2, FileSpreadsheet } from "lucide-react";
 import { Link } from "wouter";
 import { useClients, useRemoveClient, useRemoveClients, useSaveClient } from "../queries/sales";
 import { ConfirmDeleteModal, RowBox, SelectAllBox, SelectionBar, useSelection } from "../components/bulk-select";
 import { useEmployeeOptions } from "../queries/hr";
 import { useMe } from "../queries/me";
-import { PageHeader, Avatar, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, ConfirmDelete } from "../components/ui/kit";
+import { PageHeader, Avatar, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, ConfirmDelete, Pagination } from "../components/ui/kit";
 import { errMsg, fmtDate } from "../lib/format";
 import { clientTypeFromNif } from "../../api/shared/client-forms";
 import { MonthYearFilter } from "../components/month-year-filter";
@@ -14,7 +14,6 @@ import { TeamFilter, useTeamIds } from "../components/team-filter";
 
 type Client = NonNullable<ReturnType<typeof useClients>["data"]>[number];
 
-/** Cliente = dados principais: nome, telemóvel, NIF e gestor. Os dados da venda ficam na venda. */
 function ClientForm({ initial, onClose, isAdmin }: { initial: Client | null; onClose: () => void; isAdmin: boolean }) {
   const emps = useEmployeeOptions();
   const save = useSaveClient();
@@ -60,6 +59,8 @@ function ClientForm({ initial, onClose, isAdmin }: { initial: Client | null; onC
   );
 }
 
+const PAGE_SIZE = 20;
+
 export default function ClientsPage() {
   const me = useMe();
   const clients = useClients();
@@ -71,20 +72,20 @@ export default function ClientsPage() {
   const [month, setMonth] = useState("");
   const [emp, setEmp] = useState<number | null>(null);
   const [team, setTeam] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
   const teamIds = useTeamIds(team, month || undefined);
   const list = useMemo(() => {
     const s = q.toLowerCase();
     return (clients.data ?? [])
-      // Mês: clientes com vendas nesse mês ou registados nesse mês.
       .filter((c) => !month || (c.saleMonths ?? "").split(",").includes(month) || new Date(c.createdAt).toISOString().startsWith(month))
-      // Funcionário: gestor do cliente ou vendedor de alguma venda do cliente.
       .filter((c) => emp == null || c.ownerId === emp || (c.saleSellers ?? "").split(",").includes(String(emp)))
-      // Chefe de equipa: clientes geridos ou com vendas de alguém da equipa (chefe incluído).
       .filter((c) => teamIds == null || (c.ownerId != null && teamIds.includes(c.ownerId)) || (c.saleSellers ?? "").split(",").some((x) => teamIds.includes(Number(x))))
       .filter((c) => (type === "todos" ? true : type === "meus" ? c.ownerId === me.data?.employeeId : clientTypeFromNif(c.nif) === type))
       .filter((c) => !s || c.name.toLowerCase().includes(s) || (c.nif ?? "").includes(s) || (c.phone ?? "").replace(/\s/g, "").includes(s.replace(/\s/g, "")));
   }, [clients.data, q, type, me.data, month, emp, teamIds]);
-  const listIds = useMemo(() => list.map((c) => c.id), [list]);
+  useEffect(() => setPage(1), [q, type, month, emp, team]);
+  const paged = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const listIds = useMemo(() => paged.map((c) => c.id), [paged]);
   const sel = useSelection(listIds);
   const removeMany = useRemoveClients();
   const [toDelete, setToDelete] = useState<Client[] | null>(null);
@@ -111,48 +112,51 @@ export default function ClientsPage() {
           <SearchBox value={q} onChange={setQ} placeholder="Nome, NIF ou telemóvel…" />
         </div>
       </div>
-      {isAdmin && <SelectionBar count={sel.selected.length} total={list.length} noun={["cliente", "clientes"]} onClear={sel.clear} onDelete={() => setToDelete(list.filter((c) => sel.has(c.id)))} />}
+      {isAdmin && <SelectionBar count={sel.selected.length} total={paged.length} noun={["cliente", "clientes"]} onClear={sel.clear} onDelete={() => setToDelete(paged.filter((c) => sel.has(c.id)))} />}
       <div className="card overflow-hidden">
         {clients.isLoading ? <TableSkeleton cols={6} /> : clients.isError ? <Empty title="Não foi possível carregar" text={errMsg(clients.error)} /> : !list.length ? (
           <Empty title="Sem clientes" action={write && <button className="btn btn-primary" onClick={() => setEdit("new")}><Plus size={15} /> Adicionar cliente</button>} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="tbl">
-              <thead><tr>{isAdmin && <th className="w-10"><SelectAllBox label="Selecionar todos os clientes" checked={sel.all} indeterminate={sel.some} onChange={sel.toggleAll} /></th>}<th>Cliente</th><th>Telemóvel</th><th>NIF</th><th>Gestor</th><th className="text-right">Vendas</th><th>Última venda</th><th aria-label="Ações" /></tr></thead>
-              <tbody>
-                {list.map((c) => {
-                  const t = clientTypeFromNif(c.nif);
-                  return (
-                    <tr key={c.id} className={`${write ? "cursor-pointer" : ""} ${sel.has(c.id) ? "bg-volt/5" : ""}`} onClick={() => write && setEdit(c)}>
-                      {isAdmin && <td className="w-10"><RowBox label={`Selecionar ${c.name}`} checked={sel.has(c.id)} onChange={() => sel.toggle(c.id)} /></td>}
-                      <td>
-                        <div className="flex items-center gap-3">
-                          <Avatar name={c.name} color={t === "empresa" ? "var(--sky)" : "var(--rose)"} />
-                          <div>
-                            <div className="font-medium">{c.name}</div>
-                            <div className="text-[11.5px] text-ink-3">{t === "empresa" ? "Empresa" : "Particular"}</div>
+          <>
+            <div className="overflow-x-auto">
+              <table className="tbl">
+                <thead><tr>{isAdmin && <th className="w-10"><SelectAllBox label="Selecionar todos os clientes" checked={sel.all} indeterminate={sel.some} onChange={sel.toggleAll} /></th>}<th>Cliente</th><th>Telemóvel</th><th>NIF</th><th>Gestor</th><th className="text-right">Vendas</th><th>Última venda</th><th aria-label="Ações" /></tr></thead>
+                <tbody>
+                  {paged.map((c) => {
+                    const t = clientTypeFromNif(c.nif);
+                    return (
+                      <tr key={c.id} className={`${write ? "cursor-pointer" : ""} ${sel.has(c.id) ? "bg-volt/5" : ""}`} onClick={() => write && setEdit(c)}>
+                        {isAdmin && <td className="w-10"><RowBox label={`Selecionar ${c.name}`} checked={sel.has(c.id)} onChange={() => sel.toggle(c.id)} /></td>}
+                        <td>
+                          <div className="flex items-center gap-3">
+                            <Avatar name={c.name} color={t === "empresa" ? "var(--sky)" : "var(--rose)"} />
+                            <div>
+                              <div className="font-medium">{c.name}</div>
+                              <div className="text-[11.5px] text-ink-3">{t === "empresa" ? "Empresa" : "Particular"}</div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="num text-[12.5px] text-ink-2">{c.phone ?? "—"}</td>
-                      <td className="num text-[12.5px] text-ink-2">{c.nif ?? "—"}</td>
-                      <td className="text-ink-2">{c.ownerName ?? "—"}</td>
-                      <td className="num text-right">{c.saleCount}{Number(c.activeCount) > 0 && <span className="ml-1 text-[11px] text-volt">({c.activeCount} ativ.)</span>}</td>
-                      <td className="num text-[12.5px] text-ink-2">{fmtDate(c.lastSale)}</td>
-                      <td className="w-20 whitespace-nowrap">
-                        <span className="btn-icon"><Pencil size={14} /></span>
-                        {isAdmin && (
-                          <button aria-label={`Eliminar ${c.name}`} className="btn-icon hover:!text-danger" onClick={(e) => { e.stopPropagation(); setToDelete([c]); }}>
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td className="num text-[12.5px] text-ink-2">{c.phone ?? "—"}</td>
+                        <td className="num text-[12.5px] text-ink-2">{c.nif ?? "—"}</td>
+                        <td className="text-ink-2">{c.ownerName ?? "—"}</td>
+                        <td className="num text-right">{c.saleCount}{Number(c.activeCount) > 0 && <span className="ml-1 text-[11px] text-volt">({c.activeCount} ativ.)</span>}</td>
+                        <td className="num text-[12.5px] text-ink-2">{fmtDate(c.lastSale)}</td>
+                        <td className="w-20 whitespace-nowrap">
+                          <span className="btn-icon"><Pencil size={14} /></span>
+                          {isAdmin && (
+                            <button aria-label={`Eliminar ${c.name}`} className="btn-icon hover:!text-danger" onClick={(e) => { e.stopPropagation(); setToDelete([c]); }}>
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <Pagination page={page} total={list.length} pageSize={PAGE_SIZE} onChange={setPage} />
+          </>
         )}
       </div>
       <ConfirmDeleteModal

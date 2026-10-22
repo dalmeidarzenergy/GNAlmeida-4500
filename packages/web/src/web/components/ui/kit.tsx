@@ -191,3 +191,25 @@ export function Progress({ value, color = "var(--volt)" }: { value: number; colo
     </div>
   );
 }
+
+export function Pagination({ page, total, pageSize, onChange }: { page: number; total: number; pageSize: number; onChange: (p: number) => void }) {
+  const last = Math.max(1, Math.ceil(total / pageSize));
+  if (last <= 1) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const pages: (number | "...")[] = [];
+  if (last <= 7) { for (let i = 1; i <= last; i++) pages.push(i); }
+  else if (page <= 4) { pages.push(1, 2, 3, 4, 5, "...", last); }
+  else if (page >= last - 3) { pages.push(1, "...", last - 4, last - 3, last - 2, last - 1, last); }
+  else { pages.push(1, "...", page - 1, page, page + 1, "...", last); }
+  return (
+    <div className="flex items-center justify-between border-t border-line px-4 py-3">
+      <span className="text-[12.5px] text-ink-3">{from}–{to} de {total}</span>
+      <div className="flex items-center gap-1">
+        <button className="btn-icon" disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="Anterior"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg></button>
+        {pages.map((p, i) => p === "..." ? <span key={i} className="w-7 text-center text-[12px] text-ink-3">…</span> : <button key={i} className={`btn-icon h-7 w-7 text-[12px] font-medium ${p === page ? "bg-volt/15 text-volt" : "text-ink-3 hover:text-ink"}`} onClick={() => onChange(p)}>{p}</button>)}
+        <button className="btn-icon" disabled={page >= last} onClick={() => onChange(page + 1)} aria-label="Seguinte"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></button>
+      </div>
+    </div>
+  );
+}
