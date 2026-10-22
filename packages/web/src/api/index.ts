@@ -10,6 +10,7 @@ import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
 import { agenda } from "./routes/agenda";
 import { d2d } from "./routes/d2d";
+import { simulador } from "./routes/simulador";
 import { simuladorStore } from "./lib/simulador-store";
 import { handle as aiHandle } from "./lib/simulador-ai.mjs";
 import { handle as campanhasHandle } from "./lib/simulador-campanhas.mjs";
@@ -32,6 +33,7 @@ export type AppRouterClient = RouterClient<AppRouter>;
 
 const app = createApp(router);
 d2d(app);
+simulador(app);
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 // Simulador Iberdrola — backend routes

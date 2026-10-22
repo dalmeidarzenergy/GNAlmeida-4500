@@ -414,3 +414,20 @@ export const simuladorCatalog = sqliteTable("simulador_catalog", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
 });
+
+/** Propostas guardadas do Simulador Iberdrola. */
+export const simuladorPropostas = sqliteTable("simulador_propostas", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  authorName: text("author_name").notNull(),
+  employeeId: integer("employee_id"),
+  clientName: text("client_name"),
+  clientNif: text("client_nif"),
+  segment: text("segment"),
+  bestPlan: text("best_plan"),
+  saving: real("saving"),
+  data: text("data", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdAt: createdAt(),
+});

@@ -262,10 +262,10 @@ function PermissionsEditor({ value, onChange }: { value: Permissions; onChange: 
                 <span className="text-[13px]">{m.label}</span>
                 <div className="flex items-center gap-3">
                   <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
-                    <input aria-label={`${m.label} — ver`} type="checkbox" checked={value[m.key].view} onChange={(e) => set(m.key, "view", e.target.checked)} /> Ver
+                    <input aria-label={`${m.label} — ver`} type="checkbox" checked={value[m.key]?.view ?? false} onChange={(e) => set(m.key, "view", e.target.checked)} /> Ver
                   </label>
                   <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
-                    <input aria-label={`${m.label} — editar`} type="checkbox" checked={value[m.key].edit} onChange={(e) => set(m.key, "edit", e.target.checked)} /> Editar
+                    <input aria-label={`${m.label} — editar`} type="checkbox" checked={value[m.key]?.edit ?? false} onChange={(e) => set(m.key, "edit", e.target.checked)} /> Editar
                   </label>
                 </div>
               </div>
@@ -282,7 +282,7 @@ function PermissionModal({ u, onClose }: { u: U; onClose: () => void }) {
   const qc = useQueryClient();
   const update = useMutation(orpc.users.update.mutationOptions({ onSuccess: () => { qc.invalidateQueries(); onClose(); } }));
   const [role, setRole] = useState<Role>((u.role ?? "vendedor") as Role);
-  const [perms, setPerms] = useState<Permissions>(() => u.permissions ?? defaultsForRole((u.role ?? "vendedor") as Role));
+  const [perms, setPerms] = useState<Permissions>(() => ({ ...defaultsForRole((u.role ?? "vendedor") as Role), ...u.permissions }));
   const [err, setErr] = useState<string | null>(null);
   const changeRole = (r: Role) => { setRole(r); setPerms(defaultsForRole(r)); };
   return (

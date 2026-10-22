@@ -7,7 +7,7 @@
 <style>
 :root{--bg:#f6f8f6;--card:#fff;--tx:#14231a;--mu:#5c6b62;--bd:#d9e2dc;--g:#00a443;--gd:#004a2b;--gl:#e6f5ec;--bad:#c0392b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c0e0d;--card:#141715;--tx:#eef2ea;--mu:#9aa39b;--bd:#262b27;--g:#c6f432;--gd:#c6f432;--gl:#222a11;--bad:#f05252;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#0c0e0d;--card:#141715;--tx:#eef2ea;--mu:#9aa39b;--bd:#262b27;--g:#c6f432;--gd:#c6f432;--gl:#222a11;--bad:#f05252;color-scheme:dark}
+:root[data-theme="dark"]{--bg:#0c0e0d;--card:#141715;--tx:#eef2ea;--mu:#9aa39b;--bd:#262b27;--g:#859c22;--gd:#859c22;--gl:#181e0d;--bad:#f05252;color-scheme:dark}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:860px;margin:0 auto;padding:16px}
@@ -211,7 +211,7 @@ let LINKBASE=(()=>{try{const x=localStorage.getItem('rz_linkbase');return x!==nu
 function parseMap(t){const m={};String(t||'').split(/\n/).forEach(l=>{const x=l.trim().match(/^([A-Za-z0-9_-]+)\s*[=\s]\s*(https?:\/\/\S+)$/);if(x)m[x[1]]=x[2]});return m}
 let LINKTXT=(()=>{try{return localStorage.getItem('rz_linkmap')||''}catch(e){return ''}})(),LINKMAP=parseMap(LINKTXT);
 function campUrl(c){if(c&&c.r&&LINKMAP[c.r])return LINKMAP[c.r].replace(/["'<>\s]/g,'');if(!c||!c.r||!LINKBASE)return '';let u=/\{ref\}/.test(LINKBASE)?LINKBASE.replace(/\{ref\}/g,encodeURIComponent(c.r)):LINKBASE.endsWith('/')?LINKBASE+encodeURIComponent(c.r)+'.pdf':LINKBASE;try{u=new URL(u,location.href).href}catch(e){return ''}return /^https?:/.test(u)?u.replace(/["'<>\s]/g,''):''}
-function lnk(c){const u=campUrl(c);return u?`<a href="${u}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">${c.n}</a>`:c.n}
+function lnk(c){return c.n}
 const esc=s=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const SN={lr:'Luz – Residencial',ln:'Luz – Negócios',lc:'Luz – Condomínios',gr:'Gás – Residencial',gn:'Gás – Negócios'};
 function updLk(){const u=campUrl({r:'MCASA264'});$('lkt').innerHTML=u?`Exemplo: <a href="${u}" target="_blank" rel="noopener">${u}</a> (clica para testar se abre)`:'Sem endereço configurado: os nomes das campanhas não ficam clicáveis.'}
@@ -267,19 +267,21 @@ const HK='rz_hist_v1',FIELDS=['seg','kwh','cur','cur2','days','pot','tar','vz','
 let CURID=null,ARM=false,DETREF='';
 function detOpts(rs){const sel=$('detSel'),key=(r,i)=>r.c.r||String(i);sel.innerHTML='<option value="">Todas as campanhas (proposta geral)</option>'+rs.map((r,i)=>`<option value="${esc(key(r,i))}">Só esta: ${i+1}. ${esc(r.c.n)}${i?'':' (recomendada)'}</option>`).join('');sel.value=rs.some((r,i)=>key(r,i)===DETREF)?DETREF:'';DETREF=sel.value;$('wDet').style.display='block'}
 const selR=()=>(DETREF&&LAST&&LAST.rs.find((r,i)=>(r.c.r||String(i))===DETREF))||null;
-const loadH=()=>{try{return JSON.parse(localStorage.getItem(HK)||'[]')}catch(e){return[]}};
-const saveH=a=>{try{localStorage.setItem(HK,JSON.stringify(a.slice(0,300)))}catch(e){}};
 const cleanT=t=>String(t||'').replace(/[<>&"'`]/g,'');
 function snap(){const f={},c={};FIELDS.forEach(i=>{f[i]=$(i).value});CHECKS.forEach(i=>{c[i]=$(i).checked});return{f,c}}
-function saveProp(){if(!LAST)return null;const s=snap(),b=selR()||LAST.rs[0],h=loadH(),rec={id:CURID||('p'+Date.now().toString(36)),ts:new Date().toISOString(),nome:cleanT(s.f.nome)||'(sem nome)',nif:cleanT(s.f.nif),seg:$('seg').selectedOptions[0].text,best:cleanT(b.c.n+(LAST.dual?' + '+LAST.gasR.c.n:'')),sav:LAST.cy-b.y1,tax:!!LAST.o.tax,det:DETREF,f:s.f,c:s.c},i=h.findIndex(x=>x.id===rec.id);if(i>=0)h[i]=rec;else h.unshift(rec);CURID=rec.id;saveH(h);return rec}
-function openProp(id){const r=loadH().find(x=>x.id===id);if(!r)return false;FIELDS.forEach(i=>{if(r.f[i]!==undefined)$(i).value=r.f[i]});CHECKS.forEach(i=>{$(i).checked=!!r.c[i]});CURID=id;DETREF=r.det||'';setTx(+$('tx').value);return true}
-function delProp(id){saveH(loadH().filter(x=>x.id!==id));if(CURID===id)CURID=null;renderHist()}
-function clearHist(){if(!ARM){ARM=true;$('hclr').textContent='Confirmar: apagar TODO o histórico?';return}ARM=false;saveH([]);CURID=null;renderHist()}
-function renderHist(){ARM=false;const q=($('hq').value||'').toLowerCase().trim(),L=loadH().filter(r=>!q||(r.nome+' '+r.nif).toLowerCase().includes(q));$('hclr').textContent='Apagar todo o histórico';
-$('hl').innerHTML=L.length?L.map(r=>{const d=new Date(r.ts),dt=d.toLocaleDateString('pt-PT')+' '+d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});return`<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:13px"><div class="top"><span><b>${esc(r.nome)}</b> ${r.nif?'<span class="ref">NIF '+esc(r.nif)+'</span>':''}</span><span class="ref">${dt}</span></div><div class="ref">${esc(r.seg)} · ${esc(r.best)} · ${r.sav>0?'poupança '+eur(r.sav)+'/ano':'sem poupança'}</div><div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"><button onclick="histOpen('${r.id}')">Abrir</button><button onclick="histPdf('${r.id}')">PDF</button><button onclick="histSend('${r.id}')">Enviar</button><button onclick="delProp('${r.id}')">Eliminar</button></div></div>`}).join(''):'<div class="note" style="padding:6px 0">Ainda não há propostas guardadas.</div>'}
-function histOpen(id){if(openProp(id))tab(false)}
-async function histPdf(id){if(openProp(id)){tab(false);await makePdf()}}
-async function histSend(id){if(openProp(id)){tab(false);await sendProp()}}
+const localH=()=>{try{return JSON.parse(localStorage.getItem(HK)||'[]')}catch(e){return[]}};
+const setLocalH=a=>{try{localStorage.setItem(HK,JSON.stringify(a.slice(0,300)))}catch(e){}};
+function fromServer(p){const d=(p&&p.data&&typeof p.data==='object')?p.data:{};return{id:p.id,ts:p.createdAt||d.ts||'',nome:p.clientName||d.nome||'(sem nome)',nif:p.clientNif||d.nif||'',seg:p.segment||d.seg||'',best:p.bestPlan||d.best||'',sav:typeof p.saving==='number'?p.saving:(d.sav||0),tax:!!d.tax,det:d.det||'',f:d.f||{},c:d.c||{},authorName:p.authorName,isOwn:p.isOwn}}
+async function loadH(){try{const r=await fetch('/api/simulador-propostas',{cache:'no-store'});if(r.ok){const arr=await r.json();const m=(Array.isArray(arr)?arr:[]).map(fromServer);setLocalH(m.filter(x=>x.isOwn!==false));return m}}catch(e){}return localH()}
+async function saveProp(){if(!LAST)return null;const s=snap(),b=selR()||LAST.rs[0],rec={id:CURID||('p'+Date.now().toString(36)),ts:new Date().toISOString(),nome:cleanT(s.f.nome)||'(sem nome)',nif:cleanT(s.f.nif),seg:$('seg').selectedOptions[0].text,best:cleanT(b.c.n+(LAST.dual?' + '+LAST.gasR.c.n:'')),sav:LAST.cy-b.y1,tax:!!LAST.o.tax,det:DETREF,f:s.f,c:s.c},h=localH(),i=h.findIndex(x=>x.id===rec.id);if(i>=0)h[i]=rec;else h.unshift(rec);CURID=rec.id;setLocalH(h);try{await fetch('/api/simulador-propostas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:rec.id,clientName:rec.nome,clientNif:rec.nif,segment:rec.seg,bestPlan:rec.best,saving:rec.sav,data:rec})})}catch(e){}return rec}
+async function openProp(id){const r=(await loadH()).find(x=>x.id===id);if(!r)return false;FIELDS.forEach(i=>{if(r.f&&r.f[i]!==undefined)$(i).value=r.f[i]});CHECKS.forEach(i=>{if(r.c&&r.c[i]!==undefined)$(i).checked=!!r.c[i]});CURID=id;DETREF=r.det||'';setTx(+$('tx').value);return true}
+async function delProp(id){setLocalH(localH().filter(x=>x.id!==id));if(CURID===id)CURID=null;try{await fetch('/api/simulador-propostas/'+encodeURIComponent(id),{method:'DELETE'})}catch(e){}await renderHist()}
+async function clearHist(){if(!ARM){ARM=true;$('hclr').textContent='Confirmar: apagar TODO o histórico?';return}ARM=false;setLocalH([]);CURID=null;try{const r=await fetch('/api/simulador-propostas',{cache:'no-store'});if(r.ok){const arr=await r.json();await Promise.all((Array.isArray(arr)?arr:[]).filter(p=>p.isOwn!==false).map(p=>fetch('/api/simulador-propostas/'+encodeURIComponent(p.id),{method:'DELETE'})))}}catch(e){}await renderHist()}
+async function renderHist(){ARM=false;const q=($('hq').value||'').toLowerCase().trim(),L=(await loadH()).filter(r=>!q||(r.nome+' '+r.nif+' '+(r.authorName||'')).toLowerCase().includes(q));$('hclr').textContent='Apagar todo o histórico';
+$('hl').innerHTML=L.length?L.map(r=>{const d=new Date(r.ts),dt=isNaN(d.getTime())?'':(d.toLocaleDateString('pt-PT')+' '+d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})),auth=(r.authorName&&r.isOwn===false)?' <span class="ref">('+esc(r.authorName)+')</span>':'';return`<div style="padding:6px 0;border-bottom:1px solid var(--bd);font-size:13px"><div class="top"><span><b>${esc(r.nome)}</b>${auth} ${r.nif?'<span class="ref">NIF '+esc(r.nif)+'</span>':''}</span><span class="ref">${dt}</span></div><div class="ref">${esc(r.seg)} · ${esc(r.best)} · ${r.sav>0?'poupança '+eur(r.sav)+'/ano':'sem poupança'}</div><div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"><button onclick="histOpen('${r.id}')">Abrir</button><button onclick="histPdf('${r.id}')">PDF</button><button onclick="histSend('${r.id}')">Enviar</button>${r.isOwn!==false?'<button onclick="delProp(\''+r.id+'\')">Eliminar</button>':''}</div></div>`}).join(''):'<div class="note" style="padding:6px 0">Ainda não há propostas guardadas.</div>'}
+async function histOpen(id){if(await openProp(id))tab(false)}
+async function histPdf(id){if(await openProp(id)){tab(false);await makePdf()}}
+async function histSend(id){if(await openProp(id)){tab(false);await sendProp()}}
 const pdfName=()=>'proposta_'+(cleanT($('nome').value).trim().replace(/\s+/g,'_').slice(0,40)||'cliente')+'_'+hojeISO()+'.pdf';
 async function sendProp(){const st=$('dls'),sn=$('snd');sn.textContent='';if(!LAST)return;const blob=await makePdf('blob');if(!blob)return;
 const nm=cleanT($('nome').value).trim()||'cliente',b=selR()||LAST.rs[0],sav=LAST.cy-b.y1,fn=pdfName(),file=new File([blob],fn,{type:'application/pdf'});
@@ -354,7 +356,7 @@ if(y>250){d.addPage();hdr();y=44}
 d.setDrawColor(0,164,67);d.setLineWidth(.4);d.line(14,y,196,y);y+=7;d.setFont('helvetica','bold');d.setFontSize(10);d.setTextColor(20,35,26);d.text('O seu comercial',14,y);y+=6;
 [['Nome',$('cnome').value,''],['Telemóvel',$('ctel').value,'tel:'+String($('ctel').value).replace(/[^\d+]/g,'')],['Email',$('cmail').value,'mailto:'+String($('cmail').value).replace(/[<>"'\s]/g,'')]].forEach(a=>{d.setFont('helvetica','bold');d.setFontSize(9.5);d.setTextColor(20,35,26);d.text(a[0]+': ',14,y);const w=d.getTextWidth(a[0]+': ');d.setFont('helvetica','normal');if(a[1]&&a[2]){d.setTextColor(0,102,204);d.textWithLink(a[1],14+w,y,{url:a[2]})}else d.text(a[1]||'-',14+w,y);y+=5.5});
 
-saveProp();if(mode==='blob'){st.textContent='';return d.output('blob')}
+await saveProp();if(mode==='blob'){st.textContent='';return d.output('blob')}
 const dl=await cap('downloads');if(!dl){st.textContent='Descarga indisponível aqui.';return}
 await dl.save({filename:pdfName(),data:d.output('blob')});st.textContent=''}
 catch(e){st.textContent=e&&e.code=='declined'?'':'Não foi possível gerar o PDF ('+((e&&(e.message||e.code))||'erro')+').'}}
@@ -362,8 +364,12 @@ catch(e){st.textContent=e&&e.code=='declined'?'':'Não foi possível gerar o PDF
 document.querySelectorAll('input,select').forEach(e=>e.addEventListener('input',run));run();
 $('adm').addEventListener('input',()=>{ADM=$('adm').value;try{localStorage.setItem('rz_adm',ADM)}catch(e){}});
 if(!/[?&]admin=1/.test(location.search))$('tC').style.display='none';
-try{const c=JSON.parse(localStorage.getItem('rz_com')||'{}');$('cnome').value=c.n||'';$('ctel').value=c.t||'';$('cmail').value=c.e||''}catch(e){}
-['cnome','ctel','cmail'].forEach(i=>$(i).addEventListener('input',()=>{try{localStorage.setItem('rz_com',JSON.stringify({n:$('cnome').value,t:$('ctel').value,e:$('cmail').value}))}catch(e){}}));
+var RZ_USER=null;
+function saveCom(){try{localStorage.setItem('rz_com',JSON.stringify({n:$('cnome').value,t:$('ctel').value,e:$('cmail').value,employeeId:(RZ_USER&&RZ_USER.employeeId)||''}))}catch(e){}}
+var IS_IFRAME=false;try{IS_IFRAME=window.self!==window.top}catch(e){IS_IFRAME=true}
+if(!IS_IFRAME){try{const c=JSON.parse(localStorage.getItem('rz_com')||'{}');if(c&&c.n)$('cnome').value=c.n;if(c&&c.t)$('ctel').value=c.t;if(c&&c.e)$('cmail').value=c.e}catch(e){}}
+window.addEventListener('message',function(ev){if(!ev.data||ev.data.type!=='rz-user')return;var u=ev.data.user||{};RZ_USER=u;$('cnome').value=u.name||'';$('ctel').value=u.phone||'';$('cmail').value=u.email||'';saveCom()});
+['cnome','ctel','cmail'].forEach(i=>$(i).addEventListener('input',saveCom));
 loadCatalog();
 $('lkm').addEventListener('input',()=>{LINKTXT=$('lkm').value;LINKMAP=parseMap(LINKTXT);try{localStorage.setItem('rz_linkmap',LINKTXT)}catch(e){}updLk();run()});
 $('lkb').addEventListener('input',()=>{LINKBASE=$('lkb').value.trim();try{localStorage.setItem('rz_linkbase',LINKBASE)}catch(e){}updLk();run()});
