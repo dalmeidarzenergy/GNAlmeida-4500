@@ -514,7 +514,7 @@ function applyRole(){ISLEAD=USER.role==="chefe";if(!ISLEAD)return;document.query
 var OB=[],syncSt="",flushing=false;
 function obSave(){try{localStorage.setItem("d2d_ob",JSON.stringify(OB.slice(-500)))}catch(e){}}
 try{OB=JSON.parse(localStorage.getItem("d2d_ob")||"[]")}catch(e){OB=[]}
-function api(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json"},CFG.headers||{},CFG.token?{Authorization:"Bearer "+CFG.token}:{},opt.headers||{});opt.credentials=CFG.credentials||"same-origin";return fetch(CFG.endpoint+path,opt)}
+function api(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json"},CFG.headers||{},CFG.token?{Authorization:"Bearer "+CFG.token}:{},opt.headers||{});opt.credentials=CFG.credentials||"include";return fetch(CFG.endpoint+path,opt)}
 function ownerCheck(){try{if(!USER.id)return;var o=localStorage.getItem("d2d_owner");if(o&&o!==String(USER.id)){localStorage.removeItem("d2d");localStorage.removeItem("d2d_ob");S={shift:null,doors:[],streets:[],history:[]};OB=[]}localStorage.setItem("d2d_owner",String(USER.id))}catch(e){}}
 function resumo(){var t=S.doors.length,o={};RES.forEach(function(x){o[x[0]]=cnt(x[0])});return{portas:t,por_resultado:o,interessados:cnt("lead")+cnt("voltar"),vendas:cnt("venda"),conversao:t?Math.round(cnt("venda")/t*100):0}}
 function setSync(){var b=$("sync");if(!CFG.endpoint){b.textContent="💾 Modo local";b.title="Sem ligação ao site: os dados ficam só neste telemóvel";return}b.title="Toca para sincronizar agora";b.textContent=syncSt==="auth"?"🔒 Inicia sessão no site":OB.length?(syncSt==="off"?"⚠️ Sem ligação · ":"⏳ ")+OB.length+" por enviar":"☁️ Sincronizado"}
@@ -570,7 +570,7 @@ async function flushDocs(){if(!CFG.endpoint||docFlushing||OB.length)return;docFl
   var res;try{res=await api("/documentos",{method:"POST",body:fd})}catch(e){syncSt="off";break}
   if(res.ok){var j={};try{j=await res.json()}catch(e){}r.synced=true;r.url=(j&&j.url)||"";await idbPut(r);setDocUrl(r)}else if(res.status===401||res.status===403){syncSt="auth";break}else if(res.status>=400&&res.status<500){r.synced=true;await idbPut(r);console.warn("D2D: documento recusado",res.status)}else{syncSt="off";break}}
  }catch(e){}finally{docFlushing=false;countDocs()}}
-function api(path,opt){opt=opt||{};var h=Object.assign({},CFG.headers||{},CFG.token?{Authorization:"Bearer "+CFG.token}:{},opt.headers||{});if(!(window.FormData&&opt.body instanceof FormData))h["Content-Type"]="application/json";opt.headers=h;opt.credentials=CFG.credentials||"same-origin";return fetch(CFG.endpoint+path,opt)}
+function api(path,opt){opt=opt||{};var h=Object.assign({},CFG.headers||{},CFG.token?{Authorization:"Bearer "+CFG.token}:{},opt.headers||{});if(!(window.FormData&&opt.body instanceof FormData))h["Content-Type"]="application/json";opt.headers=h;opt.credentials=CFG.credentials||"include";return fetch(CFG.endpoint+path,opt)}
 function setSync(){var b=$("sync");if(!CFG.endpoint){b.textContent="💾 Modo local";b.title="Sem ligação ao site: os dados ficam só neste telemóvel";return}b.title="Toca para sincronizar agora";var n=OB.length+PDn;b.textContent=syncSt==="auth"?"🔒 Inicia sessão no site":n?(syncSt==="off"?"⚠️ Sem ligação · ":"⏳ ")+n+" por enviar":"☁️ Sincronizado"}
 var RO_D=null,CX=[],SEEN={},SD=[],SENT=[],T0=Date.now(),demoDone=false;
 try{SEEN=JSON.parse(localStorage.getItem("d2d_seen")||"{}")}catch(e){}

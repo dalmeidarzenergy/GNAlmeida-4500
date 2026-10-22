@@ -607,10 +607,16 @@ async function superiorsOf(employeeId: number | null): Promise<{ id: string; nam
   return out;
 }
 
-/** Todos os subordinados (recursivo, toda a cadeia abaixo) de um utilizador. */
+/** Todos os subordinados (recursivo, toda a cadeia abaixo) de um utilizador. Admin/diretor veem todos. */
 async function subordinatesOf(ctx: Ctx): Promise<{ id: string; name: string }[]> {
-  if (ctx.employeeId == null) return [];
   const { emps, empToUser } = await loadPeople();
+  if (ctx.role === "admin" || ctx.role === "diretor") {
+    return emps
+      .filter((e) => e.status !== "inativo")
+      .map((e) => ({ id: empToUser.get(e.id) ?? "", name: e.name }))
+      .filter((x) => x.id);
+  }
+  if (ctx.employeeId == null) return [];
   const scope = descendants(ctx.employeeId, emps);
   return scope
     .map((eid) => ({ id: empToUser.get(eid) ?? "", name: emps.find((e) => e.id === eid)?.name ?? "" }))

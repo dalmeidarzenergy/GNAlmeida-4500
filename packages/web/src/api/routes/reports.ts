@@ -1,6 +1,6 @@
 import { SALE_COUNTED, SERVICE_LABELS } from "../shared/client-forms";
 import { z } from "zod";
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
 import { authed } from "../middleware/auth";
 import { db } from "../database";
 import { absences, candidates, clients, departments, employees, jobOpenings, sales, saleStatusHistory, salesTargets, teamMemberships, teams } from "../database/schema";
@@ -9,6 +9,8 @@ import { activeInMonth } from "../shared/hierarchy";
 import { monthWorkdays } from "../shared/workdays";
 import { matchesPlace } from "../shared/concelhos";
 
+const FORECAST_COUNTED = ["Em Fornecimento", "Control", "Em Processo", "Prospeção", "Pedido", "Pendente", "Lead", "Não Contactado", "Agendado", "Orçamento Enviado", "Negociação", "Fechado", "Contrato Enviado", "Em Instalação", "Ativado"];
+const FORECAST_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
 const COUNTED = SALE_COUNTED;
 
 /** Por defeito, os painéis, rankings e gráficos só contabilizam vendas LUZ e DUAL. */
@@ -431,7 +433,7 @@ async function suppliedOn(from: string, to: string, scope: SellerScope, services
     .select({ on: sql<string>`max(${saleStatusHistory.changedOn})` })
     .from(saleStatusHistory)
     .innerJoin(sales, eq(sales.id, saleStatusHistory.saleId))
-    .where(and(eq(saleStatusHistory.energy, "luz"), inArray(saleStatusHistory.status, COUNTED), inArray(sales.status, COUNTED), sellerWhere(scope), inArray(sales.service, services)))
+    .where(and(eq(saleStatusHistory.energy, "luz"), inArray(saleStatusHistory.status, COUNTED), notInArray(sales.status, FORECAST_EXCLUDED), sellerWhere(scope), inArray(sales.service, services)))
     .groupBy(saleStatusHistory.saleId);
   return rows.map((r) => r.on).filter((d) => d >= from && d <= to);
 }
@@ -467,7 +469,7 @@ async function evolutionReport(granularity: "dia" | "semana" | "mes" | "todos", 
   const [{ n: mInsN }] = await db
     .select({ n: sql<number>`count(*)` })
     .from(sales)
-    .where(and(gte(sales.date, `${month}-01`), lte(sales.date, `${month}-31`), sellerWhere(sellerId), inArray(sales.service, services)));
+    .where(and(gte(sales.date, `${month}-01`), lte(sales.date, `${month}-31`), sellerWhere(sellerId), inArray(sales.service, services), notInArray(sales.status, FORECAST_EXCLUDED)));
   const mIns = Number(mInsN);
   const mSup = (await suppliedOn(`${month}-01`, `${month}-31`, sellerId, services)).length;
   const avgIns = wd.elapsed ? mIns / wd.elapsed : 0;
