@@ -501,6 +501,20 @@ export function d2d(app: Hono) {
     await db.delete(d2dMailbox).where(and(eq(d2dMailbox.userId, ctx.userId), eq(d2dMailbox.docId, decodeURIComponent(c.req.param("docId")))));
     return c.json({ ok: true });
   });
+
+  // Apagar documento próprio (dono) — usado para limpar enviados.
+  app.delete("/api/d2d/documentos/:docId", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    const docId = decodeURIComponent(c.req.param("docId"));
+    const [doc] = await db.select().from(d2dDocuments).where(eq(d2dDocuments.id, docId));
+    if (!doc) return c.json({ ok: true });
+    if (doc.userId !== ctx.userId) return c.json({ error: "Sem permissão" }, 403);
+    try { const { unlinkSync } = await import("node:fs"); unlinkSync(resolve(UPLOAD_DIR, doc.path)); } catch (_) {}
+    await db.delete(d2dDocuments).where(eq(d2dDocuments.id, docId));
+    await db.delete(d2dMailbox).where(eq(d2dMailbox.docId, docId));
+    return c.json({ ok: true });
+  });
 }
 
 /* ------------------------------------------------------------
