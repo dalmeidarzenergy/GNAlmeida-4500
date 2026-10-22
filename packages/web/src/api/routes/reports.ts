@@ -565,4 +565,54 @@ export const reports = {
     if (context.role === "vendedor") return null;
     return hrReport(input?.month);
   }),
+  compare: authed
+    .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), sellerId: z.number().nullable().optional(), teamId: z.number().nullable().optional(), services: servicesInput }))
+    .handler(async ({ input, context }) => {
+      if (context.role === "rh") return null;
+      const scope = await resolveScope(context, input.sellerId, input.teamId);
+      const month = input.month ?? new Date().toISOString().slice(0, 7);
+      const svc = input.services;
+
+      const summarize = async (key: string) => {
+        const r = await salesReport(1, scope, key, svc);
+        const registered = r.byStatus.reduce((s, x) => s + x.count, 0);
+        return {
+          key,
+          orders: r.orders,
+          registered,
+          total: r.total,
+          avgTicket: r.avgTicket,
+          success: registered ? r.orders / registered : null,
+          quality: r.quality,
+        };
+      };
+
+      const [ref, prev, lastYear] = await Promise.all([summarize(month), summarize(shiftMonthKey(month, -1)), summarize(shiftMonthKey(month, -12))]);
+
+      // Ano vs ano: meses de janeiro até ao mês escolhido, no ano atual e no anterior.
+      const mIdx = Number(month.slice(5, 7));
+      const prevYearKey = `${Number(month.slice(0, 4)) - 1}-${month.slice(5, 7)}`;
+      const [curYear, prevYear] = await Promise.all([salesReport(mIdx, scope, month, svc), salesReport(mIdx, scope, prevYearKey, svc)]);
+
+      // Equipas, vendedores, comercializador e estado sobre os últimos 12 meses.
+      const period = await salesReport(12, scope, month, svc);
+
+      return {
+        months: { ref, prev, lastYear },
+        years: {
+          current: { year: month.slice(0, 4), byMonth: curYear.byMonth, total: curYear.total, orders: curYear.orders, avgTicket: curYear.avgTicket },
+          previous: { year: String(Number(month.slice(0, 4)) - 1), byMonth: prevYear.byMonth, total: prevYear.total, orders: prevYear.orders, avgTicket: prevYear.avgTicket },
+        },
+        teams: period.byTeam,
+        sellers: period.bySeller,
+        suppliers: period.byOldSupplier,
+        statuses: period.byStatus,
+      };
+    }),
 };
+
+/** Desloca uma chave de mês `YYYY-MM` em `n` meses (positivo ou negativo). */
+function shiftMonthKey(key: string, n: number) {
+  const d = new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}

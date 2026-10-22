@@ -21,3 +21,5 @@ export const useHrReport = (month: string) => useQuery(orpc.reports.hr.queryOpti
 export type Granularity = "dia" | "semana" | "mes" | "todos";
 export const useEvolution = (granularity: Granularity, month: string, sellerId: number | null = null, services?: string[], teamId: number | null = null) =>
   useQuery(orpc.reports.evolution.queryOptions({ input: { granularity, month, sellerId, teamId, services }, placeholderData: (prev) => prev }));
+export const useCompare = (month: string, sellerId: number | null = null, services?: string[], teamId: number | null = null) =>
+  useQuery(orpc.reports.compare.queryOptions({ input: { month, sellerId, teamId, services }, placeholderData: (prev) => prev }));

@@ -31,6 +31,7 @@ export const MODULES = [
   { key: "simulador-iberdrola", label: "Simulador Iberdrola", group: "Vendas" },
   { key: "relatorios", label: "Relatórios", group: "Análise" },
   { key: "evolucao", label: "Evolução", group: "Análise" },
+  { key: "comparativo", label: "Comparativo", group: "Análise" },
   { key: "utilizadores", label: "Utilizadores", group: "Análise" },
 ] as const;
 
@@ -59,6 +60,7 @@ const ACCESS: Record<ModuleKey, ModuleAccess> = {
   "simulador-iberdrola": { view: ALL, edit: ["admin", "diretor", "rh"] },
   relatorios: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor"] },
   evolucao: { view: ["admin", "diretor", "rh", "chefe", "vendedor"], edit: ["admin", "diretor"] },
+  comparativo: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor"] },
   utilizadores: { view: ["admin", "diretor", "backoffice"], edit: ["admin", "diretor"] },
 };
 

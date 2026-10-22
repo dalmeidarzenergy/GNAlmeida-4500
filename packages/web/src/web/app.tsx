@@ -15,6 +15,7 @@ import TargetsPage from "./pages/targets";
 import CampaignsPage from "./pages/campaigns";
 import ReportsPage from "./pages/reports";
 import EvolutionPage from "./pages/evolution";
+import ComparisonPage from "./pages/comparison";
 import UsersPage from "./pages/users";
 import AgendaPage from "./pages/agenda";
 import D2DPage from "./pages/d2d";
@@ -34,6 +35,7 @@ const routes: [string, React.ComponentType][] = [
   ["/metas", TargetsPage],
   ["/relatorios", ReportsPage],
   ["/evolucao", EvolutionPage],
+  ["/comparativo", ComparisonPage],
   ["/utilizadores", UsersPage],
   ["/terreno-d2d", D2DPage],
   ["/simulador-iberdrola", SimuladorPage],
