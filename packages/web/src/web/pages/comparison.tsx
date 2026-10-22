@@ -235,7 +235,7 @@ function SellersView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data
       <div className="card rise p-5">
         <div className="label-mono mb-1">Vendedores · 12 meses</div>
         <div className="mb-4 font-display text-[16px] font-semibold">Vendas por vendedor</div>
-        <BarsChart money={false} data={sellers} dataKey="orders" xKey="name" height={sellers.length * 28 + 60} />
+        <BarsChart money={false} data={sellers} dataKey="orders" xKey="name" height={320} />
       </div>
       <div className="card rise overflow-hidden">
         <div className="max-h-[440px] overflow-auto">
@@ -306,7 +306,7 @@ function LocalView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"]
           </div>
           <Tabs value={mode} onChange={setMode} items={[{ key: "distrito", label: "Distrito" }, { key: "concelho", label: "Concelho" }]} />
         </div>
-        <BarsChart money={false} data={list} dataKey="orders" xKey="name" height={Math.max(280, list.length * 24 + 60)} />
+        <BarsChart money={false} data={list} dataKey="orders" xKey="name" height={320} />
       </div>
       <div className="card rise overflow-hidden">
         <div className="max-h-[440px] overflow-auto">
