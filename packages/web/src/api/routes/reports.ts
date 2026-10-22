@@ -573,11 +573,12 @@ export const reports = {
     return hrReport(input?.month);
   }),
   compare: authed
-    .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), sellerId: z.number().nullable().optional(), teamId: z.number().nullable().optional(), services: servicesInput }))
+    .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), months: z.number().int().min(0).max(240).optional(), sellerId: z.number().nullable().optional(), teamId: z.number().nullable().optional(), services: servicesInput }))
     .handler(async ({ input, context }) => {
       if (context.role === "rh") return null;
       const scope = await resolveScope(context, input.sellerId, input.teamId);
       const month = input.month ?? new Date().toISOString().slice(0, 7);
+      const months = input.months ?? 1;
       const svc = input.services;
 
       const summarize = async (key: string) => {
@@ -601,8 +602,8 @@ export const reports = {
       const prevYearKey = `${Number(month.slice(0, 4)) - 1}-${month.slice(5, 7)}`;
       const [curYear, prevYear] = await Promise.all([salesReport(mIdx, scope, month, svc), salesReport(mIdx, scope, prevYearKey, svc)]);
 
-      // Equipas, vendedores, comercializador e estado sobre os últimos 12 meses.
-      const period = await salesReport(12, scope, month, svc);
+      // Equipas, vendedores, comercializador, local: mês a mês (mesmo período dos filtros de Vendas).
+      const period = await salesReport(months, scope, month, svc);
 
       return {
         months: { ref, prev, lastYear },

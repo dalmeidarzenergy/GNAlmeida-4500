@@ -191,13 +191,13 @@ function YearsView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"]
   );
 }
 
-function TeamsView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"]> }) {
+function TeamsView({ d, period }: { d: NonNullable<ReturnType<typeof useCompare>["data"]>; period: string }) {
   const teams = d.teams;
   if (!teams.length) return <Empty title="Sem equipas com vendas no período" />;
   return (
     <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
       <div className="card rise p-5">
-        <div className="label-mono mb-1">Equipas · 12 meses</div>
+        <div className="label-mono mb-1">Equipas · {period}</div>
         <div className="mb-4 font-display text-[16px] font-semibold">Vendas por equipa</div>
         <BarsChart money={false} data={teams.map((t) => ({ ...t, color: t.color ?? "#c6f432" }))} dataKey="orders" xKey="teamName" height={320} />
       </div>
@@ -227,13 +227,13 @@ function TeamsView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"]
   );
 }
 
-function SellersView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"]> }) {
+function SellersView({ d, period }: { d: NonNullable<ReturnType<typeof useCompare>["data"]>; period: string }) {
   const sellers = d.sellers;
   if (!sellers.length) return <Empty title="Sem vendedores com vendas no período" />;
   return (
     <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
       <div className="card rise p-5">
-        <div className="label-mono mb-1">Vendedores · 12 meses</div>
+        <div className="label-mono mb-1">Vendedores · {period}</div>
         <div className="mb-4 font-display text-[16px] font-semibold">Vendas por vendedor</div>
         <BarsChart money={false} data={sellers} dataKey="orders" xKey="name" height={320} />
       </div>
@@ -263,12 +263,12 @@ function SellersView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data
   );
 }
 
-function SuppliersView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"]> }) {
+function SuppliersView({ d, period }: { d: NonNullable<ReturnType<typeof useCompare>["data"]>; period: string }) {
   const suppliers = d.suppliers;
   if (!suppliers.length) return <Empty title="Sem vendas de luz no período" />;
   return (
     <div className="card rise p-5">
-      <div className="label-mono mb-1">Comercializador · 12 meses</div>
+      <div className="label-mono mb-1">Comercializador · {period}</div>
       <div className="mb-4 font-display text-[16px] font-semibold">Antigo comercializador</div>
       <div className="grid items-center gap-6 lg:grid-cols-[280px_1fr]">
         <Donut data={suppliers.map((x, i) => ({ name: x.name, value: x.count, color: SUPPLIER_COLORS[i % SUPPLIER_COLORS.length] }))} />
@@ -291,17 +291,16 @@ function SuppliersView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["da
   );
 }
 
-function LocalView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"]> }) {
+function LocalView({ d, period }: { d: NonNullable<ReturnType<typeof useCompare>["data"]>; period: string }) {
   const [mode, setMode] = useState<"distrito" | "concelho">("distrito");
   const list = mode === "distrito" ? d.districts : d.concelhos;
   if (!list.length) return <Empty title="Sem vendas no período" />;
-  const max = list[0]?.orders ?? 1;
   return (
     <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
       <div className="card rise p-5">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
-            <div className="label-mono mb-1">Local · 12 meses</div>
+            <div className="label-mono mb-1">Local · {period}</div>
             <div className="font-display text-[16px] font-semibold">Vendas por {mode === "distrito" ? "distrito" : "concelho"}</div>
           </div>
           <Tabs value={mode} onChange={setMode} items={[{ key: "distrito", label: "Distrito" }, { key: "concelho", label: "Concelho" }]} />
@@ -341,7 +340,9 @@ export default function ComparisonPage() {
   const [team, setTeam] = useState<number | null>(null);
   const [services, setServices] = useState<string[]>(DASHBOARD_SERVICES);
   const teamIds = useTeamIds(team, month);
-  const r = useCompare(month, isAdmin ? seller : null, services, isAdmin ? team : null);
+  const [months, setMonths] = useState<"1" | "3" | "6" | "12" | "0">("1");
+  const periodMonths = Number(months);
+  const r = useCompare(month, periodMonths, isAdmin ? seller : null, services, isAdmin ? team : null);
   const d = r.data;
 
   const dims = [
@@ -352,6 +353,9 @@ export default function ComparisonPage() {
     { key: "comercializador" as const, label: "Comercializador" },
     { key: "local" as const, label: "Local" },
   ];
+
+  const showMonthsFilter = !["meses", "anos"].includes(dim);
+  const periodLabel = months === "0" ? "Todos os meses" : months === "1" ? monthLabel(month) : `${months} meses até ${monthLabel(month)}`;
 
   return (
     <div>
@@ -364,7 +368,9 @@ export default function ComparisonPage() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <Tabs value={dim} onChange={setDim} items={dims} />
+          {showMonthsFilter && <Tabs value={months} onChange={setMonths} items={[{ key: "1", label: "Só o mês" }, { key: "3", label: "3 meses" }, { key: "6", label: "6 meses" }, { key: "12", label: "12 meses" }, { key: "0", label: "Todos" }]} />}
           <ServiceFilter value={services} onChange={setServices} />
+          {showMonthsFilter && <span className="text-[12.5px] text-ink-3">{periodLabel}</span>}
         </div>
         {d && (
           <button className="btn btn-ghost" onClick={() => downloadCsv(`comparativo-${dim}-${month}.csv`, dim === "anos" ? [["Mês", `${d.years.current.year}`, `${d.years.previous.year}`], ...d.years.current.byMonth.map((m, i) => [fmtMonth(m.month, true), m.orders, d.years.previous.byMonth[i]?.orders ?? 0])] : dim === "equipas" ? [["Equipa", "Vendas", "Elementos"], ...d.teams.map((t) => [t.teamName, t.orders, t.memberCount])] : dim === "vendedores" ? [["Vendedor", "Vendas", "Faturação"], ...d.sellers.map((s) => [s.name, s.orders, s.total])] : dim === "comercializador" ? [["Comercializador", "Vendas", "%"], ...d.suppliers.map((s) => [s.name, s.count, Math.round(s.share * 100)])] : dim === "local" ? [["Distrito", "Vendas"], ...d.districts.map((x) => [x.name, x.orders])] : [["Métrica", "Mês", "Mês anterior", "Homólogo"], ["Em Fornecimento", d.months.ref.orders, d.months.prev.orders, d.months.lastYear.orders]])}>
@@ -377,10 +383,10 @@ export default function ComparisonPage() {
         <>
           {dim === "meses" && <MonthsView d={d} />}
           {dim === "anos" && <YearsView d={d} />}
-          {dim === "equipas" && <TeamsView d={d} />}
-          {dim === "vendedores" && <SellersView d={d} />}
-          {dim === "comercializador" && <SuppliersView d={d} />}
-          {dim === "local" && <LocalView d={d} />}
+          {dim === "equipas" && <TeamsView d={d} period={periodLabel} />}
+          {dim === "vendedores" && <SellersView d={d} period={periodLabel} />}
+          {dim === "comercializador" && <SuppliersView d={d} period={periodLabel} />}
+          {dim === "local" && <LocalView d={d} period={periodLabel} />}
         </>
       )}
     </div>
