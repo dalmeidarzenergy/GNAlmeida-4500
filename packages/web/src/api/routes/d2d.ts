@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { eq, and, isNotNull, inArray } from "drizzle-orm";
+import { eq, and, isNotNull, isNull, inArray } from "drizzle-orm";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { auth } from "../auth";
@@ -14,6 +14,7 @@ import {
   d2dDailyReports,
   d2dDocuments,
   d2dMailbox,
+  d2dGoals,
 } from "../database/schema";
 import type { Role } from "../middleware/auth";
 
@@ -317,6 +318,31 @@ export function d2d(app: Hono) {
     return c.json(await superiorsOf(ctx.employeeId));
   });
 
+  // Meta do dia (portas + vendas) aplicável ao utilizador autenticado.
+  app.get("/api/d2d/meta", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    return c.json(await todayGoalFor(ctx));
+  });
+
+  // Definir a meta do dia (só chefia).
+  app.post("/api/d2d/meta", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    if (d2dRole(ctx.role) !== "chefe") return c.json({ error: "Sem permissão" }, 403);
+    const body = (await c.req.json().catch(() => null)) as { portas?: unknown; vendas?: unknown } | null;
+    const portas = Number(body?.portas);
+    const vendas = Number(body?.vendas);
+    if (!Number.isInteger(portas) || !Number.isInteger(vendas) || portas < 0 || vendas < 0 || portas > 10000 || vendas > 10000) {
+      return c.json({ error: "Valores inválidos." }, 422);
+    }
+    const data = todayD2D();
+    const ownerId = ctx.employeeId; // null = global (admin/diretor)
+    await db.delete(d2dGoals).where(and(eq(d2dGoals.data, data), ownerId == null ? isNull(d2dGoals.employeeId) : eq(d2dGoals.employeeId, ownerId)));
+    await db.insert(d2dGoals).values({ employeeId: ownerId, data, portas, vendas });
+    return c.json({ ok: true, portas, vendas });
+  });
+
   // Caixa de documentos (recebidos / enviados).
   app.get("/api/d2d/caixa", async (c) => {
     const ctx = await resolveCtx(c.req.raw.headers);
@@ -535,4 +561,35 @@ async function superiorsOf(employeeId: number | null): Promise<{ id: string; nam
     cur = manager;
   }
   return out;
+}
+
+const todayD2D = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
+
+/** Cadeia de funcionários (o próprio e os superiores) para resolver a meta do dia. */
+async function goalChain(employeeId: number | null): Promise<number[]> {
+  if (employeeId == null) return [];
+  const { emps } = await loadPeople();
+  const byId = new Map(emps.map((e) => [e.id, e]));
+  const chain = [employeeId];
+  const seen = new Set<number>([employeeId]);
+  let cur = byId.get(employeeId);
+  while (cur && cur.managerId != null && !seen.has(cur.managerId)) {
+    seen.add(cur.managerId);
+    chain.push(cur.managerId);
+    cur = byId.get(cur.managerId);
+  }
+  return chain;
+}
+
+/** Meta do dia (portas + vendas) para o utilizador autenticado. */
+async function todayGoalFor(ctx: Ctx): Promise<{ portas: number; vendas: number }> {
+  const chain = await goalChain(ctx.employeeId);
+  const data = todayD2D();
+  const goals = await db.select().from(d2dGoals).where(eq(d2dGoals.data, data));
+  // Mais próximo na cadeia ganha; global (employeeId null) é último recurso.
+  const idx = new Map(chain.map((id, i) => [id, i]));
+  const rank = (g: typeof goals[number]) => (g.employeeId == null ? 999 : (idx.get(g.employeeId) ?? 998));
+  goals.sort((a, b) => rank(a) - rank(b));
+  if (goals.length) return { portas: goals[0].portas, vendas: goals[0].vendas };
+  return { portas: 40, vendas: 5 };
 }

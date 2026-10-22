@@ -356,6 +356,17 @@ export const d2dDailyReports = sqliteTable("d2d_daily_reports", {
   createdAt: createdAt(),
 });
 
+/** Meta do dia (portas e vendas) definida pela chefia; aplica-se à sua equipa (cadeia abaixo). */
+export const d2dGoals = sqliteTable("d2d_goals", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** Funcionário que definiu a meta (chefe); null = global (admin/diretor). */
+  employeeId: integer("employee_id"),
+  data: text("data").notNull(), // YYYY-MM-DD
+  portas: integer("portas").notNull(),
+  vendas: integer("vendas").notNull(),
+  createdAt: createdAt(),
+});
+
 /** Documento anexado a uma porta (ou enviado pela chefia). O ficheiro fica em public/uploads/d2d. */
 export const d2dDocuments = sqliteTable("d2d_documents", {
   id: text("id").primaryKey(),

@@ -102,7 +102,11 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
 
   <section id="v-turno">
     <div id="active" class="banner hide"><span class="dot"></span><div><b>Turno ativo</b><div class="tag" id="aInfo"></div></div><div class="big" style="margin-left:auto" id="clock">00:00</div></div>
-    <div class="card hide" id="goalCard"><div style="display:flex;justify-content:space-between;align-items:center"><b>🎯 Meta do dia</b><span class="tag" id="goalTxt"></span></div><div class="tr" style="height:10px;margin-top:8px"><i id="goalBar" style="width:0;background:var(--ok);transition:width .6s ease"></i></div></div>
+    <div class="card hide" id="goalCard">
+      <div style="display:flex;justify-content:space-between;align-items:center"><b>🎯 Meta do dia</b><button id="btnGoalEdit" class="x hide" style="color:var(--ac)">✎ Alterar</button></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="tag" id="goalTxtP" style="min-width:118px"></span><div class="tr" style="flex:1;height:10px"><i id="goalBarP" style="width:0;background:var(--ok)"></i></div></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span class="tag" id="goalTxtV" style="min-width:118px"></span><div class="tr" style="flex:1;height:10px"><i id="goalBarV" style="width:0;background:var(--wa)"></i></div></div>
+    </div>
     <div class="card" id="startCard">
       <label>Comercial</label><div id="nome" style="font-weight:600;padding:4px 0">—</div>
       <label for="zona">Zona / rua de trabalho</label><input id="zona" placeholder="Ex.: Amadora, Rua das Flores">
@@ -200,6 +204,12 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
     <p class="tag">As ruas seguintes ficam nesta localidade. A localidade anterior fica em pausa — podes voltar a ela no mesmo turno.</p>
     <button class="pri" id="zSave">Alterar zona</button>
   </div></div>
+  <div class="modal hide" id="goalM" role="dialog" aria-modal="true"><div class="sheet">
+    <div class="row" style="align-items:center"><b style="font-size:17px">🎯 Meta do dia</b><button id="gX" style="flex:none" aria-label="Fechar">✕</button></div>
+    <div class="row"><div><label for="gPortas">Meta de portas</label><input id="gPortas" inputmode="numeric"></div><div><label for="gVendas">Meta de vendas</label><input id="gVendas" inputmode="numeric"></div></div>
+    <p class="tag">Define os objetivos do dia para a tua equipa.</p>
+    <button class="pri" id="gSave">Guardar meta</button>
+  </div></div>
   <section id="v-hist" class="hide">
     <div class="row" style="margin-bottom:10px"><button class="sb on" id="hTab1">Relatórios</button><button class="sb" id="hTab2">Interessados <span id="hCnt"></span></button></div>
     <div id="h-rel"><button class="pri" id="btnXlsAll" style="margin:0 0 12px">📥 Exportar todo o histórico (Excel)</button><div id="hList"></div><div id="hDet" class="hide"></div></div>
@@ -228,9 +238,15 @@ var RES=[["ausente","Ninguém em casa","var(--mu)"],["recusa","Sem interesse","v
 var S={shift:null,doors:[],mgr:""},sel=null,$=function(i){return document.getElementById(i)};
 /* INTEGRAÇÃO: o site define window.D2D_CONFIG = {user:{id,name}, endpoint:"/api/d2d"} antes desta página, ou envia postMessage({type:"d2d:user",user:{id,name}}), ou usa ?id=..&nome=.. no URL. Cada ação emite o evento "d2d" (inicio, porta, fim). */
 var CFG=window.D2D_CONFIG||{};
+var META={portas:CFG.goal||40,vendas:5};
+async function loadMeta(){if(!CFG.endpoint)return;try{var r=await api("/meta");if(r.ok){var m=await r.json();if(m&&m.portas!=null)META={portas:Number(m.portas)||40,vendas:m.vendas!=null?Number(m.vendas)||0:5}}else{META={portas:CFG.goal||40,vendas:5}}}catch(e){META={portas:CFG.goal||40,vendas:5}}render()}
+$("btnGoalEdit").onclick=function(){$("gPortas").value=META.portas;$("gVendas").value=META.vendas;$("goalM").classList.remove("hide")};
+$("gX").onclick=function(){$("goalM").classList.add("hide")};
+$("goalM").onclick=function(e){if(e.target===this)this.classList.add("hide")};
+$("gSave").onclick=async function(){var p=parseInt($("gPortas").value,10),v=parseInt($("gVendas").value,10);if(isNaN(p)||isNaN(v)||p<0||v<0||p>10000||v>10000){toast("Indica números válidos (0–10000).");return}if(!CFG.endpoint){META={portas:p,vendas:v};$("goalM").classList.add("hide");render();toast("Meta atualizada (modo local)");return}var b=this;b.disabled=true;try{var r=await api("/meta",{method:"POST",body:JSON.stringify({portas:p,vendas:v})});if(r.ok){await loadMeta();$("goalM").classList.add("hide");toast("Meta atualizada ✔")}else if(r.status===401||r.status===403){toast("Sem permissão para alterar a meta.")}else{toast("Não foi possível guardar a meta.")}}catch(e){toast("Sem ligação.")}b.disabled=false};
 var q=new URLSearchParams(location.search);
 var USER=Object.assign({id:q.get("id")||"",name:q.get("nome")||"",role:q.get("role")||""},CFG.user||{});var ISLEAD=USER.role==="chefe";
-window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate()}});
+window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate();loadMeta()}});
 function emit(tipo,dados){var ev={tipo:tipo,user:USER,hora:Date.now(),dados:dados};try{window.dispatchEvent(new CustomEvent("d2d",{detail:ev}));if(window.parent&&window.parent!==window)window.parent.postMessage({type:"d2d:event",event:ev},"*")}catch(e){}if(CFG.endpoint){try{fetch(CFG.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(ev)})}catch(e){}}}
 var curRua=null,showForm=false;
 function load(){try{var r=localStorage.getItem("d2d");if(r)S=JSON.parse(r)}catch(e){}S.streets=S.streets||[];S.history=S.history||[];normalizeZonas();ownerCheck()}
@@ -254,7 +270,7 @@ function report(){var s=S.shift,t=S.doors.length,c=cnt("lead")+cnt("venda"),r=t?
 function nm(k){return RES.filter(function(x){return x[0]===k})[0][1]}
 function render(){
  var s=S.shift,on=s&&!s.end;
- $("active").classList.toggle("hide",!on);$("endCard").classList.toggle("hide",!on);var goal=CFG.goal||40,gn=S.doors.length;$("goalCard").classList.toggle("hide",!on);$("goalTxt").textContent=gn>=goal?"🎉 Meta atingida · "+gn+" portas":gn+" / "+goal+" portas";$("goalBar").style.width=Math.min(gn/goal*100,100)+"%";$("startCard").classList.toggle("hide",!!on);
+ $("active").classList.toggle("hide",!on);$("endCard").classList.toggle("hide",!on);var gn=S.doors.length,vn=cnt("venda"),gp=META.portas||40,gv=META.vendas||5;$("goalCard").classList.toggle("hide",!on);$("goalTxtP").textContent=gn>=gp?"🎉 Meta atingida · "+gn+" portas":gn+" / "+gp+" portas";$("goalBarP").style.width=Math.min(gp?gn/gp*100:0,100)+"%";$("goalTxtV").textContent=vn>=gv?"🎉 Meta atingida · "+vn+" vendas":vn+" / "+gv+" vendas";$("goalBarV").style.width=Math.min(gv?vn/gv*100:0,100)+"%";$("btnGoalEdit").classList.toggle("hide",!ISLEAD);$("startCard").classList.toggle("hide",!!on);
  if(on)$("aInfo").textContent=s.name+" · "+s.zone+" · desde "+hm(s.start);
  $("sub").textContent=READONLY?"A ver dados da equipa (só consulta)":(on?"Turno em curso":"Gestão de porta a porta");
  $("chips").innerHTML="";RES.forEach(function(x){var b=document.createElement("button");b.className="chip"+(sel===x[0]?" on":"");b.textContent=x[1];b.onclick=function(){sel=x[0];render()};$("chips").appendChild(b)});
@@ -605,7 +621,7 @@ $("btnCopy").onclick=function(){var t=report();if(navigator.clipboard)navigator.
 $("btnClear").onclick=function(){var b=$("btnClear");if(!b.dataset.c){b.dataset.c=1;b.textContent="Toca outra vez para apagar o turno";setTimeout(function(){delete b.dataset.c;b.textContent="Limpar turno atual"},4000);return}
  delete b.dataset.c;b.textContent="Limpar turno atual";S={shift:null,doors:[],streets:[],history:S.history};curRua=null;save();render();toast("Turno atual apagado (o histórico mantém-se)")};
 setInterval(function(){var s=S.shift;if(s&&!s.end){var m=Math.floor((Date.now()-s.start)/60000);$("clock").textContent=String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0")}},1000);
-load();$("nome").textContent=USER.name||"Comercial (teste)";render();applyRole();setSync();flush();hydrate();countDocs();pollCaixa();setInterval(pollCaixa,(CFG.endpoint?(CFG.syncSeconds||30):5)*1000);setInterval(flush,(CFG.syncSeconds||30)*1000);window.addEventListener("online",flush);document.addEventListener("visibilitychange",function(){if(!document.hidden)flush()});$("sync").onclick=function(){flush();hydrate()};window.addEventListener("beforeunload",function(e){if(CFG.endpoint&&(PDn||OB.length)){e.preventDefault();e.returnValue=""}});
+load();$("nome").textContent=USER.name||"Comercial (teste)";render();applyRole();setSync();flush();hydrate();countDocs();loadMeta();pollCaixa();setInterval(pollCaixa,(CFG.endpoint?(CFG.syncSeconds||30):5)*1000);setInterval(flush,(CFG.syncSeconds||30)*1000);window.addEventListener("online",flush);document.addEventListener("visibilitychange",function(){if(!document.hidden)flush()});$("sync").onclick=function(){flush();hydrate()};window.addEventListener("beforeunload",function(e){if(CFG.endpoint&&(PDn||OB.length)){e.preventDefault();e.returnValue=""}});
 </script>
 </body>
 </html>
