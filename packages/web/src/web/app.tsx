@@ -18,6 +18,7 @@ import ReportsPage from "./pages/reports";
 import EvolutionPage from "./pages/evolution";
 import UsersPage from "./pages/users";
 import AgendaPage from "./pages/agenda";
+import D2DPage from "./pages/d2d";
 
 const routes: [string, React.ComponentType][] = [
   ["/agenda", AgendaPage],
