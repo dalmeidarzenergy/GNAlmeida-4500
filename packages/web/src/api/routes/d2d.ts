@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { auth } from "../auth";
 import { db } from "../database";
 import {
+  user,
   userRoles,
   employees,
   d2dShifts,
@@ -63,6 +64,16 @@ async function loadPeople() {
   const roles = await db.select({ userId: userRoles.userId, employeeId: userRoles.employeeId }).from(userRoles).where(isNotNull(userRoles.employeeId));
   const empToUser = new Map<number, string>();
   for (const r of roles) if (r.employeeId != null) empToUser.set(r.employeeId, r.userId);
+  // Responsáveis (e outros funcionários) que tenham conta mas sem ligação direta via user_roles:
+  // liga pelo email, para que a cadeia de superiores resolva corretamente.
+  const users = await db.select({ id: user.id, email: user.email }).from(user);
+  const emailToUser = new Map<string, string>();
+  for (const u of users) if (u.email) emailToUser.set(u.email.toLowerCase(), u.id);
+  for (const e of emps) {
+    if (empToUser.has(e.id)) continue;
+    const uid = emailToUser.get(e.email.toLowerCase());
+    if (uid) empToUser.set(e.id, uid);
+  }
   return { emps, empToUser };
 }
 
