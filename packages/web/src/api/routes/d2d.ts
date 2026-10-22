@@ -225,6 +225,13 @@ async function applyEvent(userId: string, employeeId: number | null, tipo: strin
     const end = ts(d.shift ? (d.shift as Record<string, unknown>).end : null) ?? Date.now();
     await db.update(d2dShifts).set({ end }).where(eq(d2dShifts.id, shift.id));
     await buildDailyReport(shift.id, userId, false);
+  } else if (tipo === "documentos_lidos") {
+    const ids = (d.ids as string[]) ?? [];
+    if (ids.length) {
+      await db.update(d2dMailbox).set({ read: true }).where(inArray(d2dMailbox.docId, ids));
+    }
+  } else if (tipo === "documentos_enviados") {
+    // registado apenas (os docs são enviados via POST /documentos)
   } else if (tipo === "alerta_fecho") {
     // registado apenas (o alerta push com a página fechada é tratado noutro ponto)
   }
@@ -321,6 +328,13 @@ export function d2d(app: Hono) {
     const ctx = await resolveCtx(c.req.raw.headers);
     if (!ctx) return c.json({ error: "Sem sessão" }, 401);
     return c.json(await superiorsOf(ctx.employeeId));
+  });
+
+  // Subordinados (cadeia abaixo) — para chefes e não-gestores que queiram enviar para baixo.
+  app.get("/api/d2d/subordinados", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    return c.json(await subordinatesOf(ctx));
   });
 
   // Meta do dia (portas + vendas) do utilizador autenticado.
@@ -426,12 +440,13 @@ export function d2d(app: Hono) {
       destinatario = await directManagerUserId(ctx.userId);
       if (!destinatario) return c.json({ error: "Sem chefe direto definido." }, 422);
     }
-    // Envio à hierarquia: só podem ir para um superior (nunca para baixo).
+    // Envio: comerciais só podem enviar para superiores; chefes podem enviar para subordinados.
     if (destinatario != null) {
-      if (destinatario === "equipa") return c.json({ error: "O envio para a equipa foi descontinuado. Envia para um superior." }, 422);
+      if (destinatario === "equipa") return c.json({ error: "O envio para a equipa foi descontinuado. Envia para uma pessoa." }, 422);
       const sup = await superiorsOf(ctx.employeeId);
-      if (!sup.some((s) => s.id === destinatario)) {
-        return c.json({ error: "Só podes enviar para um superior na tua hierarquia." }, 422);
+      const sub = d2dRole(ctx.role) !== "comercial" ? await subordinatesOf(ctx) : [];
+      if (!sup.some((s) => s.id === destinatario) && !sub.some((s) => s.id === destinatario)) {
+        return c.json({ error: "Só podes enviar para um superior ou subordinado na tua hierarquia." }, 422);
       }
     }
     await db.insert(d2dDocuments).values({
@@ -576,6 +591,16 @@ async function superiorsOf(employeeId: number | null): Promise<{ id: string; nam
     cur = manager;
   }
   return out;
+}
+
+/** Subordinados diretos (um nível abaixo) de um utilizador. */
+async function subordinatesOf(ctx: Ctx): Promise<{ id: string; name: string }[]> {
+  if (ctx.employeeId == null) return [];
+  const { emps, empToUser } = await loadPeople();
+  const directReports = emps.filter((e) => e.managerId === ctx.employeeId && e.status !== "inativo");
+  return directReports
+    .map((e) => ({ id: empToUser.get(e.id) ?? "", name: e.name }))
+    .filter((x) => x.id);
 }
 
 const todayD2D = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });

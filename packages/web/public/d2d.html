@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0d0c">
-<script>try{var t=parent.document.documentElement.getAttribute("data-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{var d=parent.document.documentElement;var t=d.getAttribute("data-theme");if(t)document.documentElement.setAttribute("data-theme",t);new MutationObserver(function(){var nt=d.getAttribute("data-theme");if(nt)document.documentElement.setAttribute("data-theme",nt)}).observe(d,{attributes:true,attributeFilter:["data-theme"]})}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>Terreno D2D</title>
@@ -186,6 +186,7 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
     <button class="pri" id="nSave">Criar</button>
   </div></div>
   <div class="modal hide" id="docM" role="dialog" aria-modal="true" style="z-index:25"><div class="sheet"><div class="row" style="align-items:center"><b id="dvT" style="word-break:break-all"></b><button id="dvX" style="flex:none" aria-label="Fechar">✕</button></div><div id="dvP" style="margin:10px 0"></div><div class="row"><button id="dvOpen">Abrir</button><button class="pri" id="dvSave" style="margin:0">Descarregar</button></div></div></div>
+  <div class="modal hide" id="msgM" role="dialog" aria-modal="true" style="z-index:24"><div class="sheet"><div class="row" style="align-items:center"><b id="msgT">Mensagem</b><button id="msgX" style="flex:none" aria-label="Fechar">✕</button></div><div id="msgFrom" class="tag" style="margin:4px 0 8px"></div><div id="msgBody" style="margin-bottom:10px;font-size:14px"></div><div id="msgAtt" style="margin-bottom:10px"></div><div class="row"><button id="msgReply" class="pri">↩ Responder</button><button id="msgDlAll">⬇ Descarregar tudo</button></div></div></div>
   <div class="modal hide" id="roM" role="dialog" aria-modal="true" style="z-index:22"><div class="sheet"><div class="row" style="align-items:center"><b id="roT"></b><button id="roX" style="flex:none" aria-label="Fechar">✕</button></div><div id="roL" style="margin-top:8px"></div><button class="pri hide" id="roAll" style="margin-top:10px">⬇ Descarregar todos (.zip)</button></div></div>
   <input type="file" id="fFile" class="hide" accept="image/*,application/pdf" multiple><input type="file" id="fCam" class="hide" accept="image/*" capture="environment">
   <section id="v-caixa" class="hide">
@@ -541,6 +542,9 @@ async function viewDoc(m){var rec=null;try{rec=await idbGet(m.id)}catch(e){}var 
 $("dvX").onclick=function(){$("docM").classList.add("hide");if(DV&&DV.blob)URL.revokeObjectURL(DV.url);DV=null};
 $("dvOpen").onclick=function(){if(DV)window.open(DV.url,"_blank")};
 $("dvSave").onclick=async function(){if(!DV)return;try{var b=DV.blob||await(await fetch(DV.url)).blob();await saveFile(DV.m.name,b)}catch(e){toast("Não foi possível descarregar.")}};
+var MSG=null;
+function viewMsg(g){MSG=g;$("msgT").textContent="Mensagem de "+(g.from&&g.from.name||"alguém");$("msgFrom").textContent=[g.kind==="venda"?"🏷 Venda":"📨 Recebido",g.cli?"👤 "+g.cli:"",g.nif?"NIF "+g.nif:""].filter(Boolean).join(" · ")+(g.porta?" · "+g.porta.rua+", "+g.porta.num:"");$("msgBody").textContent=g.nota||"Sem mensagem.";var a=$("msgAtt");a.innerHTML="";g.docs.forEach(function(d){var r=document.createElement("div");r.style.cssText="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer";r.innerHTML="<span>"+(/^image/.test(d.type)?"🖼":"📄")+"</span><span style='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(d.name)+"</span><span class='tag'>"+fmtSz(d.size||0)+"</span>";r.onclick=function(){viewDoc(d)};a.appendChild(r)});$("msgReply").onclick=function(){$("msgM").classList.add("hide");openSend(null,g.from&&g.from.id)};$("msgDlAll").onclick=function(){dlAll(g.docs,"mensagem")};$("msgM").classList.remove("hide")}
+$("msgX").onclick=function(){$("msgM").classList.add("hide");MSG=null};
 function openRO(d){$("roT").textContent="Documentos · "+d.rua+", porta "+d.num;docList($("roL"),d.docs||[],false);$("roM").classList.remove("hide")}
 $("roX").onclick=function(){$("roM").classList.add("hide")};
 function renderEDocs(){var d=ED&&ED.d;if(!d)return;d.docs=d.docs||[];docList($("eDocs"),d.docs,true,function(a,m,i){d.docs.splice(i,1);idbDel(m.id);if(m.url)emit("documento_apagado",{id:m.id,porta_t:d.t});d.edited=Date.now();save();emit("porta_editada",d);renderEDocs();render();countDocs()})}
@@ -593,11 +597,12 @@ function renderCaixa(){var groups=recvGroups(),un=groups.filter(function(g){retu
  $("cxT2").classList.remove("hide");$("btnSendDocs").classList.remove("hide");$("cxRec").classList.toggle("hide",cxSub!==1);$("cxEnv").classList.toggle("hide",cxSub!==2);$("cxT1").classList.toggle("on",cxSub===1);$("cxT2").classList.toggle("on",cxSub===2);
  var b=$("cxRec");b.innerHTML="";if(!CX.length)b.innerHTML="<div class='card'><p class='tag' style='margin:0'>Ainda sem documentos recebidos.</p></div>";
  groups.forEach(function(g){var c=document.createElement("div");c.className="card";c.style.cursor="pointer";
-  c.innerHTML="<div style='display:flex;align-items:center;gap:8px'><i class='dotc'></i><b style='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'></b><span class='tag'></span></div><div id='cx2' style='margin-top:6px;font-size:14px'></div><div id='cxAtt' style='margin-top:2px'></div><div class='row' style='margin-top:10px'><button class='d'>⬇ Descarregar tudo</button><button class='x'>🗑 Apagar</button></div>";
+  c.innerHTML="<div style='display:flex;align-items:center;gap:8px'><i class='dotc'></i><b style='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'></b><span class='tag'></span></div><div id='cx2' style='margin-top:6px;font-size:14px'></div><div id='cxAtt' style='margin-top:2px'></div><div class='row' style='margin-top:10px'><button class='r'>↩ Responder</button><button class='d'>⬇ Tudo</button><button class='x'>🗑</button></div>";
   c.querySelector(".dotc").style.background=g.read?"var(--bd)":"var(--no)";c.querySelector("b").textContent=(g.from&&g.from.name)||"—";c.querySelector("span.tag").textContent=g.kind==="venda"?"Venda":"Recebido";
   c.querySelector("#cx2").textContent=[g.cli?"👤 "+g.cli:"",g.nif?"NIF "+g.nif:"",g.nota].filter(Boolean).join(" · ")+(g.docs.length>1?" · "+g.docs.length+" ficheiros":"");
   var att=c.querySelector("#cxAtt");g.docs.forEach(function(d){var r=document.createElement("div");r.style.cssText="display:flex;align-items:center;gap:8px;padding:5px 0 0";r.innerHTML="<span>"+(/^image/.test(d.type)?"🖼":"📄")+"</span><span style='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(d.name)+"</span><span class='tag'>"+fmtSz(d.size||0)+"</span>";r.onclick=function(ev){ev.stopPropagation();markRead(g);viewDoc(d)};att.appendChild(r)});
-  c.onclick=function(){markRead(g);if(g.docs.length===1)viewDoc(g.docs[0])};
+  c.onclick=function(){markRead(g);viewMsg(g)};
+  c.querySelector(".r").onclick=function(ev){ev.stopPropagation();markRead(g);openSend(null,g.from&&g.from.id)};
   c.querySelector(".d").onclick=function(ev){ev.stopPropagation();markRead(g);dlAll(g.docs,"mensagem")};
   c.querySelector(".x").onclick=function(ev){ev.stopPropagation();delRecv(g)};
   b.appendChild(c)});
@@ -609,10 +614,13 @@ function renderCaixa(){var groups=recvGroups(),un=groups.filter(function(g){retu
   c.onclick=function(){if(g.docs.length===1)viewDoc(g.docs[0])};c.querySelector(".x").onclick=function(ev){ev.stopPropagation();delSent(g)};e.appendChild(c)})}
 $("cxT1").onclick=function(){cxSub=1;renderCaixa()};$("cxT2").onclick=function(){cxSub=2;renderCaixa()};
 function renderSD(){docList($("sDocs"),SD,true,function(a,m,i){SD.splice(i,1);idbDel(m.id);renderSD()})}
-async function openSend(pre){SD.forEach(function(m){idbDel(m.id)});SD=[];$("sNota").value="";$("sCli").value="";$("sNif").value="";var s=$("sTo");s.innerHTML="";function opt(v,t){var o=document.createElement("option");o.value=v;o.textContent=t;s.appendChild(o)}
- if(CFG.endpoint){try{var r=await api("/superiores");if(r.ok){var sup=await r.json();if(Array.isArray(sup)&&sup.length){sup.forEach(function(x){opt(x.id,x.name)})}}}catch(e){}}
+async function openSend(pre,replyTo){SD.forEach(function(m){idbDel(m.id)});SD=[];$("sNota").value="";$("sCli").value="";$("sNif").value="";var s=$("sTo");s.innerHTML="";function opt(v,t){var o=document.createElement("option");o.value=v;o.textContent=t;s.appendChild(o)}
+ if(CFG.endpoint){
+  try{var supR=await api("/superiores");if(supR.ok){var sup=await supR.json();if(Array.isArray(sup)&&sup.length){var og=document.createElement("optgroup");og.label="Superiores";sup.forEach(function(x){var o=document.createElement("option");o.value=x.id;o.textContent=x.name;og.appendChild(o)});s.appendChild(og)}}}catch(e){}
+  try{var subR=await api("/subordinados");if(subR.ok){var sub=await subR.json();if(Array.isArray(sub)&&sub.length){var sg=document.createElement("optgroup");sg.label="Subordinados";sub.forEach(function(x){var o=document.createElement("option");o.value=x.id;o.textContent=x.name;sg.appendChild(o)});s.appendChild(sg)}}}catch(e){}
+ }
  if(!s.options.length){opt("chefe","👤 O meu chefe direto")}
- if(pre)s.value=pre;renderSD();$("sendM").classList.remove("hide")}
+ if(replyTo)s.value=replyTo;else if(pre)s.value=pre;renderSD();$("sendM").classList.remove("hide")}
 function closeSend(){SD.forEach(function(m){idbDel(m.id)});SD=[];$("sendM").classList.add("hide")}
 $("btnSendDocs").onclick=function(){openSend()};$("btnSendDocs2").onclick=function(){openSend()};$("sX").onclick=closeSend;$("sendM").onclick=function(e){if(e.target===this)closeSend()};
 $("sAddF").onclick=function(){FT="send";$("fFile").click()};$("sAddC").onclick=function(){FT="send";$("fCam").click()};

@@ -148,6 +148,7 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
       oldSupplier: sql<string | null>`json_extract(${sales.details}, '$.oldSupplier')`,
       ddc: sql<number | null>`json_extract(${sales.details}, '$.ddc')`,
       fe: sql<number | null>`json_extract(${sales.details}, '$.fe')`,
+      svc: sql<number | null>`json_extract(${sales.details}, '$.pel')`,
       consent: sql<number | null>`json_extract(${sales.details}, '$.consent')`,
       district: sql<string | null>`json_extract(${sales.details}, '$.district')`,
       municipality: sql<string | null>`json_extract(${sales.details}, '$.municipality')`,
@@ -264,7 +265,9 @@ async function churn(rows: { id: number; status: string }[]) {
  * excluindo as anuladas: taxa de DDC e de FE (SIM), taxa de Robinson (Consentimento = NÃO),
  * média de dias entre a data da venda e a primeira passagem a "Control", chargeback e baixas.
  */
-async function saleQuality(allRows: { id: number; date: string; status: string; ddc: unknown; fe: unknown; consent: unknown }[]) {
+const PEL_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
+
+async function saleQuality(allRows: { id: number; date: string; status: string; ddc: unknown; fe: unknown; svc: unknown; consent: unknown }[]) {
   const rows = allRows.filter((r) => r.status !== "Anulado");
   const ids = rows.map((r) => r.id);
   const control = ids.length
@@ -281,10 +284,12 @@ async function saleQuality(allRows: { id: number; date: string; status: string; 
       return d ? Math.max(0, Math.round((Date.parse(`${c.on}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`)) / 86400000)) : null;
     })
     .filter((x): x is number => x != null);
+  const pelRows = allRows.filter((r) => !PEL_EXCLUDED.includes(r.status));
   return {
     registered: rows.length,
     ddc: yesNoRate(rows, "ddc", 1),
     fe: yesNoRate(rows, "fe", 1),
+    pel: yesNoRate(pelRows, "svc", 1),
     robinson: yesNoRate(rows, "consent", 0),
     contractDays: days.length ? days.reduce((a, b) => a + b, 0) / days.length : null,
     contractBase: days.length,
