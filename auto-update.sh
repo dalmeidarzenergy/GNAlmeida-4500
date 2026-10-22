@@ -1,26 +1,35 @@
 #!/bin/bash
+set -e
 cd /home/diogo_almeida/GNAlmeida-4500
-echo "[auto-update] $(date): A iniciar..."
+export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
 
-# Arrancar servidor se ainda não estiver a correr
-pgrep -f "start-server" > /dev/null || { echo "[auto-update] A arrancar servidor..."; bun --env-file=.env packages/web/src/start-server.ts & sleep 5; }
+start_server() {
+  pgrep -f "start-server" > /dev/null && return 0
+  echo "[auto-update] A arrancar servidor..."
+  bun install --frozen-lockfile 2>/dev/null || true
+  bun run build 2>/dev/null || true
+  bun --env-file=.env packages/web/src/start-server.ts &
+  sleep 4
+}
+
+echo "[auto-update] $(date): A iniciar..."
+start_server
 echo "[auto-update] Servidor ativo. A vigiar alterações..."
 
 while true; do
   git fetch origin main 2>/dev/null
-  LOCAL=$(git rev-parse HEAD)
-  REMOTE=$(git rev-parse origin/main)
-  
-  if [ "$LOCAL" != "$REMOTE" ]; then
+  LOCAL=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+  REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "unknown")
+
+  if [ "$LOCAL" != "$REMOTE" ] && [ "$LOCAL" != "unknown" ] && [ "$REMOTE" != "unknown" ]; then
     echo "[auto-update] $(date): Nova versão — a atualizar..."
-    kill $(pgrep -f "start-server") 2>/dev/null
+    kill $(pgrep -f "start-server") 2>/dev/null || true
     sleep 2
+    git checkout auto-update.sh 2>/dev/null || true
     git pull origin main
-    bun install 2>/dev/null
-    bun run build
-    bun --env-file=.env packages/web/src/start-server.ts &
+    start_server
     echo "[auto-update] Servidor reiniciado."
   fi
-  
+
   sleep 60
 done
