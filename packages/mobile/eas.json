@@ -1,5 +1,11 @@
 {
   "build": {
+    "production": {
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      }
+    },
     "development": {
       "developmentClient": true,
       "distribution": "internal",
@@ -12,11 +18,12 @@
       "android": {
         "buildType": "apk"
       }
-    },
+    }
+  },
+  "submit": {
     "production": {
-      "distribution": "store",
-      "android": {
-        "buildType": "app-bundle"
+      "ios": {
+        "ascApiKeyPath": "./keys/AuthKey.p8"
       }
     }
   }

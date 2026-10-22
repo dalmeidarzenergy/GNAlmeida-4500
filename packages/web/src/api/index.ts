@@ -10,6 +10,9 @@ import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
 import { agenda } from "./routes/agenda";
 import { d2d } from "./routes/d2d";
+import { simuladorStore } from "./lib/simulador-store";
+import { handle as aiHandle } from "./lib/simulador-ai.mjs";
+import { handle as campanhasHandle } from "./lib/simulador-campanhas.mjs";
 
 export const router = {
   ping,
@@ -30,5 +33,9 @@ export type AppRouterClient = RouterClient<AppRouter>;
 const app = createApp(router);
 d2d(app);
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
+// Simulador Iberdrola — backend routes
+app.all("/api/ai", (c) => aiHandle(c.req.raw, process.env));
+app.all("/api/campanhas", (c) => campanhasHandle(c.req.raw, process.env, simuladorStore));
 
 export default app;

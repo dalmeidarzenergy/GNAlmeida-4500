@@ -408,3 +408,9 @@ export const d2dMailbox = sqliteTable("d2d_mailbox", {
   read: integer("read", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
 });
+
+/** Catálogo do Simulador Iberdrola — armazenamento chave-valor (um único registo com todo o JSON). */
+export const simuladorCatalog = sqliteTable("simulador_catalog", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});

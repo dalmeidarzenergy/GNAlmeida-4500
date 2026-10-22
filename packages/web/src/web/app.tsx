@@ -19,6 +19,7 @@ import EvolutionPage from "./pages/evolution";
 import UsersPage from "./pages/users";
 import AgendaPage from "./pages/agenda";
 import D2DPage from "./pages/d2d";
+import SimuladorPage from "./pages/simulador";
 
 const routes: [string, React.ComponentType][] = [
   ["/agenda", AgendaPage],
@@ -36,6 +37,7 @@ const routes: [string, React.ComponentType][] = [
   ["/evolucao", EvolutionPage],
   ["/utilizadores", UsersPage],
   ["/terreno-d2d", D2DPage],
+  ["/simulador-iberdrola", SimuladorPage],
   ["/", Dashboard],
 ];
 

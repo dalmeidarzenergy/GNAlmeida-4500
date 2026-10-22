@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diagnóstico – Simulador Iberdrola</title>
+<style>body{font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:#f6f8f6;color:#14231a}main{max-width:760px;margin:0 auto;padding:16px}
+.row{background:#fff;border:1px solid #d9e2dc;border-radius:10px;padding:10px 12px;margin:8px 0}.row div{color:#5c6b62;font-size:13px;margin-top:3px;word-break:break-word}
+button{padding:10px 18px;border:1px solid #00a443;border-radius:8px;background:#e6f5ec;color:#004a2b;font:inherit;font-weight:600;cursor:pointer}
+@media(prefers-color-scheme:dark){body{background:#0f1713;color:#e8f0ea}.row{background:#18231d;border-color:#2a3a31}.row div{color:#9bb0a3}button{background:#173626;color:#bfeccf;border-color:#2fcf6a}}</style></head>
+<body><main><h1>Diagnóstico do simulador</h1>
+<p>Esta página testa se o site está bem configurado. Não mostra nenhuma chave.</p>
+<div id="out"></div><button onclick="run()">Repetir testes</button>
+<script>
+const out=document.getElementById('out'),OK='✅',KO='❌',WA='⚠️';
+async function get(u,o){const r=await fetch(u+(u.includes('?')?'&':'?')+'t='+Date.now(),o||{cache:'no-store'});let b=null,t='';try{t=await r.text();b=JSON.parse(t)}catch(e){}return{r,b,t}}
+async function run(){const L=[],add=(s,t,d)=>{L.push('<div class="row"><b>'+s+' '+t+'</b><div>'+(d||'')+'</div></div>');out.innerHTML=L.join('')};out.innerHTML='A testar…';
+try{const{r,b}=await get('/api/ai');
+ if(r.ok&&b&&b.ok)add(b.chave?OK:KO,'Função /api/ai',b.chave?'Chave da Groq encontrada. Origens permitidas: '+(b.origensPermitidas.length?b.origensPermitidas.join(', '):'(nenhuma definida)')+'. Origem desta página: '+location.origin:'Falta a variável GROQ_API_KEY nos segredos do site (definições do Runable). Depois de a criar, volta a publicar o site.');
+ else add(KO,'Função /api/ai','Não respondeu como esperado (estado '+r.status+'). Confirma que o backend (/api/ai) foi ligado e o site publicado.')}catch(e){add(KO,'Função /api/ai','Sem resposta: '+e.message)}
+try{const{b}=await get('/api/ai?teste=1');
+ if(b&&b.teste)add(OK,'Ligação à Groq','Funciona (modelo '+b.modeloUsado+').');else add(KO,'Ligação à Groq',(b&&b.detalhe)||'Falhou sem detalhe.')}catch(e){add(KO,'Ligação à Groq','Sem resposta: '+e.message)}
+try{const{r,b}=await get('/api/campanhas');
+ if(r.ok&&b&&b.lr)add(OK,'Catálogo partilhado (/api/campanhas)','Ativo, atualizado em '+(b.atualizado||'?')+'.');
+ else if(r.status===404)add(WA,'Catálogo partilhado (/api/campanhas)','Ainda não há catálogo publicado (normal no início). O simulador usa o campanhas.json até publicares campanhas pelo modo administrador (?admin=1).');
+ else if(r.status===503)add(KO,'Catálogo partilhado (/api/campanhas)','Armazenamento não configurado: falta ligar o armazenamento (base de dados do site ou UPSTASH_REDIS_REST_URL e UPSTASH_REDIS_REST_TOKEN).');
+ else add(KO,'Catálogo partilhado (/api/campanhas)','Resposta inesperada (estado '+r.status+').')}catch(e){add(KO,'Catálogo partilhado (/api/campanhas)','Sem resposta: '+e.message)}
+try{const{r,b}=await get('/campanhas.json');
+ if(r.ok&&b&&b.lr)add(OK,'Ficheiro campanhas.json','Encontrado ('+['lr','ln','lc','gr','gn'].reduce((a,k)=>a+(b[k]||[]).length,0)+' campanhas).');else add(KO,'Ficheiro campanhas.json','Não encontrado ou inválido (estado '+r.status+').')}catch(e){add(KO,'Ficheiro campanhas.json','Sem resposta: '+e.message)}
+try{const r=await fetch('/folhas/MCASA264.pdf',{method:'HEAD',cache:'no-store'}),ct=r.headers.get('content-type')||'';
+ if(r.ok&&/pdf/i.test(ct))add(OK,'Folhas de campanha (/folhas)','O PDF de teste abre como PDF.');else add(KO,'Folhas de campanha (/folhas)','O ficheiro folhas/MCASA264.pdf não abre como PDF (estado '+r.status+', tipo '+ct+'). Confirma que a pasta folhas/ foi publicada.')}catch(e){add(KO,'Folhas de campanha (/folhas)','Sem resposta: '+e.message)}
+}
+run();
+</script></main></body></html>
