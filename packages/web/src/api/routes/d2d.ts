@@ -299,6 +299,13 @@ export function d2d(app: Hono) {
     return c.json(result);
   });
 
+  // Superiores (cadeia acima) do utilizador autenticado — destinos possíveis de envio.
+  app.get("/api/d2d/superiores", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    return c.json(await superiorsOf(ctx.employeeId));
+  });
+
   // Caixa de documentos (recebidos / enviados).
   app.get("/api/d2d/caixa", async (c) => {
     const ctx = await resolveCtx(c.req.raw.headers);
@@ -362,6 +369,14 @@ export function d2d(app: Hono) {
       destinatario = await directManagerUserId(ctx.userId);
       if (!destinatario) return c.json({ error: "Sem chefe direto definido." }, 422);
     }
+    // Envio à hierarquia: só podem ir para um superior (nunca para baixo).
+    if (destinatario != null) {
+      if (destinatario === "equipa") return c.json({ error: "O envio para a equipa foi descontinuado. Envia para um superior." }, 422);
+      const sup = await superiorsOf(ctx.employeeId);
+      if (!sup.some((s) => s.id === destinatario)) {
+        return c.json({ error: "Só podes enviar para um superior na tua hierarquia." }, 422);
+      }
+    }
     await db.insert(d2dDocuments).values({
       id,
       userId: ctx.userId,
@@ -403,6 +418,14 @@ export function d2d(app: Hono) {
     }
     return c.json({ ok: true });
   });
+
+  // Apagar uma mensagem da caixa (só a cópia do utilizador autenticado).
+  app.delete("/api/d2d/caixa/:docId", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    await db.delete(d2dMailbox).where(and(eq(d2dMailbox.userId, ctx.userId), eq(d2dMailbox.docId, decodeURIComponent(c.req.param("docId")))));
+    return c.json({ ok: true });
+  });
 }
 
 /* ------------------------------------------------------------
@@ -416,8 +439,11 @@ async function resolveRoleOf(userId: string): Promise<Role | null> {
 
 async function canAccessDoc(ctx: Ctx, ownerUserId: string, portaT: number | null, destinatario: string | null): Promise<boolean> {
   if (ctx.userId === ownerUserId) return true;
-  if (destinatario != null && (destinatario === "equipa" || destinatario === ctx.userId)) return true;
-  // Chefe acima do dono pode ver.
+  if (destinatario != null) {
+    // Envio à hierarquia: além do dono, só o destinatário (ou a equipa) acede.
+    return destinatario === "equipa" || destinatario === ctx.userId;
+  }
+  // Anexo a porta (sem destinatário): chefes acima do dono podem ver.
   if (d2dRole(ctx.role) === "chefe") {
     const { emps, empToUser } = await loadPeople();
     const ownerEmp = [...empToUser.entries()].find(([, u]) => u === ownerUserId)?.[0];
@@ -471,4 +497,23 @@ async function directManagerUserId(userId: string): Promise<string | null> {
   const managerId = emp?.managerId;
   if (managerId == null) return null;
   return empToUser.get(managerId) ?? null;
+}
+
+/** Cadeia de superiores (do chefe direto até ao topo) de um funcionário. */
+async function superiorsOf(employeeId: number | null): Promise<{ id: string; name: string }[]> {
+  if (employeeId == null) return [];
+  const { emps, empToUser } = await loadPeople();
+  const byId = new Map(emps.map((e) => [e.id, e]));
+  const out: { id: string; name: string }[] = [];
+  const seen = new Set<number>();
+  let cur = byId.get(employeeId);
+  while (cur && cur.managerId != null && !seen.has(cur.managerId)) {
+    seen.add(cur.managerId);
+    const manager = byId.get(cur.managerId);
+    if (!manager) break;
+    const uid = empToUser.get(manager.id);
+    if (uid) out.push({ id: uid, name: manager.name });
+    cur = manager;
+  }
+  return out;
 }
