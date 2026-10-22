@@ -355,8 +355,13 @@ export function d2d(app: Hono) {
     if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
     writeFileSync(resolve(UPLOAD_DIR, filename), Buffer.from(await file.arrayBuffer()));
     const portaT = ts(form.get("porta_t"));
-    const destinatario = (form.get("destinatario") as string) || null;
+    let destinatario = (form.get("destinatario") as string) || null;
     const nota = (form.get("nota") as string) || null;
+    // Um comercial envia para "chefe": resolve para o seu chefe direto (ficheiros vão para a caixa dele).
+    if (destinatario === "chefe") {
+      destinatario = await directManagerUserId(ctx.userId);
+      if (!destinatario) return c.json({ error: "Sem chefe direto definido." }, 422);
+    }
     await db.insert(d2dDocuments).values({
       id,
       userId: ctx.userId,
@@ -368,7 +373,7 @@ export function d2d(app: Hono) {
       destinatario,
       nota,
     });
-    // Caixa: anexo de porta → notifica os chefes acima; envio da chefia → destinatários.
+    // Caixa: anexo de porta → notifica os chefes acima; envio → destinatários (equipa, chefe direto ou pessoa).
     await fillMailbox(id, ctx, portaT, destinatario);
     return c.json({ url: `/api/d2d/file/${encodeURIComponent(id)}` }, 201);
   });
@@ -455,4 +460,15 @@ async function teamTargetIds(ctx: Ctx): Promise<string[]> {
   if (ctx.employeeId == null) return [];
   const scope = descendants(ctx.employeeId, emps);
   return scope.map((id) => empToUser.get(id)).filter((x): x is string => x != null);
+}
+
+/** Id do utilizador do chefe direto (responsável na hierarquia) de um utilizador. */
+async function directManagerUserId(userId: string): Promise<string | null> {
+  const { emps, empToUser } = await loadPeople();
+  const myEmp = [...empToUser.entries()].find(([, u]) => u === userId)?.[0];
+  if (myEmp == null) return null;
+  const emp = emps.find((e) => e.id === myEmp);
+  const managerId = emp?.managerId;
+  if (managerId == null) return null;
+  return empToUser.get(managerId) ?? null;
 }
