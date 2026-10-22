@@ -81,6 +81,7 @@ function SalesReports({ month, sellerId, teamId, showPlace = true }: { month: st
           </div>
           <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
             <Stat delay={280} label="Taxa de Robinson" value={pct(d.quality.robinson.rate)} accent="var(--rose)" sub={`${d.quality.robinson.hits} de ${d.quality.robinson.base} sem consentimento`} />
+            <Stat
               delay={320}
               label="Taxa de Chargeback"
               value={pct(d.quality.chargeback.rate)}
