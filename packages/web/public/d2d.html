@@ -117,7 +117,9 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
 
   <section id="v-portas" class="hide">
     <div id="p-ruas">
-      <div class="card"><label for="rua" style="margin-top:0">Nova rua</label><div class="row"><input id="rua" placeholder="Nome da rua"><button class="pri" style="width:auto;margin:0;flex:none" id="btnRua">Abrir</button></div></div>
+      <div class="card hide" id="zonaBar" style="padding:12px"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><b id="zonaNome" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</b><div class="tag" id="zonaSub"></div></div><button class="pri" style="width:auto;margin:0;flex:none" id="btnZona">🔄 Alteração de zona</button></div></div>
+      <div class="card" id="novaRuaCard"><label for="rua" style="margin-top:0">Nova rua</label><div class="row"><input id="rua" placeholder="Nome da rua"><button class="pri" style="width:auto;margin:0;flex:none" id="btnRua">Abrir</button></div></div>
+      <div class="card hide" id="noTurnoCard"><p class="tag" style="margin:0">Inicia o turno para poderes adicionar ruas.</p><button class="pri" id="btnGoTurno" style="margin-top:10px">▶ Iniciar trabalho</button></div>
       <div class="card"><b>Ruas do turno</b><div id="ruas"></div></div>
     </div>
     <div id="p-det" class="hide">
@@ -192,6 +194,12 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
     <label>Ficheiros</label><div id="sDocs"></div><div class="row" style="margin-top:8px"><button id="sAddF">📎 Adicionar ficheiro</button><button id="sAddC">📷 Tirar foto</button></div>
     <button class="pri" id="sSend">Enviar</button>
   </div></div>
+  <div class="modal hide" id="zoneM" role="dialog" aria-modal="true"><div class="sheet">
+    <div class="row" style="align-items:center"><b style="font-size:17px">Alteração de zona</b><button id="zX" style="flex:none" aria-label="Fechar">✕</button></div>
+    <label for="zNome">Nova localidade</label><input id="zNome" placeholder="Ex.: Sintra, Alverca…">
+    <p class="tag">As ruas seguintes ficam nesta localidade. A localidade anterior fica em pausa — podes voltar a ela no mesmo turno.</p>
+    <button class="pri" id="zSave">Alterar zona</button>
+  </div></div>
   <section id="v-hist" class="hide">
     <div class="row" style="margin-bottom:10px"><button class="sb on" id="hTab1">Relatórios</button><button class="sb" id="hTab2">Interessados <span id="hCnt"></span></button></div>
     <div id="h-rel"><button class="pri" id="btnXlsAll" style="margin:0 0 12px">📥 Exportar todo o histórico (Excel)</button><div id="hList"></div><div id="hDet" class="hide"></div></div>
@@ -225,8 +233,13 @@ var USER=Object.assign({id:q.get("id")||"",name:q.get("nome")||"",role:q.get("ro
 window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate()}});
 function emit(tipo,dados){var ev={tipo:tipo,user:USER,hora:Date.now(),dados:dados};try{window.dispatchEvent(new CustomEvent("d2d",{detail:ev}));if(window.parent&&window.parent!==window)window.parent.postMessage({type:"d2d:event",event:ev},"*")}catch(e){}if(CFG.endpoint){try{fetch(CFG.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(ev)})}catch(e){}}}
 var curRua=null,showForm=false;
-function load(){try{var r=localStorage.getItem("d2d");if(r)S=JSON.parse(r)}catch(e){}S.streets=S.streets||[];S.history=S.history||[];ownerCheck()}
+function load(){try{var r=localStorage.getItem("d2d");if(r)S=JSON.parse(r)}catch(e){}S.streets=S.streets||[];S.history=S.history||[];normalizeZonas();ownerCheck()}
 function save(){if(READONLY)return;try{localStorage.setItem("d2d",JSON.stringify(S))}catch(e){}}
+/* Zonas (localidades) do turno: o turno pode passar por várias localidades. */
+function normalizeZonas(){if(!S.shift){return}S.shift.zonas=S.shift.zonas||[{nome:S.shift.zone||"",ruas:(S.streets||[]).slice()}];if(!S.shift.zone)S.shift.zone=S.shift.zonas[0]?S.shift.zonas[0].nome:"";}
+function zonas(){return (S.shift&&S.shift.zonas)||[]}
+function addRuaZona(r){var zs=zonas(),cur=null;for(var i=0;i<zs.length;i++){if(zs[i].nome===S.shift.zone){cur=zs[i];break}}if(!cur){cur={nome:S.shift.zone,ruas:[]};zs.push(cur)}if(cur.ruas.indexOf(r)<0)cur.ruas.push(r)}
+function zonaAtiva(){return !!(S.shift&&!S.shift.end)}
 function toast(m){var t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(function(){t.style.display="none"},4000)}
 function hm(ts){return new Date(ts).toLocaleTimeString("pt-PT",{hour:"2-digit",minute:"2-digit"})}
 function loc(){return new Promise(function(ok){if(!navigator.geolocation)return ok(null);navigator.geolocation.getCurrentPosition(function(p){ok({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)})},function(){ok(null)},{timeout:6000,maximumAge:60000})})}
@@ -254,11 +267,25 @@ function render(){
 function ruasList(){var m={};(S.streets||[]).forEach(function(r){m[r]=1});S.doors.forEach(function(d){m[d.rua]=1});return Object.keys(m)}
 function ruaDoors(r){return S.doors.filter(function(d){return d.rua===r})}
 function ruaReport(r){var D=ruaDoors(r),o="📋 "+r+" – "+D.length+" portas\n";RES.forEach(function(x){var n=D.filter(function(d){return d.res===x[0]}).length;if(n)o+=x[1]+": "+n+"\n"});D.forEach(function(d){o+="\n• Nº "+d.num+" – "+nm(d.res)+(d.cli?" – "+d.cli:"")+(d.tel?" ("+d.tel+")":"")+(d.nota?" – "+d.nota:"")+(d.loc?" – https://maps.google.com/?q="+d.loc.lat+","+d.loc.lng:"")});return o}
+function streetRow(r){var D=ruaDoors(r),b=document.createElement("div");b.className="door";b.style.cursor="pointer";b.innerHTML="<div><b></b><div class='tag'></div></div><span>›</span>";b.querySelector("b").textContent=r;b.querySelector(".tag").textContent=D.length+" portas · "+D.filter(function(d){return d.res==="venda"}).length+" vendas";b.onclick=function(){openRua(r)};return b}
 function renderRuas(){
  $("p-ruas").classList.toggle("hide",!!curRua);$("p-det").classList.toggle("hide",!curRua);$("num").closest(".card").classList.toggle("hide",!showForm);$("btnNova").classList.toggle("hide",showForm);
+ var on=zonaAtiva();
+ $("zonaBar").classList.toggle("hide",!on);$("novaRuaCard").classList.toggle("hide",!on);$("noTurnoCard").classList.toggle("hide",!!on);
+ if(on){var zs=zonas();$("zonaNome").textContent=S.shift.zone||"—";$("zonaSub").textContent=zs.length+" localidad"+(zs.length===1?"e":"es")+" · "+(S.streets||[]).length+" ruas"}
  var box=$("ruas");box.innerHTML="";var L=ruasList();
- if(!L.length)box.innerHTML='<p class="tag">Ainda sem ruas. Adiciona a primeira acima.</p>';
- L.forEach(function(r){var D=ruaDoors(r),b=document.createElement("div");b.className="door";b.style.cursor="pointer";b.innerHTML="<div><b></b><div class='tag'></div></div><span>›</span>";b.querySelector("b").textContent=r;b.querySelector(".tag").textContent=D.length+" portas · "+D.filter(function(d){return d.res==="venda"}).length+" vendas";b.onclick=function(){openRua(r)};box.appendChild(b)});
+ if(!L.length){box.innerHTML='<p class="tag">'+((on)?"Ainda sem ruas. Adiciona a primeira acima.":"Sem turno ativo.")+'</p>'}
+ else if(!on){L.forEach(function(r){box.appendChild(streetRow(r))})}
+ else{var zs=zonas();zs.forEach(function(z){var act=z.nome===S.shift.zone;var zr=z.ruas.filter(function(r){return L.indexOf(r)>=0});
+  var h=document.createElement("div");h.style.cssText="display:flex;align-items:center;gap:6px;margin:8px 0 2px";
+  h.innerHTML="<b style='color:var(--ac);flex:none'>"+esc(z.nome||"Sem zona")+"</b><span class='tag'>"+(act?"Ativa":"⏸ Em pausa")+"</span>"+(act?"":"<button class='x' data-reativar='"+esc(z.nome)+"' style='margin-left:auto'>▶ Reativar</button>");
+  box.appendChild(h);
+  if(!zr.length){var e=document.createElement("div");e.className="tag";e.style.margin="0 0 6px";e.textContent="Sem ruas nesta localidade.";box.appendChild(e)}
+  zr.forEach(function(r){box.appendChild(streetRow(r))});
+  var rb=h.querySelector("[data-reativar]");if(rb)rb.onclick=function(ev){ev.stopPropagation();S.shift.zone=z.nome;save();render();toast("Zona reativada: "+z.nome)};
+ });
+  var used={};zs.forEach(function(z){z.ruas.forEach(function(r){used[r]=1})});L.forEach(function(r){if(!used[r])box.appendChild(streetRow(r))});
+ }
  if(curRua){$("ruaNome").textContent=curRua;$("rtxt").textContent=ruaReport(curRua)}
 }
 function openRua(r){curRua=r;sel=null;showForm=!ruaDoors(r).length;if(showForm){newDoor();getLoc()}var D=ruaDoors(r),n=D.length?parseInt(D[D.length-1].num,10):NaN;$("num").value=isNaN(n)?"":n+2;render();window.scrollTo(0,0)}
@@ -396,7 +423,7 @@ var H_R=["Comercial","Rua","Portas"].concat(RN,["Conversão (%)"]);
 function tables(sess){var Sm=[],P=[],I=[],R=[];
  sess.forEach(function(s){var sh=s.sh||{},c={},rr={};RES.forEach(function(x){c[x[0]]=0});
   s.doors.slice().sort(function(a,b){return a.t-b.t}).forEach(function(d){c[d.res]=(c[d.res]||0)+1;
-   var base={"Data":dstr(d.t),"Hora":hm(d.t),"Comercial":s.who,"Zona":sh.zone||"","Rua":d.rua,"Nº porta":d.num,"Resultado":nm(d.res),"Cliente":d.cli||"","Contacto":d.tel||"","Notas":d.nota||""};
+   var base={"Data":dstr(d.t),"Hora":hm(d.t),"Comercial":s.who,"Zona":d.zona||sh.zone||"","Rua":d.rua,"Nº porta":d.num,"Resultado":nm(d.res),"Cliente":d.cli||"","Contacto":d.tel||"","Notas":d.nota||""};
    P.push(Object.assign({},base,{"Latitude":d.loc?d.loc.lat:"","Longitude":d.loc?d.loc.lng:"","Precisão (m)":d.loc&&d.loc.acc?d.loc.acc:"","Documentos":(d.docs||[]).map(function(x){return x.name}).join(", ")}));
    if(isLead(d))I.push(Object.assign({},base,{"Contactado":d.done?"Sim":"Não"}));
    rr[d.rua]=rr[d.rua]||{};rr[d.rua][d.res]=(rr[d.rua][d.res]||0)+1});
@@ -550,7 +577,7 @@ document.querySelectorAll("nav button").forEach(function(b){b.onclick=function()
 $("btnStart").onclick=async function(){var n=USER.name||"Comercial (teste)",z=$("zona").value.trim();if(!z){toast("Indica a zona de trabalho.");return}
  $("btnStart").disabled=true;$("btnStart").textContent="A obter localização…";
  try{if("Notification"in window&&Notification.permission==="default")await Notification.requestPermission()}catch(e){}
- var p=await loc();curRua=null;S.doors=[];S.streets=[];S.shift={name:n,zone:z,start:Date.now(),end:null,loc:p};save();
+ var p=await loc();curRua=null;S.doors=[];S.streets=[];S.shift={name:n,zone:z,zonas:[{nome:z,ruas:[]}],start:Date.now(),end:null,loc:p};save();
  $("btnStart").disabled=false;$("btnStart").textContent="▶ Iniciar trabalho";
  try{if("Notification"in window&&Notification.permission==="granted")new Notification("Trabalho iniciado",{body:n+" · "+z+" · "+hm(S.shift.start)})}catch(e){}
  toast("✅ Trabalho iniciado às "+hm(S.shift.start)+(p?"":" (sem localização)"));render();
@@ -559,7 +586,11 @@ $("btnStart").onclick=async function(){var n=USER.name||"Comercial (teste)",z=$(
 
 $("btnEnd").onclick=function(){var b=$("btnEnd");if(!b.dataset.c){b.dataset.c=1;b.textContent="Toca outra vez para fechar o dia";setTimeout(function(){delete b.dataset.c;b.textContent="🔒 Fechar dia"},4000);return}
  delete b.dataset.c;b.textContent="🔒 Fechar dia";S.shift.end=Date.now();S.history=S.history||[];S.history.unshift(JSON.parse(JSON.stringify({id:S.shift.start,shift:S.shift,doors:S.doors,streets:S.streets})));save();emit("fim",{shift:S.shift,doors:S.doors,relatorio:report(),resumo:resumo()});render();view("rel");toast(CFG.endpoint&&(OB.length||PDn)?"⚠️ Dia fechado, mas há dados e documentos por enviar. Mantém a app aberta com rede até aparecer ☁️ Sincronizado.":"Dia fechado. Relatório guardado no histórico.")};
-$("btnRua").onclick=function(){var r=$("rua").value.trim();if(!r){toast("Indica o nome da rua.");return}if(!S.shift||S.shift.end){toast("Inicia o turno primeiro.");view("turno");return}S.streets=S.streets||[];if(S.streets.indexOf(r)<0)S.streets.push(r);save();$("rua").value="";openRua(r)};
+$("btnRua").onclick=function(){var r=$("rua").value.trim();if(!r){toast("Indica o nome da rua.");return}if(!S.shift||S.shift.end){toast("Inicia o turno primeiro.");view("turno");return}S.streets=S.streets||[];if(S.streets.indexOf(r)<0){S.streets.push(r);addRuaZona(r)}save();$("rua").value="";openRua(r)};
+$("btnGoTurno").onclick=function(){view("turno")};
+$("btnZona").onclick=function(){if(!S.shift||S.shift.end){toast("Inicia o turno primeiro.");view("turno");return}$("zNome").value="";$("zoneM").classList.remove("hide");$("zNome").focus()};
+$("zX").onclick=function(){$("zoneM").classList.add("hide")};$("zoneM").onclick=function(e){if(e.target===this)$("zoneM").classList.add("hide")};
+$("zSave").onclick=function(){var n=$("zNome").value.trim();if(!n){toast("Indica a nova localidade.");return}if(n.toLowerCase()===((S.shift.zone||"").toLowerCase())){toast("Já estás nessa localidade.");return}S.shift.zone=n;var zs=zonas();var ex=null;for(var i=0;i<zs.length;i++){if(zs[i].nome===n){ex=zs[i];break}}if(!ex)zs.push({nome:n,ruas:[]});save();$("zoneM").classList.add("hide");render();toast("Zona alterada para "+n)};
 $("btnNova").onclick=function(){var D=ruaDoors(curRua),n=D.length?parseInt(D[D.length-1].num,10):NaN;$("num").value=isNaN(n)?"":n+2;sel=null;showForm=true;newDoor();getLoc();render();$("num").focus()};
 $("btnLoc").onclick=getLoc;
 $("btnCancel").onclick=function(){NEWD.forEach(function(m){idbDel(m.id)});NEWD=[];renderNDocs();showForm=false;sel=null;render()};
@@ -567,7 +598,7 @@ $("btnBack").onclick=function(){curRua=null;render()};
 $("btnCopyR").onclick=function(){if(navigator.clipboard)navigator.clipboard.writeText(ruaReport(curRua)).then(function(){toast("Relatório da rua copiado")},function(){toast("Não foi possível copiar")});else toast("Seleciona o texto e copia manualmente")};
 $("btnSave").onclick=async function(){if(!S.shift||S.shift.end){toast("Inicia o turno primeiro.");view("turno");return}
  var rua=curRua,num=$("num").value.trim();if(!rua||!num||!sel){toast("Indica o nº da porta e o resultado.");return}
- var p=curLoc||await loc();S.doors.push({t:NEWT||Date.now(),docs:NEWD,rua:rua,num:num,res:sel,cli:$("cli").value.trim(),tel:$("tel").value.trim(),nota:$("nota").value.trim(),loc:p});save();
+ var p=curLoc||await loc();S.doors.push({t:NEWT||Date.now(),docs:NEWD,rua:rua,num:num,res:sel,cli:$("cli").value.trim(),tel:$("tel").value.trim(),nota:$("nota").value.trim(),loc:p,zona:S.shift.zone});save();
  emit("porta",S.doors[S.doors.length-1]);var n=parseInt(num,10);$("num").value=isNaN(n)?"":n+2;["cli","tel","nota"].forEach(function(i){$(i).value=""});NEWD=[];NEWT=0;renderNDocs();fx(S.doors[S.doors.length-1].res);sel=null;showForm=false;toast("Porta guardada ✔");render()};
 $("btnCopy").onclick=function(){var t=report();if(navigator.clipboard)navigator.clipboard.writeText(t).then(function(){toast("Relatório copiado")},function(){toast("Não foi possível copiar")});else toast("Seleciona o texto e copia manualmente")};
 
