@@ -20,4 +20,5 @@ if (existsSync(volumeDir)) {
   process.env.DATABASE_URL = `file:${bundledDb}`;
 }
 
-import "./__server";
+// Import dinâmico — só depois de DATABASE_URL estar definido
+await import("./__server");
