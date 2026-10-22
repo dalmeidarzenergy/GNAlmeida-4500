@@ -327,10 +327,15 @@ export function d2d(app: Hono) {
         docId: d2dMailbox.docId,
         kind: d2dMailbox.kind,
         fromName: d2dMailbox.fromName,
+        fromUserId: d2dMailbox.fromUserId,
         read: d2dMailbox.read,
         name: d2dDocuments.name,
         type: d2dDocuments.type,
         size: d2dDocuments.size,
+        messageId: d2dDocuments.messageId,
+        nota: d2dDocuments.nota,
+        portaT: d2dDocuments.portaT,
+        docUserId: d2dDocuments.userId,
         createdAt: d2dDocuments.createdAt,
       })
       .from(d2dMailbox)
@@ -340,15 +345,16 @@ export function d2d(app: Hono) {
     return c.json(
       items.map((i) => ({
         id: i.docId,
+        messageId: i.messageId ?? null,
         kind: i.kind,
         name: i.name,
         type: i.type,
         size: i.size,
         t: i.createdAt.getTime(),
         url: `/api/d2d/file/${encodeURIComponent(i.docId)}`,
-        from: { id: "", name: i.fromName ?? "" },
-        nota: "",
-        porta: null,
+        from: { id: i.fromUserId ?? "", name: i.fromName ?? "" },
+        nota: i.nota ?? "",
+        porta: i.portaT != null ? { t: i.portaT, userId: i.docUserId } as const : null,
         read: i.read,
       })),
     );
@@ -375,6 +381,7 @@ export function d2d(app: Hono) {
     const portaT = ts(form.get("porta_t"));
     let destinatario = (form.get("destinatario") as string) || null;
     const nota = (form.get("nota") as string) || null;
+    const messageId = (form.get("message_id") as string) || null;
     // Um comercial envia para "chefe": resolve para o seu chefe direto (ficheiros vão para a caixa dele).
     if (destinatario === "chefe") {
       destinatario = await directManagerUserId(ctx.userId);
@@ -398,6 +405,7 @@ export function d2d(app: Hono) {
       path: filename,
       destinatario,
       nota,
+      messageId,
     });
     // Caixa: anexo de porta → notifica os chefes acima; envio → destinatários (equipa, chefe direto ou pessoa).
     await fillMailbox(id, ctx, portaT, destinatario);

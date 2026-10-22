@@ -371,6 +371,8 @@ export const d2dDocuments = sqliteTable("d2d_documents", {
   /** Destinatário (null = anexo de porta). "equipa" ou um userId. */
   destinatario: text("destinatario"),
   nota: text("nota"),
+  /** Agrupa vários ficheiros enviados juntos numa só mensagem. */
+  messageId: text("message_id"),
   createdAt: createdAt(),
 });
 
