@@ -1,6 +1,10 @@
 #!/bin/bash
 cd /home/diogo_almeida/GNAlmeida-4500
-echo "[auto-update] A vigiar alterações no GitHub..."
+echo "[auto-update] $(date): A iniciar..."
+
+# Arrancar servidor se ainda não estiver a correr
+pgrep -f "start-server" > /dev/null || { echo "[auto-update] A arrancar servidor..."; bun --env-file=.env packages/web/src/start-server.ts & sleep 5; }
+echo "[auto-update] Servidor ativo. A vigiar alterações..."
 
 while true; do
   git fetch origin main 2>/dev/null
