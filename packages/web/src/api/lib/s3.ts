@@ -36,9 +36,23 @@ export async function photoUrl(key: string | null | undefined) {
   return url;
 }
 
-/** Junta `photoUrl` a cada linha que tenha `photoKey`. */
-export async function withPhotos<T extends { photoKey?: string | null }>(rows: T[]) {
-  return Promise.all(rows.map(async (r) => ({ ...r, photoUrl: await photoUrl(r.photoKey) })));
+/** URL local para uma foto de funcionário guardada em public/uploads/employees/. */
+export function localPhotoUrl(key: string | null | undefined) {
+  if (!key) return null;
+  const filename = key.replace("employees/", "");
+  return `/uploads/employees/${encodeURIComponent(filename)}`;
+}
+
+/** Junta `localPhotoUrl` a cada linha que tenha `photoKey`. */
+export function localWithPhotos<T extends { photoKey?: string | null }>(rows: T[]) {
+  return rows.map((r) => ({ ...r, photoUrl: localPhotoUrl(r.photoKey) }));
+}
+
+/** URL local para um PDF de campanha guardado em public/uploads/campaigns/. */
+export function localCampaignPdfUrl(key: string | null | undefined) {
+  if (!key) return null;
+  const filename = key.replace("campaigns/", "");
+  return `/uploads/campaigns/${encodeURIComponent(filename)}`;
 }
 
 /** URL de leitura (1 h) para um ficheiro, aberto no browser com o nome original. */

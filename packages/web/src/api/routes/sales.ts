@@ -16,7 +16,7 @@ import {
 import { adminOnly, salesAccess, salesWrite } from "../middleware/auth";
 import { db } from "../database";
 import { clients, employees, saleStatusHistory, sales as salesTbl, salesTargets, teamMemberships, teams, user } from "../database/schema";
-import { photoUrl } from "../lib/s3";
+import { localPhotoUrl } from "../lib/s3";
 import { activeInMonth } from "../shared/hierarchy";
 
 /** Cliente = só os dados principais: nome, telemóvel, NIF e gestor. */
@@ -438,7 +438,7 @@ export const sales = {
         return {
           sellerId: s.id,
           sellerName: s.name,
-          photoUrl: await photoUrl(s.photoKey),
+          photoUrl: localPhotoUrl(s.photoKey),
           commissionRate: s.commissionRate,
           target: t,
           achieved: total,

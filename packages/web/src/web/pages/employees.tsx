@@ -96,9 +96,12 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
     setUploading(true);
     try {
       const blob = await squareJpeg(file);
-      const { url, key } = await client.hr.employees.photoUpload({ contentType: "image/jpeg" });
-      const r = await fetch(url, { method: "PUT", body: blob, headers: { "Content-Type": "image/jpeg" } });
-      if (!r.ok) throw new Error("Falha ao enviar a foto");
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      const { key } = await client.hr.employees.photoUpload({ content: base64 });
       set("photoKey", key);
       setPreview(URL.createObjectURL(blob));
     } catch (err) {

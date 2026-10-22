@@ -38,9 +38,12 @@ function PdfField({ pdfKey, pdfName, url, onChange }: { pdfKey: string | null; p
     if (file.size > MAX_PDF_MB * 1024 * 1024) return setErr(`O PDF não pode ter mais de ${MAX_PDF_MB} MB.`);
     setBusy(true);
     try {
-      const { key, url: put } = await client.campaigns.pdfUpload();
-      const r = await fetch(put, { method: "PUT", body: file, headers: { "Content-Type": "application/pdf" } });
-      if (!r.ok) throw new Error("Falha ao enviar o PDF.");
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      const { key } = await client.campaigns.pdfUpload({ content: base64 });
       setLocalUrl(URL.createObjectURL(file));
       onChange(key, file.name);
     } catch (e) {

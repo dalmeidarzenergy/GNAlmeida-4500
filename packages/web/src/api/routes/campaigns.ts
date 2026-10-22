@@ -5,14 +5,8 @@ import { adminOnly, salesAccess, salesWrite } from "../middleware/auth";
 import { db } from "../database";
 import { campaigns as tbl } from "../database/schema";
 import { SALE_COUNTED, SERVICE_LABELS } from "../shared/client-forms";
-import { deleteObject, presignPut } from "../lib/s3";
-
-/** URL local para PDFs de campanha guardados em public/uploads/. */
-function localPdfUrl(pdfKey: string | null | undefined) {
-  if (!pdfKey) return null;
-  const filename = pdfKey.replace("campaigns/", "");
-  return `/uploads/campaigns/${encodeURIComponent(filename)}`;
-}
+import { deleteObject, localCampaignPdfUrl } from "../lib/s3";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().optional();
 const input = z.object({
@@ -64,13 +58,19 @@ export const campaigns = {
       })
       .from(tbl)
       .orderBy(tbl.code);
-    return Promise.all(rows.map(async (r) => ({ ...r, pdfUrl: r.pdfKey ? localPdfUrl(r.pdfKey) : null })));
+    return Promise.all(rows.map(async (r) => ({ ...r, pdfUrl: r.pdfKey ? localCampaignPdfUrl(r.pdfKey) : null })));
   }),
-  /** URL assinado para enviar o PDF da campanha diretamente para o armazenamento. */
-  pdfUpload: adminOnly.handler(async () => {
-    const key = `campaigns/${Date.now()}-${crypto.randomUUID()}.pdf`;
-    return { key, url: await presignPut(key, "application/pdf") };
-  }),
+  /** Guarda o PDF da campanha localmente em public/uploads/campaigns/. */
+  pdfUpload: adminOnly
+    .input(z.object({ content: z.string() }))
+    .handler(async ({ input }) => {
+      if (!input.content.startsWith("data:application/pdf;base64,")) throw new ORPCError("BAD_REQUEST", { message: "Formato inválido." });
+      const key = `campaigns/${Date.now()}-${crypto.randomUUID()}.pdf`;
+      const dir = "public/uploads/campaigns";
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(`${dir}/${key.replace("campaigns/", "")}`, Buffer.from(input.content.slice(28), "base64"));
+      return { key };
+    }),
   create: salesWrite.input(input).handler(async ({ input }) => {
     const v = clean(input);
     await assertCodeFree(v.code);

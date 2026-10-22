@@ -4,7 +4,7 @@ import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { authed } from "../middleware/auth";
 import { db } from "../database";
 import { absences, candidates, clients, departments, employees, jobOpenings, sales, saleStatusHistory, salesTargets, teamMemberships, teams } from "../database/schema";
-import { withPhotos } from "../lib/s3";
+import { localWithPhotos } from "../lib/s3";
 import { activeInMonth } from "../shared/hierarchy";
 import { monthWorkdays } from "../shared/workdays";
 import { matchesPlace } from "../shared/concelhos";
@@ -199,7 +199,7 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
     byOldSupplier: [...supMap.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).map((x) => ({ ...x, share: supTotal ? x.count / supTotal : 0 })),
     byTeam: await teamRanking(counted),
     byMonth,
-    bySeller: await withPhotos([...sellerMap.values()].sort((a, b) => b.orders - a.orders)),
+    bySeller: localWithPhotos([...sellerMap.values()].sort((a, b) => b.orders - a.orders)),
     topClients: [...clientMap.values()].sort((a, b) => b.orders - a.orders).slice(0, 8),
     byStatus: Object.entries(statusMap).map(([status, v]) => ({ status, ...v })),
     total,
@@ -313,7 +313,7 @@ async function teamRanking(counted: { sellerId: number | null; date: string }[])
     return { teamId: t.id, teamName: t.name, color: t.color, name: t.leaderName ?? "Sem chefe", photoKey: t.photoKey, memberCount, orders };
   });
   // Só entram equipas com vendas em fornecimento no período.
-  return withPhotos(rows.filter((t) => t.orders > 0).sort((a, b) => b.orders - a.orders || a.teamName.localeCompare(b.teamName)));
+  return localWithPhotos(rows.filter((t) => t.orders > 0).sort((a, b) => b.orders - a.orders || a.teamName.localeCompare(b.teamName)));
 }
 
 /**

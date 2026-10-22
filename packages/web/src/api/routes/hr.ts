@@ -4,7 +4,8 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { authed, hrAccess } from "../middleware/auth";
 import { db } from "../database";
 import { absences, calendars, departments, employees, positions, teamMemberships, teams, userRoles } from "../database/schema";
-import { presignPut, withPhotos } from "../lib/s3";
+import { localWithPhotos } from "../lib/s3";
+import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { ensureTeamCalendar, syncPersonalCalendarTeam } from "./agenda";
 import { canManage } from "../shared/hierarchy";
 import { BONDS, ETTS } from "../shared/bonds";
@@ -330,15 +331,21 @@ export const hr = {
         .leftJoin(positions, eq(positions.id, employees.positionId))
         .where(scope ? inArray(employees.id, scope.length ? scope : [-1]) : undefined)
         .orderBy(employees.name);
-      return withPhotos(rows);
+      return localWithPhotos(rows);
     }),
-    /** URL assinado para enviar a foto do funcionário diretamente para o armazenamento. */
+    /** Envia foto do funcionário — guarda localmente em public/uploads/employees/. */
     photoUpload: hrAccess
-      .input(z.object({ contentType: z.enum(["image/jpeg", "image/png", "image/webp"]) }))
+      .input(z.object({ content: z.string() }))
       .handler(async ({ input }) => {
-        const ext = input.contentType.split("/")[1];
+        const match = input.content.match(/^data:image\/(jpeg|png|webp);base64,/);
+        if (!match) throw new ORPCError("BAD_REQUEST", { message: "Formato de imagem inválido." });
+        const ext = match[1] === "jpeg" ? "jpeg" : match[1];
         const key = `employees/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-        return { key, url: await presignPut(key, input.contentType) };
+        const dir = "public/uploads/employees";
+        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+        const base64 = input.content.slice(match[0].length);
+        writeFileSync(`${dir}/${key.replace("employees/", "")}`, Buffer.from(base64, "base64"));
+        return { key };
       }),
     /** Lista leve (id, nome) para seletores — chefe: só a sua equipa; gestor comercial: só ele próprio. */
     options: authed.handler(async ({ context }) => {
@@ -417,8 +424,8 @@ export const hr = {
       const history = all
         .map(({ photoKey: _p, ...m }) => m)
         .sort((a, b) => b.startDate.localeCompare(a.startDate) || a.name.localeCompare(b.name));
-      const withUrls = await withPhotos(members);
-      const leaders = await withPhotos(rows.map((r) => ({ ...r, photoKey: r.leaderPhotoKey })));
+      const withUrls = await localWithPhotos(members);
+      const leaders = localWithPhotos(rows.map((r) => ({ ...r, photoKey: r.leaderPhotoKey })));
       return leaders.map(({ photoUrl, leaderPhotoKey: _k, photoKey: _p, ...t }) => ({
         ...t,
         leaderPhotoUrl: photoUrl,
