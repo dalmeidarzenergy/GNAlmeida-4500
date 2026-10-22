@@ -141,12 +141,13 @@ export default function SalesPage() {
           <>
             <div className="overflow-x-auto">
             <table className="tbl">
-              <thead><tr>{isAdmin && <th className="w-10"><SelectAllBox label="Selecionar todas as vendas" checked={sel.all} indeterminate={sel.some} onChange={sel.toggleAll} /></th>}<th>Nº</th><th>Data</th><th>Cliente</th><th>Serviço</th><th>Vendedor</th><th>Estado da venda</th><th aria-label="Ações" /></tr></thead>
+              <thead><tr>{isAdmin && <th className="w-10"><SelectAllBox label="Selecionar todas as vendas" checked={sel.all} indeterminate={sel.some} onChange={sel.toggleAll} /></th>}<th>Nº</th><th>Nº Contrato</th><th>Data</th><th>Cliente</th><th>Serviço</th><th>Vendedor</th><th>Estado da venda</th><th aria-label="Ações" /></tr></thead>
               <tbody>
                 {paged.map((o) => (
                   <tr key={o.id} className={sel.has(o.id) ? "bg-volt/5" : undefined}>
                     {isAdmin && <td className="w-10"><RowBox label={`Selecionar ${o.number}`} checked={sel.has(o.id)} onChange={() => sel.toggle(o.id)} /></td>}
                     <td className="num text-[12.5px] text-ink-2">{o.number}</td>
+                    <td className="num text-[12.5px] text-ink-2">{typeof o.details?.contractNumber === "string" && o.details.contractNumber ? o.details.contractNumber : "—"}</td>
                     <td className="num whitespace-nowrap text-[12.5px]">{fmtDate(o.date)}</td>
                     <td><div className="font-medium">{o.clientName}</div>{o.clientNif && <div className="num text-[11px] text-ink-3">{o.clientNif}</div>}</td>
                     <td className="text-[12.5px] text-ink-2">{[o.supplier, o.service].filter(Boolean).join(" · ") || "—"}</td>

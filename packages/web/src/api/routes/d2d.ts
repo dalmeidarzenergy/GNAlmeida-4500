@@ -112,6 +112,7 @@ async function doorJson(d: typeof d2dDoors.$inferSelect): Promise<Record<string,
     t: d.t,
     rua: d.rua,
     num: d.num,
+    zona: d.zona ?? "",
     res: d.res,
     cli: d.cli ?? "",
     tel: d.tel ?? "",
@@ -185,6 +186,7 @@ async function applyEvent(userId: string, employeeId: number | null, tipo: strin
       t,
       rua: typeof d.rua === "string" ? d.rua : "",
       num: String(d.num ?? ""),
+      zona: typeof d.zona === "string" ? d.zona : null,
       res: RES_CODES.includes(d.res as ResCode) ? (d.res as ResCode) : "ausente",
       cli: typeof d.cli === "string" ? d.cli : null,
       tel: typeof d.tel === "string" ? d.tel : null,
@@ -202,6 +204,7 @@ async function applyEvent(userId: string, employeeId: number | null, tipo: strin
       .set({
         rua: typeof d.rua === "string" ? d.rua : undefined,
         num: d.num != null ? String(d.num) : undefined,
+        zona: typeof d.zona === "string" ? d.zona : undefined,
         res: RES_CODES.includes(d.res as ResCode) ? (d.res as ResCode) : undefined,
         cli: typeof d.cli === "string" ? d.cli : undefined,
         tel: typeof d.tel === "string" ? d.tel : undefined,
@@ -360,6 +363,8 @@ export function d2d(app: Hono) {
         size: d2dDocuments.size,
         messageId: d2dDocuments.messageId,
         nota: d2dDocuments.nota,
+        cli: d2dDocuments.cli,
+        nif: d2dDocuments.nif,
         portaT: d2dDocuments.portaT,
         docUserId: d2dDocuments.userId,
         createdAt: d2dDocuments.createdAt,
@@ -380,6 +385,8 @@ export function d2d(app: Hono) {
         url: `/api/d2d/file/${encodeURIComponent(i.docId)}`,
         from: { id: i.fromUserId ?? "", name: i.fromName ?? "" },
         nota: i.nota ?? "",
+        cli: i.cli ?? "",
+        nif: i.nif ?? "",
         porta: i.portaT != null ? { t: i.portaT, userId: i.docUserId } as const : null,
         read: i.read,
       })),
@@ -407,6 +414,8 @@ export function d2d(app: Hono) {
     const portaT = ts(form.get("porta_t"));
     let destinatario = (form.get("destinatario") as string) || null;
     const nota = (form.get("nota") as string) || null;
+    const cli = (form.get("cli") as string) || null;
+    const nif = (form.get("nif") as string) || null;
     const messageId = (form.get("message_id") as string) || null;
     // Um comercial envia para "chefe": resolve para o seu chefe direto (ficheiros vão para a caixa dele).
     if (destinatario === "chefe") {
@@ -431,6 +440,8 @@ export function d2d(app: Hono) {
       path: filename,
       destinatario,
       nota,
+      cli,
+      nif,
       messageId,
     });
     // Caixa: anexo de porta → notifica os chefes acima; envio → destinatários (equipa, chefe direto ou pessoa).

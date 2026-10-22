@@ -61,14 +61,36 @@ export const SALE_STATUS = [
 export const SALE_COUNTED = ["Em Fornecimento"];
 export const DEFAULT_SALE_STATUS = "Prospeção";
 
+/** Comercializadores de eletricidade (mercado livre/regulado) para o campo "Antigo Comercializador". */
 const OLD_SUPPLIERS = [
-  "EDP Comercial", "SU Eletricidade", "Endesa", "Galp", "Goldenergy", "MEO Energia", "Repsol", "Luzboa", "Coopérnico", "G9 Energy", "Ylce", "Plenitude", "Muon",
+  "EDP Comercial",
+  "SU Eletricidade",
+  "Endesa",
+  "Galp",
+  "Goldenergy",
+  "Iberdrola",
+  "Repsol",
+  "Plenitude",
+  "Naturgy",
+  "MEO Energia",
+  "Luzboa",
+  "Coopérnico",
+  "G9 Energy",
+  "Ylce",
+  "Muon",
+  "Acciona Energía",
+  "Audax Renovables",
+  "Axpo Iberia",
+  "Elergone",
+  "Ezuenergia",
+  "Alfa Energia",
+  "Ibelectra",
 ];
 
 export const SALE_FORMS: Record<string, FieldDef[]> = {
   LUZ: [
     { key: "contractNumber", label: "Número de Contrato", kind: "text" },
-    { key: "oldSupplier", label: "Antigo Comercializador", kind: "text", suggestions: OLD_SUPPLIERS },
+    { key: "oldSupplier", label: "Antigo Comercializador", kind: "select", options: OLD_SUPPLIERS },
     { key: "name", label: "Nome do Cliente", kind: "text", required: true, full: true },
     { key: "nif", label: "NIF", kind: "text", required: true, pattern: "\\d{9}", patternHint: "9 dígitos" },
     { key: "contact", label: "Contacto", kind: "tel", required: true },
@@ -91,8 +113,19 @@ export const SALE_FORMS: Record<string, FieldDef[]> = {
   ],
 };
 
+/** Comercializadores de gás natural para os campos "Antigo Comercializador" (GÁS/DUAL). */
 const OLD_GAS_SUPPLIERS = [
-  "Galp", "EDP Comercial", "Goldenergy", "Endesa", "Repsol", "Plenitude", "Naturgy", "Ylce", "Comercializador de Último Recurso",
+  "Galp",
+  "EDP Comercial",
+  "Goldenergy",
+  "Endesa",
+  "Repsol",
+  "Plenitude",
+  "Naturgy",
+  "Iberdrola",
+  "Ylce",
+  "Dourogás",
+  "Comercializador de Último Recurso",
 ];
 
 export const GAS_PRESSURE = ["BP"];
@@ -106,7 +139,7 @@ const GAS_FIELDS: FieldDef[] = [
   { key: "gasPressure", label: "Nível de Pressão", kind: "select", options: GAS_PRESSURE, default: "BP" },
   { key: "cui", label: "CUI", kind: "text", required: true, pattern: "PT\\d{16}[A-Z]{2}", patternHint: "PT + 16 dígitos + 2 letras", placeholder: "PT1600000000000000XX" },
   { key: "gasTier", label: "Escalão", kind: "select", options: GAS_TIERS },
-  { key: "gasDistributor", label: "Distribuidor", kind: "text", suggestions: GAS_DISTRIBUTORS },
+  { key: "gasDistributor", label: "Distribuidor", kind: "select", options: GAS_DISTRIBUTORS },
 ];
 
 /** GÁS: campos da LUZ, com CPE / Nível de Tensão / Potência substituídos pelos campos do gás. */
@@ -114,7 +147,7 @@ SALE_FORMS["GÁS"] = SALE_FORMS.LUZ.flatMap((f): FieldDef[] => {
   if (f.key === "cpe") return GAS_FIELDS;
   if (f.key === "voltageLevel" || f.key === "power") return [];
   if (f.key === "pel") return [{ key: "mgi", label: "MGI", kind: "yesno" }];
-  if (f.key === "oldSupplier") return [{ key: f.key, label: f.label, kind: "text", suggestions: OLD_GAS_SUPPLIERS }];
+  if (f.key === "oldSupplier") return [{ key: f.key, label: f.label, kind: "select", options: OLD_GAS_SUPPLIERS }];
   return [f];
 });
 
@@ -136,7 +169,7 @@ SALE_FORMS.DUAL = SALE_FORMS.LUZ.flatMap((f): FieldDef[] => {
   if (f.key === "oldSupplier") {
     return [
       { ...f, label: "Antigo Comercializador Luz" },
-      { key: "oldSupplierGas", label: "Antigo Comercializador Gás", kind: "text", suggestions: OLD_GAS_SUPPLIERS },
+      { key: "oldSupplierGas", label: "Antigo Comercializador Gás", kind: "select", options: OLD_GAS_SUPPLIERS },
     ];
   }
   return [f];

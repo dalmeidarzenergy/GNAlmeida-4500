@@ -312,6 +312,8 @@ export const d2dDoors = sqliteTable("d2d_doors", {
   t: integer("t").notNull(),
   rua: text("rua").notNull(),
   num: text("num").notNull(),
+  /** Zona (localidade) onde a porta foi batida — pode diferir da zona inicial do turno. */
+  zona: text("zona"),
   res: text("res").notNull(),
   cli: text("cli"),
   tel: text("tel"),
@@ -382,6 +384,10 @@ export const d2dDocuments = sqliteTable("d2d_documents", {
   /** Destinatário (null = anexo de porta). "equipa" ou um userId. */
   destinatario: text("destinatario"),
   nota: text("nota"),
+  /** Nome do cliente (opcional) numa mensagem enviada. */
+  cli: text("cli"),
+  /** NIF do cliente (opcional) numa mensagem enviada. */
+  nif: text("nif"),
   /** Agrupa vários ficheiros enviados juntos numa só mensagem. */
   messageId: text("message_id"),
   createdAt: createdAt(),
