@@ -12,7 +12,11 @@
     "extra": {
       "apiUrl": "https://rzenerg-ak5tvb9-preview-4200.runable.site/",
       "applicationId": "rzenerg-ak5tvb9",
-      "runableAuthIssuer": "https://api.runable.com/api/auth"
+      "runableAuthIssuer": "https://api.runable.com/api/auth",
+      "router": {},
+      "eas": {
+        "projectId": "163d15fb-70cc-4af5-9f3b-9c2cd52e20ff"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.gnalmeida_x7k2.runable",
@@ -36,6 +40,7 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "owner": "dalmeida22"
   }
 }

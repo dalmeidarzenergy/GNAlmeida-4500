@@ -16,8 +16,8 @@ const hits = new Map();
 const limited = ip => { const now = Date.now(), w = (hits.get(ip) || []).filter(t => now - t < 600000); w.push(now); hits.set(ip, w); return w.length > 30; };
 
 export async function handle(req, env = (typeof process !== 'undefined' ? process.env : {})) {
-  const TEXT = uniq([env.GROQ_MODEL, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant']);
-  const VISION = uniq([env.GROQ_VISION_MODEL, 'meta-llama/llama-4-scout-17b-16e-instruct', 'meta-llama/llama-4-maverick-17b-128e-instruct']);
+  const TEXT = uniq([env.GROQ_MODEL, 'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b']);
+  const VISION = uniq([env.GROQ_VISION_MODEL, 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b']);
   const ORIGINS = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim().replace(/\/$/, '')).filter(Boolean);
   const origin = (req.headers.get('origin') || '').replace(/\/$/, '');
   const cors = { vary: 'Origin', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'Content-Type' };
@@ -59,7 +59,7 @@ export async function handle(req, env = (typeof process !== 'undefined' ? proces
     const info = { ok: true, fornecedor: 'Groq', chave: !!env.GROQ_API_KEY, modelosTexto: TEXT, modelosImagem: VISION, origensPermitidas: ORIGINS };
     if (new URL(req.url).searchParams.get('teste')) {
       if (!info.chave) return J(200, { ...info, teste: false, detalhe: 'Falta a variável GROQ_API_KEY (e reiniciar/publicar de novo depois de a criar)' });
-      try { const { r, j, used } = await ask('Responde apenas com o JSON {"ok":true}', false, 30);
+      try { const { r, j, used } = await ask('Responde apenas com o JSON {"ok":true}', false, 300);
         return J(200, { ...info, teste: r.ok, modeloUsado: used, detalhe: r.ok ? 'Ligação à Groq OK' : detalhe(r, j) });
       } catch (e) { return J(200, { ...info, teste: false, detalhe: String(e && e.message || e).slice(0, 200) }); }
     }
@@ -80,7 +80,7 @@ export async function handle(req, env = (typeof process !== 'undefined' ? proces
       if (!m || m[2].length > 4000000) return J(400, { error: 'imagem inválida' });
       imgs.push({ type: 'image_url', image_url: { url: d } });
     }
-    const { r, j } = await ask(imgs.length ? [{ type: 'text', text: prompt }, ...imgs] : prompt, imgs.length > 0, 2000);
+    const { r, j } = await ask(imgs.length ? [{ type: 'text', text: prompt }, ...imgs] : prompt, imgs.length > 0, 4000);
     if (!r.ok) return J(502, { error: 'erro do serviço de IA', detalhe: detalhe(r, j) });
     const txt = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
     const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
