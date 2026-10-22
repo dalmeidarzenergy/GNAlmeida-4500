@@ -167,6 +167,8 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
   });
   const sellerMap = new Map<string, { name: string; photoKey: string | null; total: number; orders: number }>();
   const clientMap = new Map<number, { name: string; total: number; orders: number }>();
+  const districtMap = new Map<string, number>();
+  const concelhoMap = new Map<string, number>();
   for (const r of counted) {
     const sk = r.sellerName ?? "Sem vendedor";
     const s = sellerMap.get(sk) ?? { name: sk, photoKey: r.sellerPhoto, total: 0, orders: 0 };
@@ -177,6 +179,8 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
     c.total += r.total;
     c.orders++;
     clientMap.set(r.clientId, c);
+    districtMap.set(r.district?.trim() || "Sem distrito", (districtMap.get(r.district?.trim() || "Sem distrito") ?? 0) + 1);
+    concelhoMap.set(r.municipality?.trim() || "Sem concelho", (concelhoMap.get(r.municipality?.trim() || "Sem concelho") ?? 0) + 1);
   }
   const statusMap: Record<string, { count: number; total: number }> = {};
   for (const r of rows) {
@@ -204,6 +208,8 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
     byMonth,
     bySeller: localWithPhotos([...sellerMap.values()].sort((a, b) => b.orders - a.orders)),
     topClients: [...clientMap.values()].sort((a, b) => b.orders - a.orders).slice(0, 8),
+    byDistrict: [...districtMap.entries()].map(([name, orders]) => ({ name, orders })).sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name)),
+    byConcelho: [...concelhoMap.entries()].map(([name, orders]) => ({ name, orders })).sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name)),
     byStatus: Object.entries(statusMap).map(([status, v]) => ({ status, ...v })),
     total,
     orders: counted.length,
@@ -607,6 +613,8 @@ export const reports = {
         sellers: period.bySeller,
         suppliers: period.byOldSupplier,
         statuses: period.byStatus,
+        districts: period.byDistrict,
+        concelhos: period.byConcelho,
       };
     }),
 };
