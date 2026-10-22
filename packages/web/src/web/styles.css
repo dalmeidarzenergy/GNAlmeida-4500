@@ -63,6 +63,8 @@
   input, select, textarea, button { font: inherit; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 2px solid var(--bg); }
+  /* Remove platform-injected Runable badge */
+  [data-runable-badge] { display: none !important; }
 }
 
 @layer components {

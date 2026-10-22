@@ -13,6 +13,7 @@
 :root{--bg:#0b0d0c;--card:#121615;--tx:#f1f4ee;--mu:#8b9590;--bd:#222a27;--ac:#c6f432;--act:#0b0d0c;--ok:#3ddc97;--wa:#f5a524;--no:#f26d6d;--inp:#1b2231;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:dark}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0d0c;--card:#121615;--tx:#f1f4ee;--mu:#8b9590;--bd:#222a27;--ac:#c6f432;--act:#0b0d0c;--ok:#3ddc97;--wa:#f5a524;--no:#f26d6d;--inp:#1b2231;color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#0b0d0c;--card:#121615;--tx:#f1f4ee;--mu:#8b9590;--bd:#222a27;--ac:#c6f432;--act:#0b0d0c;--ok:#3ddc97;--wa:#f5a524;--no:#f26d6d;--inp:#1b2231;color-scheme:dark}
+:root[data-theme="light"]{--bg:#f9faf8;--card:#ffffff;--tx:#1a1e1b;--mu:#5f6862;--bd:#d9dcd8;--ac:#85a020;--act:#ffffff;--ok:#16a34a;--wa:#c88a16;--no:#dc2626;--inp:#f2f3f1;color-scheme:light}
 *{box-sizing:border-box}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);background-image:linear-gradient(rgba(198,244,50,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(198,244,50,.035) 1px,transparent 1px);background-size:40px 40px;background-attachment:fixed;color:var(--tx);font:16px/1.4 Outfit,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -255,7 +256,7 @@ $("gSave").onclick=async function(){var p=parseInt($("gPortas").value,10),v=pars
  var b=this;b.disabled=true;try{var r=await api("/meta",{method:"POST",body:JSON.stringify({employeeId:GOAL.employeeId,portas:p,vendas:v})});if(r.ok){$("goalM").classList.add("hide");await loadTeam();toast("Meta de "+GOAL.name+" atualizada ✔")}else if(r.status===401||r.status===403){toast("Sem permissão para alterar esta meta.")}else if(r.status===422){toast("Não podes definir a meta dessa pessoa.")}else{toast("Não foi possível guardar a meta.")}}catch(e){toast("Sem ligação.")}b.disabled=false};
 var q=new URLSearchParams(location.search);
 var USER=Object.assign({id:q.get("id")||"",name:q.get("nome")||"",role:q.get("role")||""},CFG.user||{});var ISLEAD=USER.role==="chefe";
-window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate();loadMeta()}});
+window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate();loadMeta()}if(d&&d.type==="theme"&&d.theme){document.documentElement.setAttribute("data-theme",d.theme)}});
 function emit(tipo,dados){var ev={tipo:tipo,user:USER,hora:Date.now(),dados:dados};try{window.dispatchEvent(new CustomEvent("d2d",{detail:ev}));if(window.parent&&window.parent!==window)window.parent.postMessage({type:"d2d:event",event:ev},"*")}catch(e){}if(CFG.endpoint){try{fetch(CFG.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(ev)})}catch(e){}}}
 var curRua=null,showForm=false;
 function load(){try{var r=localStorage.getItem("d2d");if(r)S=JSON.parse(r)}catch(e){}S.streets=S.streets||[];S.history=S.history||[];normalizeZonas();ownerCheck()}

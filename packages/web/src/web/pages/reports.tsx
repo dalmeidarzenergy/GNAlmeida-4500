@@ -93,6 +93,13 @@ function SalesReports({ month, sellerId, teamId, showPlace = true }: { month: st
               }
             />
             <Stat delay={360} label="Taxa de Baixas" value={pct(d.quality.baixas.rate)} accent="var(--danger)" sub={`${d.quality.baixas.hits} de ${d.quality.baixas.base} vendas registadas passaram a Baixa`} />
+            <Stat
+              delay={400}
+              label="Taxa de Anulados"
+              value={pct((d.byStatus.find((s) => s.status === "Anulado")?.count ?? 0) / (d.byStatus.reduce((a, x) => a + x.count, 0) || 1))}
+              accent="var(--danger)"
+              sub={`${d.byStatus.find((s) => s.status === "Anulado")?.count ?? 0} de ${d.byStatus.reduce((a, x) => a + x.count, 0)} vendas registadas`}
+            />
           </div>
           <div className="grid gap-4 xl:grid-cols-[1.6fr_1fr]">
             <Panel eyebrow="Evolução" title="Vendas em fornecimento por mês"><TrendChart data={d.byMonth} dataKey="orders" money={false} height={280} /></Panel>

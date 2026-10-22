@@ -30,6 +30,18 @@ export default function SimuladorPage() {
     return () => clearTimeout(t);
   }, [me]);
 
+  // Envia tema inicial e escuta mudanças
+  useEffect(() => {
+    const sendTheme = () => {
+      const theme = document.documentElement.getAttribute("data-theme") || "dark";
+      iframeRef.current?.contentWindow?.postMessage({ type: "theme", theme }, location.origin);
+    };
+    sendTheme();
+    const observer = new MutationObserver(sendTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="-mx-5 -my-8 h-[100dvh] lg:-mx-8">
       <iframe

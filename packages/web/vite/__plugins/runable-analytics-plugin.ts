@@ -22,6 +22,11 @@ export default function runableAnalyticsPlugin(): Plugin {
       if (hostname === "localhost") {
         script.dataset.debug = hostname;
       }
+
+      // Hide the Runable badge (created by runable.js at runtime)
+      const style = doc.createElement("style");
+      style.textContent = "[data-runable-badge]{display:none!important}";
+      head.appendChild(style);
       head.appendChild(script);
 
       return dom.serialize();

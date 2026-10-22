@@ -368,7 +368,7 @@ var RZ_USER=null;
 function saveCom(){try{localStorage.setItem('rz_com',JSON.stringify({n:$('cnome').value,t:$('ctel').value,e:$('cmail').value,employeeId:(RZ_USER&&RZ_USER.employeeId)||''}))}catch(e){}}
 var IS_IFRAME=false;try{IS_IFRAME=window.self!==window.top}catch(e){IS_IFRAME=true}
 if(!IS_IFRAME){try{const c=JSON.parse(localStorage.getItem('rz_com')||'{}');if(c&&c.n)$('cnome').value=c.n;if(c&&c.t)$('ctel').value=c.t;if(c&&c.e)$('cmail').value=c.e}catch(e){}}
-window.addEventListener('message',function(ev){if(!ev.data||ev.data.type!=='rz-user')return;var u=ev.data.user||{};RZ_USER=u;$('cnome').value=u.name||'';$('ctel').value=u.phone||'';$('cmail').value=u.email||'';saveCom()});
+window.addEventListener('message',function(ev){if(!ev.data)return;if(ev.data.type==='rz-user'){var u=ev.data.user||{};RZ_USER=u;$('cnome').value=u.name||'';$('ctel').value=u.phone||'';$('cmail').value=u.email||'';saveCom()}if(ev.data.type==='theme'&&ev.data.theme)document.documentElement.setAttribute('data-theme',ev.data.theme)});
 ['cnome','ctel','cmail'].forEach(i=>$(i).addEventListener('input',saveCom));
 loadCatalog();
 $('lkm').addEventListener('input',()=>{LINKTXT=$('lkm').value;LINKMAP=parseMap(LINKTXT);try{localStorage.setItem('rz_linkmap',LINKTXT)}catch(e){}updLk();run()});

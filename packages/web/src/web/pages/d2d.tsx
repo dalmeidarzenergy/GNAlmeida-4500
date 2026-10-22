@@ -24,12 +24,27 @@ export default function D2DPage() {
       endpoint: "/api/d2d",
       user: { id: user.id, name: user.name || user.email || "", role },
     };
-    const send = () => iframe.contentWindow?.postMessage(payload, "*");
+    const send = () => {
+      iframe.contentWindow?.postMessage(payload, "*");
+      // sync theme
+      const theme = localStorage.getItem("theme") || "dark";
+      iframe.contentWindow?.postMessage({ type: "theme", theme }, "*");
+    };
     iframe.addEventListener("load", send);
     // No caso de o iframe já ter carregado quando o `me` chegar, envia já.
     send();
     return () => iframe.removeEventListener("load", send);
   }, [user]);
+
+  // Escuta mudanças de tema e propaga ao iframe
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const theme = document.documentElement.getAttribute("data-theme") || "dark";
+      ref.current?.contentWindow?.postMessage({ type: "theme", theme }, "*");
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   if (user === undefined) {
     return (
