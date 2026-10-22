@@ -1,13 +1,14 @@
+const path = require("path");
 const ports = require("./__ports.cjs");
 
 module.exports = {
   apps: [
     {
       name: "web-app",
-      cwd: __dirname,
-      script: "packages/web/src/__server.ts",
+      cwd: path.join(__dirname, "packages/web"),
+      script: "src/__server.ts",
       interpreter: "bun",
-      interpreter_args: ["--env-file=.env"],
+      interpreter_args: ["--env-file=../.env"],
       exec_mode: "fork",
       instances: 1,
       autorestart: true,
