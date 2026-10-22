@@ -593,13 +593,13 @@ async function superiorsOf(employeeId: number | null): Promise<{ id: string; nam
   return out;
 }
 
-/** Subordinados diretos (um nível abaixo) de um utilizador. */
+/** Todos os subordinados (recursivo, toda a cadeia abaixo) de um utilizador. */
 async function subordinatesOf(ctx: Ctx): Promise<{ id: string; name: string }[]> {
   if (ctx.employeeId == null) return [];
   const { emps, empToUser } = await loadPeople();
-  const directReports = emps.filter((e) => e.managerId === ctx.employeeId && e.status !== "inativo");
-  return directReports
-    .map((e) => ({ id: empToUser.get(e.id) ?? "", name: e.name }))
+  const scope = descendants(ctx.employeeId, emps);
+  return scope
+    .map((eid) => ({ id: empToUser.get(eid) ?? "", name: emps.find((e) => e.id === eid)?.name ?? "" }))
     .filter((x) => x.id);
 }
 

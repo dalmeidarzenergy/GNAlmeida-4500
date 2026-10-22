@@ -111,7 +111,7 @@ const SUPPLIER_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
 
 function normalizeSupplier(v: string | null) {
   const raw = (v ?? "").trim();
-  if (!raw) return "Não indicado";
+  if (!raw) return "Entrada Direta";
   const k = raw.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   for (const [re, name] of SUPPLIER_ALIASES) if (re.test(k)) return name;
   return raw;
