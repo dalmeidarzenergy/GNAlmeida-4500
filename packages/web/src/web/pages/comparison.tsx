@@ -53,8 +53,6 @@ function MetricTable({ periods, labels }: { periods: MonthSummary[]; labels: str
   const rows: { label: string; get: (s: MonthSummary) => number | null; fmt: (v: number | null) => string }[] = [
     { label: "Em Fornecimento", get: (s) => s.orders, fmt: (v) => (v == null ? "—" : String(v)) },
     { label: "Vendas registadas", get: (s) => s.registered, fmt: (v) => (v == null ? "—" : String(v)) },
-    { label: "Faturação", get: (s) => s.total, fmt: (v) => (v == null ? "—" : fmtEur(v)) },
-    { label: "Ticket médio", get: (s) => s.avgTicket, fmt: (v) => (v == null ? "—" : fmtEur(v)) },
     { label: "Taxa de sucesso", get: (s) => s.success, fmt: pct },
     { label: "Taxa de DDC", get: (s) => s.quality.ddc.rate, fmt: pct },
     { label: "Taxa de FE", get: (s) => s.quality.fe.rate, fmt: pct },
@@ -114,13 +112,8 @@ function MonthsView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"
                 <div className="num text-[30px] font-semibold text-volt">{p.orders}</div>
                 <div className="label-mono">em fornec.</div>
               </div>
-              <div className="pb-0.5">
-                <div className="num text-[16px] font-semibold">{fmtEur(p.total)}</div>
-                <div className="label-mono">faturação</div>
-              </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2 text-[12px] text-ink-2">
-              <div className="rounded-lg bg-surface-2 px-3 py-2">Ticket médio <span className="num float-right text-ink">{fmtEur(p.avgTicket)}</span></div>
+            <div className="mt-4 grid grid-cols-1 gap-2 text-[12px] text-ink-2">
               <div className="rounded-lg bg-surface-2 px-3 py-2">Sucesso <span className="num float-right text-ink">{pct(p.success)}</span></div>
             </div>
           </div>
@@ -160,11 +153,10 @@ function YearsView({ d }: { d: NonNullable<ReturnType<typeof useCompare>["data"]
   });
   return (
     <>
-      <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat label={`Vendas · ${current.year}`} value={current.orders} accent="var(--volt)" sub={`${fmtEur(current.total)}`} />
-        <Stat delay={40} label={`Vendas · ${previous.year}`} value={previous.orders} accent="var(--sky)" sub={`${fmtEur(previous.total)}`} />
+      <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-3">
+        <Stat label={`Vendas · ${current.year}`} value={current.orders} accent="var(--volt)" />
+        <Stat delay={40} label={`Vendas · ${previous.year}`} value={previous.orders} accent="var(--sky)" />
         <Stat delay={80} label="Δ em fornecimento" value={<Delta v={delta(current.orders, previous.orders)} />} sub={`${current.year} vs ${previous.year}`} />
-        <Stat delay={120} label="Δ faturação" value={<Delta v={delta(current.total, previous.total)} />} sub={`${fmtEur(current.total)} vs ${fmtEur(previous.total)}`} />
       </div>
       <div className="card rise mb-4 p-5">
         <div className="label-mono mb-1">Ano a ano</div>
@@ -333,7 +325,7 @@ export default function ComparisonPage() {
           <ServiceFilter value={services} onChange={setServices} />
         </div>
         {d && (
-          <button className="btn btn-ghost" onClick={() => downloadCsv(`comparativo-${dim}-${month}.csv`, dim === "anos" ? [["Mês", `${d.years.current.year}`, `${d.years.previous.year}`], ...d.years.current.byMonth.map((m, i) => [fmtMonth(m.month, true), m.orders, d.years.previous.byMonth[i]?.orders ?? 0])] : dim === "equipas" ? [["Equipa", "Vendas", "Elementos"], ...d.teams.map((t) => [t.teamName, t.orders, t.memberCount])] : dim === "vendedores" ? [["Vendedor", "Vendas", "Faturação"], ...d.sellers.map((s) => [s.name, s.orders, s.total])] : dim === "comercializador" ? [["Comercializador", "Vendas", "%"], ...d.suppliers.map((s) => [s.name, s.count, Math.round(s.share * 100)])] : [["Métrica", "Mês", "Mês anterior", "Homólogo"], ["Em Fornecimento", d.months.ref.orders, d.months.prev.orders, d.months.lastYear.orders], ["Faturação", d.months.ref.total, d.months.prev.total, d.months.lastYear.total]])}>
+          <button className="btn btn-ghost" onClick={() => downloadCsv(`comparativo-${dim}-${month}.csv`, dim === "anos" ? [["Mês", `${d.years.current.year}`, `${d.years.previous.year}`], ...d.years.current.byMonth.map((m, i) => [fmtMonth(m.month, true), m.orders, d.years.previous.byMonth[i]?.orders ?? 0])] : dim === "equipas" ? [["Equipa", "Vendas", "Elementos"], ...d.teams.map((t) => [t.teamName, t.orders, t.memberCount])] : dim === "vendedores" ? [["Vendedor", "Vendas", "Faturação"], ...d.sellers.map((s) => [s.name, s.orders, s.total])] : dim === "comercializador" ? [["Comercializador", "Vendas", "%"], ...d.suppliers.map((s) => [s.name, s.count, Math.round(s.share * 100)])] : [["Métrica", "Mês", "Mês anterior", "Homólogo"], ["Em Fornecimento", d.months.ref.orders, d.months.prev.orders, d.months.lastYear.orders]])}>
             <Download size={14} /> Exportar CSV
           </button>
         )}
