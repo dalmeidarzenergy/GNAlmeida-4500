@@ -204,7 +204,7 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
   return {
     quality: await saleQuality(rows),
     byOldSupplier: [...supMap.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).map((x) => ({ ...x, share: supTotal ? x.count / supTotal : 0 })),
-    byTeam: await teamRanking(counted),
+    byTeam: await teamRanking(counted, end),
     byMonth,
     bySeller: localWithPhotos([...sellerMap.values()].sort((a, b) => b.orders - a.orders)),
     topClients: [...clientMap.values()].sort((a, b) => b.orders - a.orders).slice(0, 8),
@@ -309,17 +309,18 @@ async function saleQuality(allRows: { id: number; date: string; status: string; 
  * Ranking dos chefes de equipa: vendas contabilizadas do chefe e dos membros.
  * Cada venda conta para a equipa onde o vendedor estava na data da venda.
  */
-async function teamRanking(counted: { sellerId: number | null; date: string }[]) {
+async function teamRanking(counted: { sellerId: number | null; date: string }[], end?: string) {
   const list = await db
     .select({ id: teams.id, name: teams.name, color: teams.color, leaderId: teams.leaderId, leaderName: employees.name, photoKey: employees.photoKey })
     .from(teams)
     .leftJoin(employees, eq(employees.id, teams.leaderId));
   if (!list.length) return [];
   const members = await db.select().from(teamMemberships);
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
+  // Conta os elementos de cada equipa no fim do período escolhido (fim do mês `end`).
+  const asOf = end ? `${end}-31` : new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
   const rows = list.map((t) => {
     const mine = members.filter((m) => m.teamId === t.id);
-    const memberCount = new Set(mine.filter((m) => m.startDate <= today && (m.endDate == null || m.endDate >= today)).map((m) => m.employeeId)).size;
+    const memberCount = new Set(mine.filter((m) => m.startDate <= asOf && (m.endDate == null || m.endDate >= asOf)).map((m) => m.employeeId)).size;
     const orders = counted.filter(
       (r) => r.sellerId != null && (r.sellerId === t.leaderId || mine.some((m) => m.employeeId === r.sellerId && m.startDate <= r.date && (m.endDate == null || m.endDate >= r.date))),
     ).length;
