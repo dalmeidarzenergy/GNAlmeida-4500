@@ -58,6 +58,9 @@ nav button.on{color:var(--ac);font-weight:700}
 pre{white-space:pre-wrap;font:13px/1.45 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:10px;overflow-x:auto}
 #toast{position:fixed;left:16px;right:16px;top:calc(12px + env(safe-area-inset-top,0px));max-width:528px;margin:0 auto;background:var(--tx);color:var(--bg);padding:12px 14px;border-radius:12px;display:none;z-index:9}
 .hide{display:none}
+.cx-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.cx-grid .cx-col b{display:block;margin-bottom:6px;font-size:15px}
+@media(max-width:420px){.cx-grid{grid-template-columns:1fr}}
 #tiles,#pins{position:absolute;inset:0}
 #tiles img{position:absolute;width:256px;height:256px;max-width:none;user-select:none;-webkit-user-drag:none}
 #map{height:62vh;min-height:320px;position:relative;overflow:hidden;touch-action:none;cursor:grab;background-image:linear-gradient(var(--bd) 1px,transparent 1px),linear-gradient(90deg,var(--bd) 1px,transparent 1px);background-size:40px 40px}
@@ -190,9 +193,11 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
   <div class="modal hide" id="roM" role="dialog" aria-modal="true" style="z-index:22"><div class="sheet"><div class="row" style="align-items:center"><b id="roT"></b><button id="roX" style="flex:none" aria-label="Fechar">✕</button></div><div id="roL" style="margin-top:8px"></div><button class="pri hide" id="roAll" style="margin-top:10px">⬇ Descarregar todos (.zip)</button></div></div>
   <input type="file" id="fFile" class="hide" accept="image/*,application/pdf" multiple><input type="file" id="fCam" class="hide" accept="image/*" capture="environment">
   <section id="v-caixa" class="hide">
-    <div class="row" style="margin-bottom:10px"><button class="sb on" id="cxT1">Recebidos <span id="cxN"></span></button><button class="sb hide" id="cxT2">Enviados</button></div>
-    <button class="pri hide" id="btnSendDocs" style="margin:0 0 12px">📤 Enviar documentos</button>
-    <div id="cxRec"></div><div id="cxEnv" class="hide"></div>
+    <button class="pri" id="btnSendDocs" style="margin:0">📤 Enviar documentos</button>
+    <div class="cx-grid">
+      <div class="cx-col"><b>Recebidos <span id="cxN"></span></b><div id="cxRec"></div></div>
+      <div class="cx-col"><b>Enviados</b><div id="cxEnv"></div></div>
+    </div>
   </section>
   <div class="modal hide" id="sendM" role="dialog" aria-modal="true"><div class="sheet">
     <div class="row" style="align-items:center"><b style="font-size:17px">📤 Enviar documentos</b><button id="sX" style="flex:none" aria-label="Fechar">✕</button></div>
@@ -567,7 +572,7 @@ async function flushDocs(){if(!CFG.endpoint||docFlushing||OB.length)return;docFl
  }catch(e){}finally{docFlushing=false;countDocs()}}
 function api(path,opt){opt=opt||{};var h=Object.assign({},CFG.headers||{},CFG.token?{Authorization:"Bearer "+CFG.token}:{},opt.headers||{});if(!(window.FormData&&opt.body instanceof FormData))h["Content-Type"]="application/json";opt.headers=h;opt.credentials=CFG.credentials||"same-origin";return fetch(CFG.endpoint+path,opt)}
 function setSync(){var b=$("sync");if(!CFG.endpoint){b.textContent="💾 Modo local";b.title="Sem ligação ao site: os dados ficam só neste telemóvel";return}b.title="Toca para sincronizar agora";var n=OB.length+PDn;b.textContent=syncSt==="auth"?"🔒 Inicia sessão no site":n?(syncSt==="off"?"⚠️ Sem ligação · ":"⏳ ")+n+" por enviar":"☁️ Sincronizado"}
-var RO_D=null,CX=[],SEEN={},cxSub=1,SD=[],SENT=[],T0=Date.now(),demoDone=false;
+var RO_D=null,CX=[],SEEN={},SD=[],SENT=[],T0=Date.now(),demoDone=false;
 try{SEEN=JSON.parse(localStorage.getItem("d2d_seen")||"{}")}catch(e){}
 try{SENT=JSON.parse(localStorage.getItem("d2d_sent")||"[]")}catch(e){}
 function saveSent(){try{localStorage.setItem("d2d_sent",JSON.stringify(SENT.slice(0,200)))}catch(e){}}
@@ -594,7 +599,7 @@ function markRead(x){var ch=false;x.docs.forEach(function(d){if(!d.read){d.read=
 async function delRecv(x){var ids=x.docs.map(function(d){return d.id});if(!CFG.endpoint){CX=CX.filter(function(y){return ids.indexOf(y.id)<0});renderCaixa();return}try{var ok=true;for(var i=0;i<ids.length;i++){var r=await api("/caixa/"+encodeURIComponent(ids[i]),{method:"DELETE"});if(!r.ok)ok=false}if(ok){CX=CX.filter(function(y){return ids.indexOf(y.id)<0});renderCaixa()}else toast("Não foi possível apagar.")}catch(e){toast("Sem ligação.")}}
 function delSent(g){SENT=SENT.filter(function(y){return g.msgId?(y.msgId!==g.msgId):(y.id!==g.id)});saveSent();renderCaixa()}
 function renderCaixa(){var groups=recvGroups(),un=groups.filter(function(g){return !g.read}).length,bd=$("cxBadge");bd.textContent=un;bd.classList.toggle("hide",!un);$("cxN").textContent=un?"("+un+")":"";
- $("cxT2").classList.remove("hide");$("btnSendDocs").classList.remove("hide");$("cxRec").classList.toggle("hide",cxSub!==1);$("cxEnv").classList.toggle("hide",cxSub!==2);$("cxT1").classList.toggle("on",cxSub===1);$("cxT2").classList.toggle("on",cxSub===2);
+ 
  var b=$("cxRec");b.innerHTML="";if(!CX.length)b.innerHTML="<div class='card'><p class='tag' style='margin:0'>Ainda sem documentos recebidos.</p></div>";
  groups.forEach(function(g){var c=document.createElement("div");c.className="card";c.style.cursor="pointer";
   c.innerHTML="<div style='display:flex;align-items:center;gap:8px'><i class='dotc'></i><b style='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'></b><span class='tag'></span></div><div id='cx2' style='margin-top:6px;font-size:14px'></div><div id='cxAtt' style='margin-top:2px'></div><div class='row' style='margin-top:10px'><button class='r'>↩ Responder</button><button class='d'>⬇ Tudo</button><button class='x'>🗑</button></div>";
@@ -612,7 +617,6 @@ function renderCaixa(){var groups=recvGroups(),un=groups.filter(function(g){retu
   c.querySelector("b").textContent=(g.nota||"Sem mensagem")+(g.docs.length>1?" · "+g.docs.length+" ficheiros":"");c.querySelector("span.tag").textContent=done?"☁️ Entregue":"⏳ Por enviar";c.querySelector("#cx1").textContent="Para "+g.toName+(g.cli?" · 👤 "+g.cli:"")+(g.nif?" · NIF "+g.nif:"")+" · "+dLabel(g.t)+" "+hm(g.t);
   var att=c.querySelector("#cxAtt");g.docs.forEach(function(d){var r=document.createElement("div");r.style.cssText="display:flex;align-items:center;gap:8px;padding:5px 0 0";r.innerHTML="<span>"+(/^image/.test(d.type)?"🖼":"📄")+"</span><span style='flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+esc(d.name)+"</span><span class='tag'>"+fmtSz(d.size||0)+"</span>";r.onclick=function(ev){ev.stopPropagation();viewDoc(d)};att.appendChild(r)});
   c.onclick=function(){if(g.docs.length===1)viewDoc(g.docs[0])};c.querySelector(".x").onclick=function(ev){ev.stopPropagation();delSent(g)};e.appendChild(c)})}
-$("cxT1").onclick=function(){cxSub=1;renderCaixa()};$("cxT2").onclick=function(){cxSub=2;renderCaixa()};
 function renderSD(){docList($("sDocs"),SD,true,function(a,m,i){SD.splice(i,1);idbDel(m.id);renderSD()})}
 async function openSend(pre,replyTo){SD.forEach(function(m){idbDel(m.id)});SD=[];$("sNota").value="";$("sCli").value="";$("sNif").value="";var s=$("sTo");s.innerHTML="";function opt(v,t){var o=document.createElement("option");o.value=v;o.textContent=t;s.appendChild(o)}
  if(CFG.endpoint){
@@ -622,7 +626,7 @@ async function openSend(pre,replyTo){SD.forEach(function(m){idbDel(m.id)});SD=[]
  if(!s.options.length){opt("chefe","👤 O meu chefe direto")}
  if(replyTo)s.value=replyTo;else if(pre)s.value=pre;renderSD();$("sendM").classList.remove("hide")}
 function closeSend(){SD.forEach(function(m){idbDel(m.id)});SD=[];$("sendM").classList.add("hide")}
-$("btnSendDocs").onclick=function(){openSend()};$("btnSendDocs2").onclick=function(){openSend()};$("sX").onclick=closeSend;$("sendM").onclick=function(e){if(e.target===this)closeSend()};
+$("btnSendDocs").onclick=function(){var last=null;if(CX.length){var g=recvGroups();if(g.length&&g[0].from&&g[0].from.id)last=g[0].from.id}openSend(null,last)};$("btnSendDocs2").onclick=function(){openSend()};$("sX").onclick=closeSend;$("sendM").onclick=function(e){if(e.target===this)closeSend()};
 $("sAddF").onclick=function(){FT="send";$("fFile").click()};$("sAddC").onclick=function(){FT="send";$("fCam").click()};
 $("sSend").onclick=async function(){if(!SD.length){toast("Adiciona pelo menos um ficheiro.");return}var to=$("sTo").value,toName=$("sTo").selectedOptions[0].textContent.replace(/^[– ]+/,""),nota=$("sNota").value.trim(),cli=$("sCli").value.trim(),nif=$("sNif").value.trim();if(nif&&!/^\d{9}$/.test(nif)){toast("O NIF deve ter 9 dígitos (ou deixa em branco).");return}var msgId=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
  for(var i=0;i<SD.length;i++){var m=SD[i],rec=null;try{rec=await idbGet(m.id)}catch(e){}if(rec){rec.to=to;rec.nota=nota;rec.cli=cli;rec.nif=nif;rec.msgId=msgId;rec.doorT=null;await idbPut(rec)}SENT.unshift({id:m.id,name:m.name,type:m.type,size:m.size,t:Date.now(),to:to,toName:toName,nota:nota,cli:cli,nif:nif,msgId:msgId,url:""})}
