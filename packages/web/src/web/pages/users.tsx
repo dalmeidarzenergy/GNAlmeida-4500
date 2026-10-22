@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Check, Plus, CalendarCog, Trash2 } from "lucide-react";
+import { Loader2, Check, Plus, CalendarCog, Trash2, KeyRound } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useUpdateUser, useUsers, useMe } from "../queries/me";
 import { useEmployeeOptions, useTeams } from "../queries/hr";
@@ -7,6 +7,8 @@ import { orpc } from "../lib/api";
 import { PageHeader, Avatar, TableSkeleton, Empty, Modal, Field } from "../components/ui/kit";
 import { ROLE_LABEL } from "../lib/labels";
 import { fmtDate } from "../lib/format";
+import { MODULES, defaultsForRole } from "../../api/permissions";
+import type { Permissions } from "../../api/middleware/auth";
 
 type U = NonNullable<ReturnType<typeof useUsers>["data"]>[number];
 type Role = "admin" | "diretor" | "rh" | "backoffice" | "coordenador" | "chefe" | "vendedor";
@@ -34,6 +36,7 @@ function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; can
   const dirty = role !== (u.role ?? "vendedor") || emp !== (u.employeeId ?? null) || name !== (u.name ?? "") || email !== (u.email ?? "");
   const [saved, setSaved] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [permOpen, setPermOpen] = useState(false);
   const disabled = isSelf || !canEdit;
   const isAssignable = role === "backoffice" || role === "rh";
   return (
@@ -62,6 +65,11 @@ function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; can
       </td>
       <td className="w-40 text-right">
         <div className="flex items-center justify-end gap-2">
+          {canEdit && (
+            <button className="btn btn-ghost h-9 px-2.5" title="Permissões por área" onClick={() => setPermOpen(true)}>
+              <KeyRound size={15} />
+            </button>
+          )}
           {canAssign && isAssignable && (
             <button className="btn btn-ghost h-9 px-2.5" title="Calendários atribuídos" onClick={() => setAssignOpen(true)}>
               <CalendarCog size={15} />
@@ -88,6 +96,7 @@ function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; can
         </div>
         {err && <div className="mt-1 text-right text-[12px] text-danger">{err}</div>}
         {assignOpen && <AssignModal userId={u.id} userName={u.name ?? u.email ?? ""} onClose={() => setAssignOpen(false)} />}
+        {permOpen && <PermissionModal u={u} onClose={() => setPermOpen(false)} />}
       </td>
     </tr>
   );
@@ -139,6 +148,83 @@ function AssignModal({ userId, userName, onClose }: { userId: string; userName: 
   );
 }
 
+const GROUP_KEYS = [...new Set(MODULES.map((m) => m.group))];
+
+/** Grelha de permissões: cada área com interruptores independentes de ver/editar. */
+function PermissionsEditor({ value, onChange }: { value: Permissions; onChange: (p: Permissions) => void }) {
+  const set = (key: keyof Permissions, field: "view" | "edit", v: boolean) => {
+    onChange({ ...value, [key]: { ...value[key], [field]: v } });
+  };
+  return (
+    <div className="flex flex-col gap-4">
+      {GROUP_KEYS.map((g) => (
+        <div key={g}>
+          <div className="label-mono mb-2">{g}</div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {MODULES.filter((m) => m.group === g).map((m) => (
+              <div key={m.key} className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2">
+                <span className="text-[13px]">{m.label}</span>
+                <div className="flex items-center gap-3">
+                  <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
+                    <input aria-label={`${m.label} — ver`} type="checkbox" checked={value[m.key].view} onChange={(e) => set(m.key, "view", e.target.checked)} /> Ver
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
+                    <input aria-label={`${m.label} — editar`} type="checkbox" checked={value[m.key].edit} onChange={(e) => set(m.key, "edit", e.target.checked)} /> Editar
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Edição das permissões por área de um utilizador existente. O perfil serve de ponto de partida. */
+function PermissionModal({ u, onClose }: { u: U; onClose: () => void }) {
+  const qc = useQueryClient();
+  const update = useMutation(orpc.users.update.mutationOptions({ onSuccess: () => { qc.invalidateQueries(); onClose(); } }));
+  const [role, setRole] = useState<Role>((u.role ?? "vendedor") as Role);
+  const [perms, setPerms] = useState<Permissions>(() => u.permissions ?? defaultsForRole((u.role ?? "vendedor") as Role));
+  const [err, setErr] = useState<string | null>(null);
+  const changeRole = (r: Role) => { setRole(r); setPerms(defaultsForRole(r)); };
+  return (
+    <Modal open onClose={onClose} title={`Permissões · ${u.name ?? u.email}`}>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setErr(null);
+          try {
+            await update.mutateAsync({ userId: u.id, role, employeeId: u.employeeId ?? null, permissions: perms });
+          } catch (x) {
+            setErr(x instanceof Error ? x.message : "Não foi possível guardar.");
+          }
+        }}
+      >
+        <Field label="Perfil (ponto de partida)">
+          <select className="input" value={role} onChange={(e) => changeRole(e.target.value as Role)}>
+            {Object.entries(ROLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <span className="mt-1 block text-[11.5px] text-ink-3">Alterar o perfil repõe as permissões padrão; ajuste depois cada área.</span>
+        </Field>
+        <div className="flex max-h-[46vh] flex-col overflow-y-auto rounded-[10px] border border-line p-3">
+          <PermissionsEditor value={perms} onChange={setPerms} />
+        </div>
+        {err && <div className="text-[12.5px] text-danger">{err}</div>}
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" className="btn btn-ghost" onClick={() => setPerms(defaultsForRole(role))}>Restaurar padrão</button>
+          <div className="flex gap-2">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={update.isPending}>{update.isPending ? <Loader2 size={15} className="animate-spin" /> : "Guardar"}</button>
+          </div>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 /** Criação de utilizadores com palavra-passe temporária. */
 function CreateModal({ onClose, canCreatePrivileged }: { onClose: () => void; canCreatePrivileged: boolean }) {
   const qc = useQueryClient();
@@ -148,16 +234,18 @@ function CreateModal({ onClose, canCreatePrivileged }: { onClose: () => void; ca
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState(() => Math.random().toString(36).slice(-8) + "Aa1");
   const [role, setRole] = useState<Role>("vendedor");
+  const [perms, setPerms] = useState<Permissions>(() => defaultsForRole("vendedor"));
   const [emp, setEmp] = useState<number | "">("");
   const [err, setErr] = useState<string | null>(null);
   const roles = Object.entries(ROLE_LABEL).filter(([k]) => canCreatePrivileged || (k !== "admin" && k !== "diretor"));
+  const changeRole = (r: Role) => { setRole(r); setPerms(defaultsForRole(r)); };
   return (
     <Modal open onClose={onClose} title="Novo utilizador">
       <form className="flex flex-col gap-4" onSubmit={async (e) => {
         e.preventDefault();
         setErr(null);
         try {
-          await create.mutateAsync({ name, email, password, role, employeeId: emp === "" ? null : emp });
+          await create.mutateAsync({ name, email, password, role, employeeId: emp === "" ? null : emp, permissions: perms });
         } catch (x) {
           setErr(x instanceof Error ? x.message : "Não foi possível criar.");
         }
@@ -168,8 +256,8 @@ function CreateModal({ onClose, canCreatePrivileged }: { onClose: () => void; ca
           <input aria-label="Palavra-passe temporária" className="input" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
           <span className="mt-1 block text-[11.5px] text-ink-3">Comunique-a à pessoa; ela deve alterá-la depois de entrar.</span>
         </Field>
-        <Field label="Perfil">
-          <select className="input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+        <Field label="Perfil (ponto de partida)">
+          <select className="input" value={role} onChange={(e) => changeRole(e.target.value as Role)}>
             {roles.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </Field>
@@ -179,6 +267,9 @@ function CreateModal({ onClose, canCreatePrivileged }: { onClose: () => void; ca
             {emps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}{x.isSeller ? " · vendedor" : ""}</option>)}
           </select>
         </Field>
+        <div className="flex max-h-[40vh] flex-col overflow-y-auto rounded-[10px] border border-line p-3">
+          <PermissionsEditor value={perms} onChange={setPerms} />
+        </div>
         {err && <div className="text-[12.5px] text-danger">{err}</div>}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>

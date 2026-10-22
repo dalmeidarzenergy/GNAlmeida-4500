@@ -13,7 +13,7 @@ import {
   validateDetails,
   type Details,
 } from "../shared/client-forms";
-import { adminOnly, salesAccess, salesWrite } from "../middleware/auth";
+import { requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
 import { clients, employees, saleStatusHistory, sales as salesTbl, salesTargets, teamMemberships, teams, user } from "../database/schema";
 import { localPhotoUrl } from "../lib/s3";
@@ -189,7 +189,7 @@ async function upsertSaleClient(ctx: Ctx, core: { name: string; nif: string; pho
 
 export const sales = {
   clients: {
-    list: salesAccess.handler(async ({ context }) => {
+    list: requireView("clientes").handler(async ({ context }) => {
       const own = scopeSeller(context);
       const teamScope = await scopeSellerIds(context);
       return db
@@ -214,7 +214,7 @@ export const sales = {
         .where(own ? eq(clients.ownerId, own) : teamScope ? inArray(clients.ownerId, teamScope.length ? teamScope : [-1]) : undefined)
         .orderBy(clients.name);
     }),
-    create: salesWrite.input(clientInput).handler(async ({ input, context }) => {
+    create: requireEdit("clientes").input(clientInput).handler(async ({ input, context }) => {
       const ownerId = await resolveOwner(context, input.ownerId);
       await assertNifFree(input.nif);
       const [row] = await db
@@ -223,7 +223,7 @@ export const sales = {
         .returning();
       return row;
     }),
-    update: salesWrite.input(clientInput.extend({ id: z.number() })).handler(async ({ input, context }) => {
+    update: requireEdit("clientes").input(clientInput.extend({ id: z.number() })).handler(async ({ input, context }) => {
       const own = scopeSeller(context);
       const [c] = await db.select().from(clients).where(eq(clients.id, input.id));
       if (!c || (own && c.ownerId !== own)) throw new ORPCError("NOT_FOUND", { message: "Cliente não encontrado." });
@@ -235,19 +235,19 @@ export const sales = {
         .where(eq(clients.id, input.id));
       return { ok: true };
     }),
-    remove: salesWrite.input(z.object({ id: z.number() })).handler(async ({ input }) => {
+    remove: requireEdit("clientes").input(z.object({ id: z.number() })).handler(async ({ input }) => {
       await db.delete(clients).where(eq(clients.id, input.id));
       return { ok: true };
     }),
     /** Elimina vários clientes de uma vez (as vendas destes clientes também são eliminadas). */
-    removeMany: salesWrite.input(z.object({ ids: z.array(z.number()).min(1).max(2000) })).handler(async ({ input }) => {
+    removeMany: requireEdit("clientes").input(z.object({ ids: z.array(z.number()).min(1).max(2000) })).handler(async ({ input }) => {
       const ids = [...new Set(input.ids)];
       await db.delete(clients).where(inArray(clients.id, ids));
       return { ok: true, count: ids.length };
     }),
   },
   orders: {
-    list: salesAccess.handler(async ({ context }) => {
+    list: requireView("vendas").handler(async ({ context }) => {
       const sellerId = scopeSeller(context);
       const teamScope = await scopeSellerIds(context);
       return db
@@ -273,7 +273,7 @@ export const sales = {
         .orderBy(desc(salesTbl.date), desc(salesTbl.id));
     }),
     /** Nova venda IBERDROLA: grava o formulário completo; o cliente é reutilizado (id ou NIF) ou criado. */
-    create: salesWrite.input(saleFormInput).handler(async ({ input, context }) => {
+    create: requireEdit("vendas").input(saleFormInput).handler(async ({ input, context }) => {
       const ownerId = await resolveOwner(context, input.ownerId);
       const { core, details, status, date } = splitSaleForm(input.service, input.details);
       const clientId = await upsertSaleClient(context, core, ownerId, input.clientId);
@@ -286,7 +286,7 @@ export const sales = {
       if (input.service === "DUAL") await logStatus(row.id, "gas", gasStatus(details), null, context.user.id);
       return row;
     }),
-    update: salesWrite.input(saleFormInput.extend({ id: z.number() })).handler(async ({ input, context }) => {
+    update: requireEdit("vendas").input(saleFormInput.extend({ id: z.number() })).handler(async ({ input, context }) => {
       const own = scopeSeller(context);
       const where = own ? and(eq(salesTbl.id, input.id), eq(salesTbl.sellerId, own)) : eq(salesTbl.id, input.id);
       const [existing] = await db.select().from(salesTbl).where(where);
@@ -304,7 +304,7 @@ export const sales = {
       if (input.service === "DUAL") await logStatus(input.id, "gas", gasStatus(details), gasStatus(existing.details), context.user.id);
       return { ok: true };
     }),
-    setStatus: salesWrite
+    setStatus: requireEdit("vendas")
       .input(z.object({ id: z.number(), status: saleStatus, energy: z.enum(["luz", "gas"]).optional() }))
       .handler(async ({ input, context }) => {
         const own = scopeSeller(context);
@@ -322,7 +322,7 @@ export const sales = {
         return { ok: true };
       }),
     /** Histórico de estados de uma venda (mais recente primeiro). */
-    history: salesAccess.input(z.object({ id: z.number() })).handler(async ({ input, context }) => {
+    history: requireView("vendas").input(z.object({ id: z.number() })).handler(async ({ input, context }) => {
       const own = scopeSeller(context);
       const [sale] = await db.select({ id: salesTbl.id }).from(salesTbl).where(own ? and(eq(salesTbl.id, input.id), eq(salesTbl.sellerId, own)) : eq(salesTbl.id, input.id));
       if (!sale) throw new ORPCError("NOT_FOUND", { message: "Venda não encontrada" });
@@ -334,14 +334,14 @@ export const sales = {
         .orderBy(desc(saleStatusHistory.changedOn), desc(saleStatusHistory.id));
     }),
     /** Corrige a data de uma mudança de estado (só admin), por ex. quando o estado foi atualizado com atraso. */
-    setHistoryDate: adminOnly
+    setHistoryDate: requireEdit("vendas")
       .input(z.object({ id: z.number(), changedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.") }))
       .handler(async ({ input }) => {
         if (input.changedOn > todayLisbon()) throw new ORPCError("BAD_REQUEST", { message: "A data não pode ser no futuro." });
         await db.update(saleStatusHistory).set({ changedOn: input.changedOn }).where(eq(saleStatusHistory.id, input.id));
         return { ok: true };
       }),
-    remove: salesWrite.input(z.object({ id: z.number() })).handler(async ({ input }) => {
+    remove: requireEdit("vendas").input(z.object({ id: z.number() })).handler(async ({ input }) => {
       await db.delete(salesTbl).where(eq(salesTbl.id, input.id));
       return { ok: true };
     }),
@@ -350,7 +350,7 @@ export const sales = {
      * Se já existir uma venda com o mesmo CPE ou CUI (e sem número de contrato diferente), essa venda é atualizada com os dados do Excel; senão cria-se uma venda nova.
      * O cliente é o que já existe com o mesmo NIF (sem alterar os dados) ou é criado.
      */
-    importMany: adminOnly.input(z.object({ rows: z.array(importRow).min(1).max(200) })).handler(async ({ input, context }) => {
+    importMany: requireEdit("vendas").input(z.object({ rows: z.array(importRow).min(1).max(200) })).handler(async ({ input, context }) => {
       const sellerIds = new Set((await db.select({ id: employees.id }).from(employees)).map((e) => e.id));
       const counters = new Map<string, number>();
       const today = todayLisbon();
@@ -409,14 +409,14 @@ export const sales = {
       return results;
     }),
     /** Elimina várias vendas de uma vez (o cliente mantém-se). */
-    removeMany: salesWrite.input(z.object({ ids: z.array(z.number()).min(1).max(2000) })).handler(async ({ input }) => {
+    removeMany: requireEdit("vendas").input(z.object({ ids: z.array(z.number()).min(1).max(2000) })).handler(async ({ input }) => {
       const ids = [...new Set(input.ids)];
       await db.delete(salesTbl).where(inArray(salesTbl.id, ids));
       return { ok: true, count: ids.length };
     }),
   },
   targets: {
-    list: salesAccess.input(z.object({ month: z.string() })).handler(async ({ input, context }) => {
+    list: requireView("metas").input(z.object({ month: z.string() })).handler(async ({ input, context }) => {
       const own = scopeSeller(context);
       const sellers = await db
         .select()
@@ -448,7 +448,7 @@ export const sales = {
         };
       }));
     }),
-    set: adminOnly
+    set: requireEdit("metas")
       .input(z.object({ sellerId: z.number(), month: z.string(), target: z.number().min(0), commissionRate: z.number().min(0).max(100) }))
       .handler(async ({ input }) => {
         const [existing] = await db

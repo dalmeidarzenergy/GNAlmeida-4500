@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { authed, hrAccess } from "../middleware/auth";
+import { authed, requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
 import { absences, calendars, departments, employees, positions, teamMemberships, teams, userRoles } from "../database/schema";
 import { localWithPhotos } from "../lib/s3";
@@ -227,7 +227,7 @@ function normalizeTermination<T extends { status: string; hireDate: string; term
 
 export const hr = {
   departments: {
-    list: authed.handler(async () => {
+    list: requireView("departamentos").handler(async () => {
       const rows = await db
         .select({
           id: departments.id,
@@ -241,22 +241,22 @@ export const hr = {
         .orderBy(departments.name);
       return rows;
     }),
-    create: hrAccess.input(departmentInput).handler(async ({ input }) => {
+    create: requireEdit("departamentos").input(departmentInput).handler(async ({ input }) => {
       const [row] = await db.insert(departments).values(input).returning();
       return row;
     }),
-    update: hrAccess.input(departmentInput.extend({ id: z.number() })).handler(async ({ input }) => {
+    update: requireEdit("departamentos").input(departmentInput.extend({ id: z.number() })).handler(async ({ input }) => {
       const { id, ...data } = input;
       await db.update(departments).set(data).where(eq(departments.id, id));
       return { ok: true };
     }),
-    remove: hrAccess.input(idInput).handler(async ({ input }) => {
+    remove: requireEdit("departamentos").input(idInput).handler(async ({ input }) => {
       await db.delete(departments).where(eq(departments.id, input.id));
       return { ok: true };
     }),
   },
   positions: {
-    list: authed.handler(async () => {
+    list: requireView("departamentos").handler(async () => {
       return db
         .select({
           id: positions.id,
@@ -271,11 +271,11 @@ export const hr = {
         .leftJoin(departments, eq(departments.id, positions.departmentId))
         .orderBy(positions.title);
     }),
-    create: hrAccess.input(positionInput).handler(async ({ input }) => {
+    create: requireEdit("departamentos").input(positionInput).handler(async ({ input }) => {
       const [row] = await db.insert(positions).values(input).returning();
       return row;
     }),
-    update: hrAccess.input(positionInput.extend({ id: z.number() })).handler(async ({ input }) => {
+    update: requireEdit("departamentos").input(positionInput.extend({ id: z.number() })).handler(async ({ input }) => {
       const { id, ...data } = input;
       if (!canManage(data.title)) {
         const [{ n }] = await db
@@ -289,13 +289,13 @@ export const hr = {
       await db.update(positions).set(data).where(eq(positions.id, id));
       return { ok: true };
     }),
-    remove: hrAccess.input(idInput).handler(async ({ input }) => {
+    remove: requireEdit("departamentos").input(idInput).handler(async ({ input }) => {
       await db.delete(positions).where(eq(positions.id, input.id));
       return { ok: true };
     }),
   },
   employees: {
-    list: hrAccess.handler(async ({ context }) => {
+    list: requireView("funcionarios").handler(async ({ context }) => {
       const year = new Date().getFullYear().toString();
       const scope = context.role === "chefe" ? await teamScopeIds(context) : null;
       const rows = await db
@@ -334,7 +334,7 @@ export const hr = {
       return localWithPhotos(rows);
     }),
     /** Envia foto do funcionário — guarda localmente em public/uploads/employees/. */
-    photoUpload: hrAccess
+    photoUpload: requireEdit("funcionarios")
       .input(z.object({ content: z.string() }))
       .handler(async ({ input }) => {
         const match = input.content.match(/^data:image\/(jpeg|png|webp);base64,/);
@@ -356,7 +356,7 @@ export const hr = {
         .where(scope ? inArray(employees.id, scope.length ? scope : [-1]) : undefined)
         .orderBy(employees.name);
     }),
-    create: hrAccess.input(employeeInput).handler(async ({ input: raw }) => {
+    create: requireEdit("funcionarios").input(employeeInput).handler(async ({ input: raw }) => {
       await validateBond(raw.positionId, raw.bond);
       const input = normalizeTermination(raw);
       await validateBond(input.positionId, input.bond);
@@ -364,7 +364,7 @@ export const hr = {
       const [row] = await db.insert(employees).values(input).returning();
       return row;
     }),
-    update: hrAccess.input(employeeInput.extend({ id: z.number() })).handler(async ({ input }) => {
+    update: requireEdit("funcionarios").input(employeeInput.extend({ id: z.number() })).handler(async ({ input }) => {
       const { id, ...data } = normalizeTermination(input);
       await validateBond(data.positionId, data.bond);
       await validateManager(id, data.managerId, data.positionId);
@@ -374,7 +374,7 @@ export const hr = {
       for (const l of linked) await db.update(calendars).set({ active: data.status !== "inativo" }).where(and(eq(calendars.userId, l.userId), eq(calendars.type, "pessoal")));
       return { ok: true };
     }),
-    remove: hrAccess.input(idInput).handler(async ({ input }) => {
+    remove: requireEdit("funcionarios").input(idInput).handler(async ({ input }) => {
       const reports = await db.select({ name: employees.name }).from(employees).where(eq(employees.managerId, input.id));
       if (reports.length) {
         throw new ORPCError("BAD_REQUEST", {
@@ -433,7 +433,7 @@ export const hr = {
         history: history.filter((m) => m.teamId === t.id),
       }));
     }),
-    create: hrAccess.input(teamInput).handler(async ({ input }) => {
+    create: requireEdit("equipas").input(teamInput).handler(async ({ input }) => {
       const memberIds = await validateTeam(input);
       const { memberIds: _m, effectiveDate, ...data } = input;
       const [row] = await db.insert(teams).values({ ...data, coordinatorId: data.coordinatorId ?? null }).returning();
@@ -443,7 +443,7 @@ export const hr = {
       for (const m of memberIds) await syncPersonalCalendarTeam(m, row.id);
       return row;
     }),
-    update: hrAccess.input(teamInput.extend({ id: z.number() })).handler(async ({ input }) => {
+    update: requireEdit("equipas").input(teamInput.extend({ id: z.number() })).handler(async ({ input }) => {
       const memberIds = await validateTeam(input);
       const { id, memberIds: _m, effectiveDate, ...data } = input;
       await db.update(teams).set(data).where(eq(teams.id, id));
@@ -451,7 +451,7 @@ export const hr = {
       return { ok: true };
     }),
     /** Muda um comercial de equipa a partir de uma data (a pertença anterior termina no dia antes). */
-    moveMember: hrAccess
+    moveMember: requireEdit("equipas")
       .input(z.object({ employeeId: z.number(), teamId: z.number().nullable(), date: dateInput }))
       .handler(async ({ input }) => {
         const [e] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, input.employeeId));
@@ -466,7 +466,7 @@ export const hr = {
         return { ok: true };
       }),
     /** Corrige as datas de uma pertença, sem sobrepor outras do mesmo funcionário. */
-    editMembership: hrAccess
+    editMembership: requireEdit("equipas")
       .input(z.object({ id: z.number(), startDate: dateInput, endDate: dateInput.nullable() }))
       .handler(async ({ input }) => {
         if (input.endDate && input.endDate < input.startDate) throw new ORPCError("BAD_REQUEST", { message: "A data de saída não pode ser anterior à de entrada." });
@@ -479,11 +479,11 @@ export const hr = {
         await db.update(teamMemberships).set({ startDate: input.startDate, endDate: input.endDate }).where(eq(teamMemberships.id, input.id));
         return { ok: true };
       }),
-    removeMembership: hrAccess.input(idInput).handler(async ({ input }) => {
+    removeMembership: requireEdit("equipas").input(idInput).handler(async ({ input }) => {
       await db.delete(teamMemberships).where(eq(teamMemberships.id, input.id));
       return { ok: true };
     }),
-    remove: hrAccess.input(idInput).handler(async ({ input }) => {
+    remove: requireEdit("equipas").input(idInput).handler(async ({ input }) => {
       // O calendário da equipa e os seus eventos são eliminados; os pessoais dos membros ficam sem equipa.
       await db.delete(calendars).where(and(eq(calendars.teamId, input.id), eq(calendars.type, "equipa")));
       await db.delete(teams).where(eq(teams.id, input.id));
@@ -491,7 +491,7 @@ export const hr = {
     }),
   },
   absences: {
-    list: authed.handler(async ({ context }) => {
+    list: requireView("ausencias").handler(async ({ context }) => {
       const q = db
         .select({
           id: absences.id,
@@ -532,7 +532,7 @@ export const hr = {
         .returning();
       return row;
     }),
-    setStatus: hrAccess
+    setStatus: requireEdit("ausencias")
       .input(z.object({ id: z.number(), status: z.enum(["pendente", "aprovado", "rejeitado"]) }))
       .handler(async ({ input }) => {
         await db.update(absences).set({ status: input.status }).where(eq(absences.id, input.id));

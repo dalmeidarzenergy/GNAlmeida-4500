@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
 import { authed, requireRoles } from "../middleware/auth";
+import type { Permissions } from "../permissions";
 import { db } from "../database";
 import { account, user, userRoles, employees, session, calendars, calendarEvents, calendarAssignments } from "../database/schema";
 import { ensurePersonalCalendar } from "./agenda";
@@ -20,8 +21,12 @@ export const me = authed.handler(async ({ context }) => {
     role: context.role,
     employeeId: context.employeeId,
     employee: employee ?? null,
+    permissions: context.permissions,
   };
 });
+
+const permissionsSchema = z.record(z.object({ view: z.boolean(), edit: z.boolean() })).nullable().optional();
+const roleSchema = z.enum(["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"]);
 
 export const users = {
   list: requireRoles("admin", "diretor", "backoffice").handler(async () => {
@@ -34,6 +39,7 @@ export const users = {
         createdAt: user.createdAt,
         role: userRoles.role,
         employeeId: userRoles.employeeId,
+        permissions: userRoles.permissions,
         employeeName: employees.name,
       })
       .from(user)
@@ -45,13 +51,18 @@ export const users = {
     .input(
       z.object({
         userId: z.string(),
-        role: z.enum(["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"]),
+        role: roleSchema,
         name: z.string().min(1).optional(),
         email: z.string().email().optional(),
         employeeId: z.number().nullable(),
+        permissions: permissionsSchema,
       }),
     )
     .handler(async ({ input }) => {
+      // Sem permissões explícitas, muda para as do perfil quando o perfil muda; senão mantém as atuais.
+      const [prev] = await db.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, input.userId));
+      const permissions: Permissions | null | undefined =
+        input.permissions !== undefined ? (input.permissions as Permissions | null) : prev && prev.role !== input.role ? null : undefined;
       if (input.role !== "admin") {
         const [{ n }] = await db.select({ n: sql<number>`count(*)` }).from(userRoles).where(and(eq(userRoles.role, "admin"), sql`${userRoles.userId} != ${input.userId}`));
         if (Number(n) === 0) throw new ORPCError("BAD_REQUEST", { message: "Tem de existir sempre pelo menos um administrador." });
@@ -61,12 +72,14 @@ export const users = {
         if (acc?.providerId !== "credential") throw new ORPCError("BAD_REQUEST", { message: "Não é possível alterar os dados de uma conta com início de sessão social." });
         await db.update(user).set({ ...(input.name != null ? { name: input.name } : {}), ...(input.email != null ? { email: input.email } : {}) }).where(eq(user.id, input.userId));
       }
+      const setData: Record<string, unknown> = { role: input.role, employeeId: input.employeeId };
+      if (permissions !== undefined) setData.permissions = permissions;
       await db
         .insert(userRoles)
-        .values({ userId: input.userId, role: input.role, employeeId: input.employeeId })
+        .values({ userId: input.userId, role: input.role, employeeId: input.employeeId, ...(permissions !== undefined ? { permissions } : {}) })
         .onConflictDoUpdate({
           target: userRoles.userId,
-          set: { role: input.role, employeeId: input.employeeId },
+          set: setData,
         });
       // Garante o calendário pessoal do utilizador (equipa atual do funcionário ligado).
       if (input.employeeId != null) {
@@ -87,8 +100,9 @@ export const users = {
         name: z.string().min(1),
         email: z.string().email(),
         password: z.string().min(8),
-        role: z.enum(["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"]),
+        role: roleSchema,
         employeeId: z.number().nullable().optional(),
+        permissions: permissionsSchema,
       }),
     )
     .handler(async ({ input, context }) => {
@@ -109,7 +123,10 @@ export const users = {
       const hashed = await hashPassword(input.password);
       await db.insert(user).values({ id: uid, name: input.name, email: input.email, emailVerified: false });
       await db.insert(account).values({ id: crypto.randomUUID(), accountId: uid, providerId: "credential", userId: uid, password: hashed });
-      await db.insert(userRoles).values({ userId: uid, role: input.role, employeeId: input.employeeId ?? null }).onConflictDoNothing();
+      await db
+        .insert(userRoles)
+        .values({ userId: uid, role: input.role, employeeId: input.employeeId ?? null, permissions: (input.permissions as Permissions | null) ?? null })
+        .onConflictDoNothing();
       if (input.employeeId != null) {
         const t = today();
         const [m] = await db

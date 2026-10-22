@@ -9,45 +9,45 @@ import { useMe } from "../queries/me";
 import { ROLE_LABEL } from "../lib/labels";
 import { Avatar } from "./ui/kit";
 
-import type { Role } from "../../api/middleware/auth";
-export type { Role };
-type NavItem = { to: string; label: string; icon: typeof Users; roles: Role[] };
+import type { Permissions, ModuleKey, Role } from "../../api/middleware/auth";
+export type { Role, Permissions };
+type NavItem = { to: string; key: ModuleKey; label: string; icon: typeof Users };
 
 const NAV: { group: string; items: NavItem[] }[] = [
-  { group: "Geral", items: [{ to: "/", label: "Painel", icon: LayoutDashboard, roles: ["admin", "rh", "chefe", "vendedor"] }] },
+  { group: "Geral", items: [{ to: "/", key: "painel", label: "Painel", icon: LayoutDashboard }] },
   {
     group: "Recursos Humanos",
     items: [
-      { to: "/funcionarios", label: "Funcionários", icon: Users, roles: ["admin", "rh"] },
-      { to: "/departamentos", label: "Departamentos e cargos", icon: Building2, roles: ["admin", "rh"] },
-      { to: "/equipas", label: "Equipas", icon: UsersRound, roles: ["admin", "rh", "chefe"] },
-      { to: "/ausencias", label: "Férias e ausências", icon: CalendarDays, roles: ["admin", "rh", "chefe", "vendedor"] },
-      { to: "/recrutamento", label: "Recrutamento", icon: UserSearch, roles: ["admin", "rh"] },
+      { to: "/funcionarios", key: "funcionarios", label: "Funcionários", icon: Users },
+      { to: "/departamentos", key: "departamentos", label: "Departamentos e cargos", icon: Building2 },
+      { to: "/equipas", key: "equipas", label: "Equipas", icon: UsersRound },
+      { to: "/ausencias", key: "ausencias", label: "Férias e ausências", icon: CalendarDays },
+      { to: "/recrutamento", key: "recrutamento", label: "Recrutamento", icon: UserSearch },
     ],
   },
   {
     group: "Vendas",
     items: [
-      { to: "/clientes", label: "Clientes", icon: Contact, roles: ["admin", "rh", "chefe", "vendedor"] },
-      { to: "/vendas", label: "Vendas", icon: ShoppingCart, roles: ["admin", "rh", "chefe", "vendedor"] },
-      { to: "/campanhas", label: "Campanhas", icon: Megaphone, roles: ["admin", "rh", "chefe", "vendedor"] },
-      { to: "/agenda", label: "Agenda", icon: Calendar, roles: ["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"] },
-      { to: "/metas", label: "Metas", icon: Target, roles: ["admin", "rh", "chefe", "vendedor"] },
-      { to: "/terreno-d2d", label: "Terreno D2D", icon: MapPin, roles: ["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"] },
+      { to: "/clientes", key: "clientes", label: "Clientes", icon: Contact },
+      { to: "/vendas", key: "vendas", label: "Vendas", icon: ShoppingCart },
+      { to: "/campanhas", key: "campanhas", label: "Campanhas", icon: Megaphone },
+      { to: "/agenda", key: "agenda", label: "Agenda", icon: Calendar },
+      { to: "/metas", key: "metas", label: "Metas", icon: Target },
+      { to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin },
     ],
   },
   {
     group: "Análise",
     items: [
-      { to: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["admin", "rh", "chefe"] },
-      { to: "/evolucao", label: "Evolução", icon: TrendingUp, roles: ["admin", "rh", "chefe", "vendedor"] },
-      { to: "/utilizadores", label: "Utilizadores", icon: ShieldCheck, roles: ["admin", "diretor", "backoffice"] },
+      { to: "/relatorios", key: "relatorios", label: "Relatórios", icon: BarChart3 },
+      { to: "/evolucao", key: "evolucao", label: "Evolução", icon: TrendingUp },
+      { to: "/utilizadores", key: "utilizadores", label: "Utilizadores", icon: ShieldCheck },
     ],
   },
 ];
 
-export function canAccess(path: string, role: Role) {
-  for (const g of NAV) for (const i of g.items) if (i.to === path) return i.roles.includes(role);
+export function canAccess(path: string, permissions: Permissions) {
+  for (const g of NAV) for (const i of g.items) if (i.to === path) return permissions[i.key]?.view ?? false;
   return true;
 }
 
@@ -70,6 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
   const role = (me.data?.role ?? "vendedor") as Role;
+  const permissions = me.data?.permissions;
 
   const signOut = async () => {
     await authClient.signOut();
@@ -87,7 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         {NAV.map((g) => {
-          const items = g.items.filter((i) => i.roles.includes(role));
+          const items = g.items.filter((i) => permissions?.[i.key]?.view !== false);
           if (!items.length) return null;
           return (
             <div key={g.group} className="mt-5 first:mt-2">

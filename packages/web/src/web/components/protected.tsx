@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import type { Role } from "./app-shell";
 import { Redirect, useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 import { authClient } from "../lib/auth";
@@ -21,6 +20,6 @@ export function Protected({ children }: { children: ReactNode }) {
   if (isPending) return <Loading />;
   if (!session) return <Redirect to="/entrar" />;
   if (me.isLoading) return <Loading />;
-  if (me.data && !canAccess("/" + loc.split("/")[1], me.data.role as Role)) return <Redirect to="/" />;
+  if (me.data && !canAccess("/" + loc.split("/")[1], me.data.permissions)) return <Redirect to="/" />;
   return <AppShell>{children}</AppShell>;
 }

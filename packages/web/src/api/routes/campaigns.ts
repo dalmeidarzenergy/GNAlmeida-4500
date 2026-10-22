@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { eq, sql } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
-import { adminOnly, salesAccess, salesWrite } from "../middleware/auth";
+import { requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
 import { campaigns as tbl } from "../database/schema";
 import { SALE_COUNTED, SERVICE_LABELS } from "../shared/client-forms";
@@ -35,7 +35,7 @@ async function assertCodeFree(code: string, exceptId?: number) {
 
 export const campaigns = {
   /** Todas as campanhas, com o nº de vendas (vendedores: só as suas) que usam cada código. */
-  list: salesAccess.handler(async ({ context }) => {
+  list: requireView("campanhas").handler(async ({ context }) => {
     if (context.role === "vendedor" && !context.employeeId) throw new ORPCError("FORBIDDEN", { message: "A sua conta ainda não está associada a um vendedor. Peça ao administrador." });
     const seller = context.role === "vendedor" ? sql` and s.seller_id = ${context.employeeId}` : sql``;
     const match = sql`(json_extract(s.details, '$.campaign') = ${tbl.code} or json_extract(s.details, '$.campaignGas') = ${tbl.code})${seller}`;
@@ -61,7 +61,7 @@ export const campaigns = {
     return Promise.all(rows.map(async (r) => ({ ...r, pdfUrl: r.pdfKey ? localCampaignPdfUrl(r.pdfKey) : null })));
   }),
   /** Guarda o PDF da campanha localmente em public/uploads/campaigns/. */
-  pdfUpload: adminOnly
+  pdfUpload: requireEdit("campanhas")
     .input(z.object({ content: z.string() }))
     .handler(async ({ input }) => {
       if (!input.content.startsWith("data:application/pdf;base64,")) throw new ORPCError("BAD_REQUEST", { message: "Formato inválido." });
@@ -71,13 +71,13 @@ export const campaigns = {
       writeFileSync(`${dir}/${key.replace("campaigns/", "")}`, Buffer.from(input.content.slice(28), "base64"));
       return { key };
     }),
-  create: salesWrite.input(input).handler(async ({ input }) => {
+  create: requireEdit("campanhas").input(input).handler(async ({ input }) => {
     const v = clean(input);
     await assertCodeFree(v.code);
     const [row] = await db.insert(tbl).values(v).returning();
     return row;
   }),
-  update: salesWrite.input(input.extend({ id: z.number() })).handler(async ({ input }) => {
+  update: requireEdit("campanhas").input(input.extend({ id: z.number() })).handler(async ({ input }) => {
     const { id, ...rest } = input;
     const v = clean(rest);
     const [old] = await db.select().from(tbl).where(eq(tbl.id, id));
@@ -93,7 +93,7 @@ export const campaigns = {
     }
     return { ok: true };
   }),
-  remove: salesWrite.input(z.object({ id: z.number() })).handler(async ({ input }) => {
+  remove: requireEdit("campanhas").input(z.object({ id: z.number() })).handler(async ({ input }) => {
     const [old] = await db.select({ pdfKey: tbl.pdfKey }).from(tbl).where(eq(tbl.id, input.id));
     await db.delete(tbl).where(eq(tbl.id, input.id));
     await deleteObject(old?.pdfKey);

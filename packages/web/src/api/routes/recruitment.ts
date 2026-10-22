@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { desc, eq, sql } from "drizzle-orm";
-import { hrAccess } from "../middleware/auth";
+import { requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
 import { candidates, departments, jobOpenings } from "../database/schema";
 
@@ -26,7 +26,7 @@ const candidateInput = z.object({
 
 export const recruitment = {
   jobs: {
-    list: hrAccess.handler(async () => {
+    list: requireView("recrutamento").handler(async () => {
       return db
         .select({
           id: jobOpenings.id,
@@ -43,22 +43,22 @@ export const recruitment = {
         .leftJoin(departments, eq(departments.id, jobOpenings.departmentId))
         .orderBy(desc(jobOpenings.createdAt));
     }),
-    create: hrAccess.input(jobInput).handler(async ({ input }) => {
+    create: requireEdit("recrutamento").input(jobInput).handler(async ({ input }) => {
       const [row] = await db.insert(jobOpenings).values(input).returning();
       return row;
     }),
-    update: hrAccess.input(jobInput.extend({ id: z.number() })).handler(async ({ input }) => {
+    update: requireEdit("recrutamento").input(jobInput.extend({ id: z.number() })).handler(async ({ input }) => {
       const { id, ...data } = input;
       await db.update(jobOpenings).set(data).where(eq(jobOpenings.id, id));
       return { ok: true };
     }),
-    remove: hrAccess.input(z.object({ id: z.number() })).handler(async ({ input }) => {
+    remove: requireEdit("recrutamento").input(z.object({ id: z.number() })).handler(async ({ input }) => {
       await db.delete(jobOpenings).where(eq(jobOpenings.id, input.id));
       return { ok: true };
     }),
   },
   candidates: {
-    list: hrAccess.handler(async () => {
+    list: requireView("recrutamento").handler(async () => {
       return db
         .select({
           id: candidates.id,
@@ -76,20 +76,20 @@ export const recruitment = {
         .innerJoin(jobOpenings, eq(jobOpenings.id, candidates.jobId))
         .orderBy(desc(candidates.createdAt));
     }),
-    create: hrAccess.input(candidateInput).handler(async ({ input }) => {
+    create: requireEdit("recrutamento").input(candidateInput).handler(async ({ input }) => {
       const [row] = await db.insert(candidates).values(input).returning();
       return row;
     }),
-    update: hrAccess.input(candidateInput.extend({ id: z.number() })).handler(async ({ input }) => {
+    update: requireEdit("recrutamento").input(candidateInput.extend({ id: z.number() })).handler(async ({ input }) => {
       const { id, ...data } = input;
       await db.update(candidates).set(data).where(eq(candidates.id, id));
       return { ok: true };
     }),
-    move: hrAccess.input(z.object({ id: z.number(), stage })).handler(async ({ input }) => {
+    move: requireEdit("recrutamento").input(z.object({ id: z.number(), stage })).handler(async ({ input }) => {
       await db.update(candidates).set({ stage: input.stage }).where(eq(candidates.id, input.id));
       return { ok: true };
     }),
-    remove: hrAccess.input(z.object({ id: z.number() })).handler(async ({ input }) => {
+    remove: requireEdit("recrutamento").input(z.object({ id: z.number() })).handler(async ({ input }) => {
       await db.delete(candidates).where(eq(candidates.id, input.id));
       return { ok: true };
     }),

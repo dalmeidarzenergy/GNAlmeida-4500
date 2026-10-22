@@ -15,6 +15,8 @@ export const userRoles = sqliteTable("user_roles", {
     .references(() => user.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("vendedor"),
   employeeId: integer("employee_id"),
+  /** Permissões efetivas por módulo (ver/editar); nulo = usar as do perfil. */
+  permissions: text("permissions", { mode: "json" }).$type<Permissions | null>(),
   createdAt: createdAt(),
 });
 
