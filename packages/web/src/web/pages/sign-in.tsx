@@ -66,7 +66,7 @@ export default function SignInPage() {
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      <div className="noise grid-bg relative hidden overflow-hidden border-r border-line bg-[#0f1210] p-12 lg:flex lg:flex-col">
+      <div className="noise grid-bg relative hidden overflow-hidden border-r border-line bg-[var(--sidebar-bg)] p-12 lg:flex lg:flex-col">
         <div className="absolute -left-40 top-1/3 h-[520px] w-[520px] rounded-full bg-volt/10 blur-[120px]" />
         <div className="absolute -bottom-40 right-0 h-[380px] w-[380px] rounded-full bg-amber/10 blur-[120px]" />
         <Logo />

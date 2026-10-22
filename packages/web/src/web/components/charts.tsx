@@ -6,7 +6,7 @@ const axis = { stroke: "#636b64", fontSize: 11, fontFamily: "JetBrains Mono", ti
 function TipBox({ active, payload, label, money = true, labelFmt }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-[10px] border border-line bg-[#0f1210]/95 px-3 py-2 shadow-xl backdrop-blur">
+    <div className="rounded-[10px] border border-line bg-[var(--sidebar-bg)]/95 px-3 py-2 shadow-xl backdrop-blur">
       <div className="label-mono mb-1">{labelFmt ? labelFmt(label) : label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} className="num flex items-center gap-2 text-[12.5px]">
@@ -83,7 +83,7 @@ function EvolutionTip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   const p = payload[0]?.payload;
   return (
-    <div className="rounded-[10px] border border-line bg-[#0f1210]/95 px-3 py-2 shadow-xl backdrop-blur">
+    <div className="rounded-[10px] border border-line bg-[var(--sidebar-bg)]/95 px-3 py-2 shadow-xl backdrop-blur">
       <div className="label-mono mb-1">{label}</div>
       {payload.map((x: any) => (
         <div key={x.dataKey} className="num flex items-center gap-2 text-[12.5px]">

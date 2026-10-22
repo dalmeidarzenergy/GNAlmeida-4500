@@ -35,10 +35,10 @@ function PhotoPicker({ name, preview, uploading, onPick, onClear }: { name: stri
     <div className="flex items-center gap-4 sm:col-span-2">
       <label className="group relative cursor-pointer" title="Escolher foto">
         <Avatar name={name || "?"} size={72} src={preview} />
-        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition group-hover:opacity-100">
+        <span className="absolute inset-0 flex items-center justify-center rounded-full bg-[var(--overlay-bg)] opacity-0 transition group-hover:opacity-100">
           <Camera size={18} className="text-white" />
         </span>
-        {uploading && <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45"><Loader2 size={18} className="animate-spin text-white" /></span>}
+        {uploading && <span className="absolute inset-0 flex items-center justify-center rounded-full bg-[var(--overlay-bg)]"><Loader2 size={18} className="animate-spin text-white" /></span>}
         <input
           type="file"
           accept="image/*"
@@ -238,7 +238,7 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
         </Field>
         <div className="rounded-[12px] border border-line bg-bg p-4 sm:col-span-2">
           <label className="flex cursor-pointer items-center gap-3 text-[13px]">
-            <input type="checkbox" aria-label="É vendedor" className="h-4 w-4 accent-[#c6f432]" checked={f.isSeller} onChange={(e) => set("isSeller", e.target.checked)} />
+            <input type="checkbox" aria-label="É vendedor" className="h-4 w-4 accent-[var(--volt)]" checked={f.isSeller} onChange={(e) => set("isSeller", e.target.checked)} />
             <span>É vendedor (aparece em vendas, metas e comissões)</span>
           </label>
         </div>

@@ -163,10 +163,10 @@ function EditPersonalModal({ u, onClose }: { u: U; onClose: () => void }) {
         <div className="flex items-center gap-4">
           <label className="group relative cursor-pointer" title="Escolher foto">
             <Avatar name={name || email || "?"} size={72} src={preview} />
-            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition group-hover:opacity-100">
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-[var(--overlay-bg)] opacity-0 transition group-hover:opacity-100">
               <Camera size={18} className="text-white" />
             </span>
-            {uploading && <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45"><Loader2 size={18} className="animate-spin text-white" /></span>}
+            {uploading && <span className="absolute inset-0 flex items-center justify-center rounded-full bg-[var(--overlay-bg)]"><Loader2 size={18} className="animate-spin text-white" /></span>}
             <input type="file" accept="image/*" aria-label="Foto do utilizador" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) pickPhoto(f); e.target.value = ""; }} />
           </label>
           <div className="text-[12.5px] text-ink-3">
