@@ -80,7 +80,7 @@ export async function handle(req, env = (typeof process !== 'undefined' ? proces
       if (!m || m[2].length > 4000000) return J(400, { error: 'imagem inválida' });
       imgs.push({ type: 'image_url', image_url: { url: d } });
     }
-    const { r, j } = await ask(imgs.length ? [{ type: 'text', text: prompt }, ...imgs] : prompt, imgs.length > 0, 4000);
+    const { r, j } = await ask(imgs.length ? [{ type: 'text', text: prompt }, ...imgs] : prompt, imgs.length > 0, 1000);
     if (!r.ok) return J(502, { error: 'erro do serviço de IA', detalhe: detalhe(r, j) });
     const txt = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
     const a = txt.indexOf('{'), b = txt.lastIndexOf('}');
