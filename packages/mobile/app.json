@@ -2,7 +2,7 @@
   "expo": {
     "icon": "./assets/icon.png",
     "android": {
-      "package": "com.appId.runable",
+      "package": "com.gnalmeida_x7k2.runable",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
@@ -15,7 +15,7 @@
       "runableAuthIssuer": "https://api.runable.com/api/auth"
     },
     "ios": {
-      "bundleIdentifier": "com.appId.runable",
+      "bundleIdentifier": "com.gnalmeida_x7k2.runable",
       "supportsTablet": true
     },
     "splash": {
@@ -23,8 +23,8 @@
       "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "GNAlmeida",
+    "slug": "gnalmeida",
     "version": "1.0.0",
     "scheme": "runable-rzenerg-ak5tvb9",
     "orientation": "portrait",
