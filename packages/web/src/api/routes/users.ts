@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { authed, requireRoles } from "../middleware/auth";
 import type { Permissions } from "../permissions";
 import { db } from "../database";
@@ -17,6 +18,7 @@ export const me = authed.handler(async ({ context }) => {
     id: context.user.id,
     name: context.user.name,
     email: context.user.email,
+    phone: context.user.phone,
     image: context.user.image,
     role: context.role,
     employeeId: context.employeeId,
@@ -35,12 +37,15 @@ export const users = {
         id: user.id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
         image: user.image,
         createdAt: user.createdAt,
         role: userRoles.role,
         employeeId: userRoles.employeeId,
         permissions: userRoles.permissions,
         employeeName: employees.name,
+        employeePhone: employees.phone,
+        employeeNif: employees.nif,
       })
       .from(user)
       .leftJoin(userRoles, eq(userRoles.userId, user.id))
@@ -52,8 +57,6 @@ export const users = {
       z.object({
         userId: z.string(),
         role: roleSchema,
-        name: z.string().min(1).optional(),
-        email: z.string().email().optional(),
         employeeId: z.number().nullable(),
         permissions: permissionsSchema,
       }),
@@ -66,11 +69,6 @@ export const users = {
       if (input.role !== "admin") {
         const [{ n }] = await db.select({ n: sql<number>`count(*)` }).from(userRoles).where(and(eq(userRoles.role, "admin"), sql`${userRoles.userId} != ${input.userId}`));
         if (Number(n) === 0) throw new ORPCError("BAD_REQUEST", { message: "Tem de existir sempre pelo menos um administrador." });
-      }
-      if (input.email != null || input.name != null) {
-        const [acc] = await db.select({ providerId: account.providerId }).from(account).where(eq(account.userId, input.userId));
-        if (acc?.providerId !== "credential") throw new ORPCError("BAD_REQUEST", { message: "Não é possível alterar os dados de uma conta com início de sessão social." });
-        await db.update(user).set({ ...(input.name != null ? { name: input.name } : {}), ...(input.email != null ? { email: input.email } : {}) }).where(eq(user.id, input.userId));
       }
       const setData: Record<string, unknown> = { role: input.role, employeeId: input.employeeId };
       if (permissions !== undefined) setData.permissions = permissions;
@@ -89,6 +87,66 @@ export const users = {
           .from(teamMemberships)
           .where(and(eq(teamMemberships.employeeId, input.employeeId), sql`${teamMemberships.startDate} <= ${t}`, sql`(${teamMemberships.endDate} is null or ${teamMemberships.endDate} >= ${t})`));
         await ensurePersonalCalendar(input.userId, m?.teamId ?? null);
+      }
+      return { ok: true };
+    }),
+
+  /** Upload da foto de perfil (avatar) — guardada localmente em public/uploads/avatars/. Admin/diretor/backoffice. */
+  avatarUpload: requireRoles("admin", "diretor", "backoffice")
+    .input(z.object({ content: z.string() }))
+    .handler(async ({ input }) => {
+      const match = input.content.match(/^data:image\/(jpeg|png|webp);base64,/);
+      if (!match) throw new ORPCError("BAD_REQUEST", { message: "Formato de imagem inválido." });
+      const ext = match[1] === "jpeg" ? "jpeg" : match[1];
+      const filename = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      const dir = "public/uploads/avatars";
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(`${dir}/${filename}`, Buffer.from(input.content.slice(match[0].length), "base64"));
+      return { url: `/uploads/avatars/${filename}` };
+    }),
+
+  /** Dados pessoais (nome, email, telefone, foto) e reset de palavra-passe. Admin/diretor/backoffice. */
+  editPersonal: requireRoles("admin", "diretor", "backoffice")
+    .input(
+      z.object({
+        userId: z.string(),
+        name: z.string().min(1).optional(),
+        email: z.string().email().optional(),
+        phone: z.string().trim().nullable().optional(),
+        image: z.string().trim().nullable().optional(),
+        password: z.string().min(8).optional(),
+        employeeNif: z.string().trim().nullable().optional(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const [target] = await db.select({ role: userRoles.role, employeeId: userRoles.employeeId }).from(userRoles).where(eq(userRoles.userId, input.userId));
+      if (!target) throw new ORPCError("NOT_FOUND", { message: "Utilizador não encontrado." });
+      // O Backoffice não altera contas privilegiadas (Administrador/Diretor).
+      if (context.role === "backoffice" && (target.role === "admin" || target.role === "diretor")) {
+        throw new ORPCError("FORBIDDEN", { message: "O Backoffice não pode alterar Administradores nem Diretores." });
+      }
+      const [acc] = await db.select({ providerId: account.providerId }).from(account).where(eq(account.userId, input.userId));
+      const credential = acc?.providerId !== undefined ? acc.providerId === "credential" : true;
+      if (!credential && (input.name != null || input.email != null)) {
+        throw new ORPCError("BAD_REQUEST", { message: "Não é possível alterar o nome/email de uma conta com início de sessão social." });
+      }
+      if (input.password && !credential) {
+        throw new ORPCError("BAD_REQUEST", { message: "Contas com início de sessão social não têm palavra-passe local." });
+      }
+      const set: Record<string, unknown> = {};
+      if (input.name != null) set.name = input.name;
+      if (input.email != null) set.email = input.email;
+      if (input.phone !== undefined) set.phone = input.phone;
+      if (input.image !== undefined) set.image = input.image;
+      if (Object.keys(set).length) await db.update(user).set(set).where(eq(user.id, input.userId));
+      if (input.password) {
+        const { hashPassword } = await import("better-auth/crypto");
+        const hashed = await hashPassword(input.password);
+        await db.update(account).set({ password: hashed }).where(and(eq(account.userId, input.userId), eq(account.providerId, "credential")));
+      }
+      // NIF da ficha de funcionário ligada (se houver).
+      if (input.employeeNif !== undefined && target.employeeId != null) {
+        await db.update(employees).set({ nif: input.employeeNif }).where(eq(employees.id, target.employeeId));
       }
       return { ok: true };
     }),

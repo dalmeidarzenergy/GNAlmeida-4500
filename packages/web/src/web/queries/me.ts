@@ -18,3 +18,14 @@ export function useUpdateUser() {
     }),
   );
 }
+export function useEditPersonal() {
+  const qc = useQueryClient();
+  return useMutation(
+    orpc.users.editPersonal.mutationOptions({
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: orpc.users.key() });
+        qc.invalidateQueries({ queryKey: orpc.me.key() });
+      },
+    }),
+  );
+}

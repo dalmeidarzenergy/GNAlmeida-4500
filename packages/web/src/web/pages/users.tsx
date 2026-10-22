@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Loader2, Check, Plus, CalendarCog, Trash2, KeyRound } from "lucide-react";
+import { Loader2, Check, Plus, CalendarCog, Trash2, KeyRound, Pencil, Camera } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useUpdateUser, useUsers, useMe } from "../queries/me";
+import { useUpdateUser, useEditPersonal, useUsers, useMe } from "../queries/me";
 import { useEmployeeOptions, useTeams } from "../queries/hr";
-import { orpc } from "../lib/api";
+import { orpc, client } from "../lib/api";
 import { PageHeader, Avatar, TableSkeleton, Empty, Modal, Field } from "../components/ui/kit";
 import { ROLE_LABEL } from "../lib/labels";
 import { fmtDate } from "../lib/format";
@@ -23,7 +23,7 @@ const ROLE_CARDS: [string, string][] = [
   ["Gestor Comercial", "Vê o seu painel, clientes e vendas (só leitura) e o seu calendário pessoal."],
 ];
 
-function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; canEdit: boolean; canAssign: boolean }) {
+function UserRow({ u, isSelf, canEdit, canEditData, canAssign }: { u: U; isSelf: boolean; canEdit: boolean; canEditData: boolean; canAssign: boolean }) {
   const emps = useEmployeeOptions();
   const update = useUpdateUser();
   const qc = useQueryClient();
@@ -31,24 +31,22 @@ function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; can
   const [err, setErr] = useState<string | null>(null);
   const [role, setRole] = useState<Role>((u.role ?? "vendedor") as Role);
   const [emp, setEmp] = useState<number | null>(u.employeeId ?? null);
-  const [name, setName] = useState(u.name ?? "");
-  const [email, setEmail] = useState(u.email ?? "");
-  const dirty = role !== (u.role ?? "vendedor") || emp !== (u.employeeId ?? null) || name !== (u.name ?? "") || email !== (u.email ?? "");
+  const dirty = role !== (u.role ?? "vendedor") || emp !== (u.employeeId ?? null);
   const [saved, setSaved] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [permOpen, setPermOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const disabled = isSelf || !canEdit;
   const isAssignable = role === "backoffice" || role === "rh";
   return (
     <tr>
       <td>
         <div className="flex items-center gap-3">
-          <Avatar name={name || email} />
-          <div className="space-y-1.5">
-            <input aria-label="Nome" className="input h-8 w-44 text-[13px]" value={name} onChange={(e) => setName(e.target.value)} disabled={disabled} />
-            <input aria-label="Email" className="input h-8 w-44 text-[12px]" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={disabled} />
+          <Avatar name={u.name || u.email || "?"} src={u.image} />
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 text-[13px] font-medium">{u.name || "—"}{isSelf && <span className="text-[11px] font-normal text-ink-3">(você)</span>}</div>
+            <div className="text-[12px] text-ink-2">{u.email || "—"}{u.phone ? ` · ${u.phone}` : ""}</div>
           </div>
-          {isSelf && <span className="text-[11px] text-ink-3">(você)</span>}
         </div>
       </td>
       <td className="num text-[12.5px] text-ink-2">{fmtDate(u.createdAt)}</td>
@@ -63,8 +61,13 @@ function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; can
           {emps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}{x.isSeller ? " · vendedor" : ""}</option>)}
         </select>
       </td>
-      <td className="w-40 text-right">
+      <td className="w-44 text-right">
         <div className="flex items-center justify-end gap-2">
+          {canEditData && (
+            <button className="btn btn-ghost h-9 px-2.5" title="Editar dados pessoais" onClick={() => setEditOpen(true)}>
+              <Pencil size={15} />
+            </button>
+          )}
           {canEdit && (
             <button className="btn btn-ghost h-9 px-2.5" title="Permissões por área" onClick={() => setPermOpen(true)}>
               <KeyRound size={15} />
@@ -76,7 +79,7 @@ function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; can
             </button>
           )}
           {dirty && canEdit ? (
-            <button className="btn btn-primary h-9" disabled={update.isPending} onClick={async () => { await update.mutateAsync({ userId: u.id, role, employeeId: emp, name: name || undefined, email: email || undefined }); setSaved(true); setTimeout(() => setSaved(false), 1500); }}>
+            <button className="btn btn-primary h-9" disabled={update.isPending} onClick={async () => { await update.mutateAsync({ userId: u.id, role, employeeId: emp }); setSaved(true); setTimeout(() => setSaved(false), 1500); }}>
               {update.isPending ? <Loader2 size={14} className="animate-spin" /> : "Guardar"}
             </button>
           ) : saved ? <span className="inline-flex items-center gap-1 text-[12px] text-volt"><Check size={14} /> Guardado</span> : null}
@@ -97,8 +100,101 @@ function UserRow({ u, isSelf, canEdit, canAssign }: { u: U; isSelf: boolean; can
         {err && <div className="mt-1 text-right text-[12px] text-danger">{err}</div>}
         {assignOpen && <AssignModal userId={u.id} userName={u.name ?? u.email ?? ""} onClose={() => setAssignOpen(false)} />}
         {permOpen && <PermissionModal u={u} onClose={() => setPermOpen(false)} />}
+        {editOpen && <EditPersonalModal u={u} onClose={() => setEditOpen(false)} />}
       </td>
     </tr>
+  );
+}
+
+/** Recorta ao centro (quadrado) e reduz para 512px em JPEG, para fotos leves. */
+async function squareJpeg(file: File, size = 512): Promise<Blob> {
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = Math.min(size, side);
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, canvas.width, canvas.height);
+  bmp.close();
+  return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("Não foi possível processar a imagem"))), "image/jpeg", 0.88));
+}
+
+/** Edição dos dados pessoais (foto, nome, email, telefone, NIF) e reset de palavra-passe. */
+function EditPersonalModal({ u, onClose }: { u: U; onClose: () => void }) {
+  const edit = useEditPersonal();
+  const [name, setName] = useState(u.name ?? "");
+  const [email, setEmail] = useState(u.email ?? "");
+  const [phone, setPhone] = useState(u.phone ?? "");
+  const [nif, setNif] = useState(u.employeeNif ?? "");
+  const [image, setImage] = useState<string | null>(u.image ?? null);
+  const [password, setPassword] = useState("");
+  const [preview, setPreview] = useState<string | null>(u.image ?? null);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const pickPhoto = async (file: File) => {
+    if (!file.type.startsWith("image/")) return setErr("Escolha um ficheiro de imagem.");
+    setErr(null);
+    setUploading(true);
+    try {
+      const blob = await squareJpeg(file);
+      const base64 = await new Promise<string>((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result as string); r.readAsDataURL(blob); });
+      const { url } = await client.users.avatarUpload({ content: base64 });
+      setImage(url);
+      setPreview(URL.createObjectURL(blob));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Não foi possível enviar a foto.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Dados pessoais · ${u.name ?? u.email}`}>
+      <form className="flex flex-col gap-4" onSubmit={async (e) => {
+        e.preventDefault();
+        setErr(null);
+        try {
+          await edit.mutateAsync({ userId: u.id, name, email, phone: phone || null, image: image ?? null, password: password || undefined, employeeNif: nif || null });
+          onClose();
+        } catch (x) {
+          setErr(x instanceof Error ? x.message : "Não foi possível guardar.");
+        }
+      }}>
+        <div className="flex items-center gap-4">
+          <label className="group relative cursor-pointer" title="Escolher foto">
+            <Avatar name={name || email || "?"} size={72} src={preview} />
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition group-hover:opacity-100">
+              <Camera size={18} className="text-white" />
+            </span>
+            {uploading && <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45"><Loader2 size={18} className="animate-spin text-white" /></span>}
+            <input type="file" accept="image/*" aria-label="Foto do utilizador" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) pickPhoto(f); e.target.value = ""; }} />
+          </label>
+          <div className="text-[12.5px] text-ink-3">
+            Foto de perfil.
+            {preview && !uploading && (
+              <button type="button" onClick={() => { setImage(null); setPreview(null); }} className="mt-0.5 flex items-center gap-1 text-[12px] text-rose hover:underline"><Trash2 size={12} /> Remover foto</button>
+            )}
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Nome"><input aria-label="Nome" className="input" value={name} onChange={(e) => setName(e.target.value)} required /></Field>
+          <Field label="Email"><input aria-label="Email" className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>
+          <Field label="Telefone"><input aria-label="Telefone" className="input" value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+          <Field label={`NIF${u.employeeId ? "" : " (requer ficha de funcionário)"}`}>
+            <input aria-label="NIF" className="input" value={nif} onChange={(e) => setNif(e.target.value)} disabled={!u.employeeId} />
+          </Field>
+        </div>
+        <Field label="Nova palavra-passe (opcional)">
+          <input aria-label="Nova palavra-passe" className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Deixe em branco para manter a atual" minLength={8} />
+          <span className="mt-1 block text-[11.5px] text-ink-3">Só disponível para contas com palavra-passe (não sociais). Comunique-a à pessoa.</span>
+        </Field>
+        {err && <div className="text-[12.5px] text-danger">{err}</div>}
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn btn-primary" disabled={edit.isPending || uploading}>{edit.isPending ? <Loader2 size={15} className="animate-spin" /> : "Guardar"}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -286,6 +382,7 @@ export default function UsersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const canEdit = me.data?.role === "admin" || me.data?.role === "diretor";
   const canCreate = canEdit || me.data?.role === "backoffice";
+  const canEditData = canEdit || me.data?.role === "backoffice";
   return (
     <div>
       <PageHeader eyebrow="Administração" title="Utilizadores e perfis">
@@ -301,7 +398,7 @@ export default function UsersPage() {
           <div className="overflow-x-auto">
             <table className="tbl">
               <thead><tr><th>Utilizador</th><th>Registo</th><th>Perfil</th><th>Ficha de funcionário</th><th aria-label="Ações" /></tr></thead>
-              <tbody>{users.data.map((u) => <UserRow key={u.id} u={u} isSelf={u.id === me.data?.id} canEdit={canEdit} canAssign={canEdit} />)}</tbody>
+              <tbody>{users.data.map((u) => <UserRow key={u.id} u={u} isSelf={u.id === me.data?.id} canEdit={canEdit} canEditData={canEditData} canAssign={canEdit} />)}</tbody>
             </table>
           </div>
         )}
