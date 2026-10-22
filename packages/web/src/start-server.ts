@@ -1,6 +1,23 @@
 // Production & dev entrypoint: resolve o caminho da BD SQLite como
-// absoluto antes do servidor arrancar, para que o DATABASE_URL relativo
-// não parta quando o cwd difere entre ambientes.
-process.env.DATABASE_URL = `file:${import.meta.dirname}/data.db`;
+// absoluto. Se houver um volume persistente montado (Fly.io), copia
+// o data.db para lá no primeiro arranque e usa-o — assim os dados
+// sobrevivem a redeploys.
+import { existsSync, copyFileSync } from "node:fs";
+
+const bundledDb = `${import.meta.dirname}/data.db`;
+const volumeDir = "/data";
+const volumeDb = `${volumeDir}/data.db`;
+
+if (existsSync(volumeDir)) {
+  // Volume persistente disponível — copiar seed se ainda não existir
+  if (!existsSync(volumeDb)) {
+    copyFileSync(bundledDb, volumeDb);
+    console.log(`BD copiada para volume persistente: ${volumeDb}`);
+  }
+  process.env.DATABASE_URL = `file:${volumeDb}`;
+} else {
+  // Ambiente local / dev — usar BD junto ao código
+  process.env.DATABASE_URL = `file:${bundledDb}`;
+}
 
 import "./__server";
