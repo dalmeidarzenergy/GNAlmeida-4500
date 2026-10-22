@@ -33,6 +33,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/campanhas", label: "Campanhas", icon: Megaphone, roles: ["admin", "rh", "chefe", "vendedor"] },
       { to: "/agenda", label: "Agenda", icon: Calendar, roles: ["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"] },
       { to: "/metas", label: "Metas", icon: Target, roles: ["admin", "rh", "chefe", "vendedor"] },
+      { to: "/terreno-d2d", label: "Terreno D2D", icon: MapPin, roles: ["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"] },
     ],
   },
   {

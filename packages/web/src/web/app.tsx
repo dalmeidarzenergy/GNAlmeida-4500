@@ -34,6 +34,7 @@ const routes: [string, React.ComponentType][] = [
   ["/relatorios", ReportsPage],
   ["/evolucao", EvolutionPage],
   ["/utilizadores", UsersPage],
+  ["/terreno-d2d", D2DPage],
   ["/", Dashboard],
 ];
 

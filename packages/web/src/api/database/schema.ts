@@ -274,3 +274,116 @@ export const calendarAssignments = sqliteTable("calendar_assignments", {
   assignedBy: text("assigned_by").references(() => user.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });
+
+/* ============================================================
+ * Módulo Terreno D2D (porta a porta)
+ * ============================================================ */
+
+/** Turno de trabalho D2D. `end` nulo = turno aberto (em curso). */
+export const d2dShifts = sqliteTable("d2d_shifts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  employeeId: integer("employee_id").references(() => employees.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  zone: text("zone").notNull(),
+  start: integer("start").notNull(),
+  end: integer("end"),
+  lat: real("lat"),
+  lng: real("lng"),
+  /** Fechado automaticamente às 23:59 quando o comercial não fechou. */
+  autoClosed: integer("auto_closed", { mode: "boolean" }).notNull().default(false),
+  createdAt: createdAt(),
+});
+
+/** Porta registada num turno D2D. O par (userId, t) identifica-a para edições/apagamentos. */
+export const d2dDoors = sqliteTable("d2d_doors", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shiftId: integer("shift_id")
+    .notNull()
+    .references(() => d2dShifts.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  /** Timestamp (ms) original da porta gerado no telemóvel — identifica a porta para editar/apagar. */
+  t: integer("t").notNull(),
+  rua: text("rua").notNull(),
+  num: text("num").notNull(),
+  res: text("res").notNull(),
+  cli: text("cli"),
+  tel: text("tel"),
+  nota: text("nota"),
+  lat: real("lat"),
+  lng: real("lng"),
+  acc: real("acc"),
+  /** true quando o cliente já foi contactado (marcado no Histórico → Interessados). */
+  done: integer("done", { mode: "boolean" }).notNull().default(false),
+  createdAt: createdAt(),
+});
+
+/** Registo de cada evento recebido de /api/d2d (id único evita repetidos). */
+export const d2dEvents = sqliteTable("d2d_events", {
+  id: text("id").primaryKey(),
+  tipo: text("tipo").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  hora: integer("hora").notNull(),
+  dados: text("dados", { mode: "json" }).$type<Record<string, unknown> | null>(),
+  createdAt: createdAt(),
+});
+
+/** Relatório diário gerado ao fechar (ou fechar automaticamente) um turno. */
+export const d2dDailyReports = sqliteTable("d2d_daily_reports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  shiftId: integer("shift_id")
+    .notNull()
+    .references(() => d2dShifts.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  data: text("data").notNull(), // YYYY-MM-DD
+  zone: text("zone"),
+  inicio: integer("inicio"),
+  fim: integer("fim"),
+  resumo: text("resumo", { mode: "json" }).$type<Record<string, unknown> | null>(),
+  relatorio: text("relatorio"),
+  portas: text("portas", { mode: "json" }).$type<unknown[] | null>(),
+  autoClosed: integer("auto_closed", { mode: "boolean" }).notNull().default(false),
+  createdAt: createdAt(),
+});
+
+/** Documento anexado a uma porta (ou enviado pela chefia). O ficheiro fica em public/uploads/d2d. */
+export const d2dDocuments = sqliteTable("d2d_documents", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  /** Id da porta a que pertence (t da porta), ou null quando é um envio da chefia. */
+  portaT: integer("porta_t"),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  size: integer("size").notNull(),
+  path: text("path").notNull(),
+  /** Destinatário (null = anexo de porta). "equipa" ou um userId. */
+  destinatario: text("destinatario"),
+  nota: text("nota"),
+  createdAt: createdAt(),
+});
+
+/** Item da caixa de documentos: kind "venda" (anexo de porta) ou "enviado" (da chefia). */
+export const d2dMailbox = sqliteTable("d2d_mailbox", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  docId: text("doc_id")
+    .notNull()
+    .references(() => d2dDocuments.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // "venda" | "enviado"
+  fromUserId: text("from_user_id").references(() => user.id, { onDelete: "set null" }),
+  fromName: text("from_name"),
+  read: integer("read", { mode: "boolean" }).notNull().default(false),
+  createdAt: createdAt(),
+});

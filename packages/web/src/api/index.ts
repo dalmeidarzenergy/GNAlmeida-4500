@@ -9,6 +9,7 @@ import { sales } from "./routes/sales";
 import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
 import { agenda } from "./routes/agenda";
+import { d2d } from "./routes/d2d";
 
 export const router = {
   ping,
@@ -27,6 +28,7 @@ export type AppRouter = typeof router;
 export type AppRouterClient = RouterClient<AppRouter>;
 
 const app = createApp(router);
+d2d(app);
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 export default app;
