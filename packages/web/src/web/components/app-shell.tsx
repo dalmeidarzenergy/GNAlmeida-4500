@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Zap, Calendar, MapPin, Calculator,
+  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Zap, Calendar, MapPin, Calculator, Sun, Moon,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -55,7 +55,7 @@ export function canAccess(path: string, permissions: Permissions) {
 export function Logo() {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="relative flex h-8 w-8 items-center justify-center rounded-[9px] bg-volt text-[#0c0e0d] shadow-[0_0_24px_rgba(198,244,50,0.35)]">
+      <div className="relative flex h-8 w-8 items-center justify-center rounded-[9px] bg-volt text-[var(--bg)] shadow-[0_0_24px_rgba(198,244,50,0.35)]">
         <Zap size={17} strokeWidth={2.6} fill="currentColor" />
       </div>
       <div className="font-display text-[17px] font-bold tracking-tight">
@@ -65,6 +65,19 @@ export function Logo() {
   );
 }
 
+function useTheme() {
+  const [theme, set] = useState<"dark" | "light">(() => {
+    if (typeof window === "undefined") return "dark";
+    return (localStorage.getItem("theme") as "dark" | "light") || "dark";
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+  const toggle = () => set((t) => (t === "dark" ? "light" : "dark"));
+  return [theme, toggle] as const;
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const me = useMe();
   const [loc, navigate] = useLocation();
@@ -72,6 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const role = (me.data?.role ?? "vendedor") as Role;
   const permissions = me.data?.permissions;
+  const [theme, toggleTheme] = useTheme();
 
   const signOut = async () => {
     await authClient.signOut();
@@ -80,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   const sidebar = (
-    <aside className="flex h-full w-[248px] flex-col border-r border-line bg-[#0f1210]">
+    <aside className="flex h-full w-[248px] flex-col border-r border-line" style={{ background: "var(--sidebar-bg)" }}>
       <div className="flex h-16 items-center justify-between px-5">
         <Logo />
         <button className="btn-icon lg:hidden" onClick={() => setOpen(false)}>
@@ -121,6 +135,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="truncate text-[13px] font-medium">{me.data?.name || me.data?.email}</div>
             <div className="text-[11px] text-ink-3">{ROLE_LABEL[role]}</div>
           </div>
+          <button className="btn-icon" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo escuro"}>
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
           <button className="btn-icon" onClick={signOut} title="Terminar sessão">
             <LogOut size={15} />
           </button>
@@ -135,7 +152,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {open && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div className="animate-in slide-in-from-left duration-200">{sidebar}</div>
-          <button type="button" aria-label="Fechar menu" className="flex-1 bg-black/60" onClick={() => setOpen(false)} />
+          <button type="button" aria-label="Fechar menu" className="flex-1" style={{ background: "var(--overlay-bg)" }} onClick={() => setOpen(false)} />
         </div>
       )}
       <div className="min-w-0 flex-1 lg:pl-[248px]">
