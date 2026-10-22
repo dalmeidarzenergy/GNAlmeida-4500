@@ -72,16 +72,15 @@ function SalesReports({ month, sellerId, teamId, showPlace = true }: { month: st
             <Stat delay={160} label="Taxa de DDC" value={pct(d.quality.ddc.rate)} sub={`${d.quality.ddc.hits} de ${d.quality.ddc.base} vendas com DDC`} />
             <Stat delay={200} label="Taxa de FE" value={pct(d.quality.fe.rate)} sub={`${d.quality.fe.hits} de ${d.quality.fe.base} vendas com FE`} />
             <Stat delay={220} label="Taxa de PEL" value={pct(d.quality.pel.rate)} sub={`${d.quality.pel.hits} de ${d.quality.pel.base} vendas com PEL`} />
-            <Stat delay={240} label="Taxa de Robinson" value={pct(d.quality.robinson.rate)} accent="var(--rose)" sub={`${d.quality.robinson.hits} de ${d.quality.robinson.base} sem consentimento`} />
             <Stat
-              delay={280}
+              delay={240}
               label="Média de contratação"
               value={d.quality.contractDays == null ? "—" : `${d.quality.contractDays.toLocaleString("pt-PT", { maximumFractionDigits: 1 })} dias`}
               sub={d.quality.contractBase ? `da venda até Control · ${d.quality.contractBase} venda(s)` : "ainda sem vendas em Control"}
             />
           </div>
           <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <Stat
+            <Stat delay={280} label="Taxa de Robinson" value={pct(d.quality.robinson.rate)} accent="var(--rose)" sub={`${d.quality.robinson.hits} de ${d.quality.robinson.base} sem consentimento`} />
               delay={320}
               label="Taxa de Chargeback"
               value={pct(d.quality.chargeback.rate)}
