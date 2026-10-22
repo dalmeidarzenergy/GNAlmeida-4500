@@ -12,6 +12,7 @@ import { agenda } from "./routes/agenda";
 import { d2d } from "./routes/d2d";
 import { simulador } from "./routes/simulador";
 import { simuladorStore } from "./lib/simulador-store";
+import { syncCatalog } from "./routes/campaigns";
 import { handle as aiHandle } from "./lib/simulador-ai.mjs";
 import { handle as campanhasHandle } from "./lib/simulador-campanhas.mjs";
 
@@ -38,6 +39,10 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 // Simulador Iberdrola — backend routes
 app.all("/api/ai", (c) => aiHandle(c.req.raw, process.env));
-app.all("/api/campanhas", (c) => campanhasHandle(c.req.raw, process.env, simuladorStore));
+app.all("/api/campanhas", async (c) => {
+  const res = await campanhasHandle(c.req.raw, process.env, simuladorStore);
+  if (c.req.method === "POST" && res.ok) syncCatalog().catch(() => {});
+  return res;
+});
 
 export default app;

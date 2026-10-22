@@ -6,6 +6,7 @@ import { db } from "../database";
 import { campaigns as tbl } from "../database/schema";
 import { SALE_COUNTED, SERVICE_LABELS } from "../shared/client-forms";
 import { deleteObject, localCampaignPdfUrl } from "../lib/s3";
+import { simuladorStore } from "../lib/simulador-store";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().optional();
@@ -31,6 +32,39 @@ const clean = (i: z.infer<typeof input>) => {
 async function assertCodeFree(code: string, exceptId?: number) {
   const [dup] = await db.select({ id: tbl.id }).from(tbl).where(eq(tbl.code, code));
   if (dup && dup.id !== exceptId) throw new ORPCError("BAD_REQUEST", { message: `Já existe uma campanha com o código ${code}.` });
+}
+
+/** Sincroniza as campanhas do CRM → catálogo do simulador.
+ *  Planos cujo código (r) coincide com uma campanha ativa: ini = startDate, val = endDate.
+ *  Campanha inativa ou eliminada: val = "1970-01-01" → ativa() devolve false.
+ *  Planos sem campanha no CRM não são alterados. */
+const CATALOG_SEGMENTS = ["lr", "ln", "lc", "gr", "gn"] as const;
+export async function syncCatalog() {
+  try {
+    const rows = await db.select({ code: tbl.code, startDate: tbl.startDate, endDate: tbl.endDate, active: tbl.active }).from(tbl);
+    const map = new Map(rows.map((c) => [c.code, c]));
+    const text = await simuladorStore.get();
+    if (!text) return;
+    const catalog = JSON.parse(text);
+    let changed = false;
+    for (const seg of CATALOG_SEGMENTS) {
+      if (!Array.isArray(catalog[seg])) continue;
+      for (const plan of catalog[seg]) {
+        const crm = map.get(plan.r);
+        if (!crm) continue;
+        const ini = crm.active ? (crm.startDate ?? null) : null;
+        const val = crm.active ? (crm.endDate ?? null) : "1970-01-01";
+        if (plan.ini !== ini || plan.val !== val) {
+          plan.ini = ini ?? undefined;
+          plan.val = val ?? undefined;
+          changed = true;
+        }
+      }
+    }
+    if (changed) await simuladorStore.set(JSON.stringify(catalog));
+  } catch (e) {
+    console.error("syncCatalog:", e);
+  }
 }
 
 export const campaigns = {
@@ -75,6 +109,7 @@ export const campaigns = {
     const v = clean(input);
     await assertCodeFree(v.code);
     const [row] = await db.insert(tbl).values(v).returning();
+    syncCatalog(); // fire-and-forget: atualiza o catálogo do simulador
     return row;
   }),
   update: requireEdit("campanhas").input(input.extend({ id: z.number() })).handler(async ({ input }) => {
@@ -85,18 +120,19 @@ export const campaigns = {
     await assertCodeFree(v.code, id);
     await db.update(tbl).set(v).where(eq(tbl.id, id));
     if (old.pdfKey && old.pdfKey !== v.pdfKey) await deleteObject(old.pdfKey);
-    // Se o código mudou, as vendas que usavam o código antigo passam a usar o novo.
     if (old.code !== v.code) {
       for (const key of ["$.campaign", "$.campaignGas"]) {
         await db.run(sql`update sales set details = json_set(details, ${key}, ${v.code}) where json_extract(details, ${key}) = ${old.code}`);
       }
     }
+    syncCatalog();
     return { ok: true };
   }),
   remove: requireEdit("campanhas").input(z.object({ id: z.number() })).handler(async ({ input }) => {
     const [old] = await db.select({ pdfKey: tbl.pdfKey }).from(tbl).where(eq(tbl.id, input.id));
     await db.delete(tbl).where(eq(tbl.id, input.id));
     await deleteObject(old?.pdfKey);
+    syncCatalog();
     return { ok: true };
   }),
 };
