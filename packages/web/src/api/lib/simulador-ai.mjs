@@ -17,7 +17,7 @@ const limited = ip => { const now = Date.now(), w = (hits.get(ip) || []).filter(
 
 export async function handle(req, env = (typeof process !== 'undefined' ? process.env : {})) {
   const TEXT = uniq([env.GROQ_MODEL, 'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'qwen/qwen3.8-27b']);
-  const VISION = uniq([env.GROQ_VISION_MODEL, 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b']);
+  const VISION = uniq([env.GROQ_VISION_MODEL, 'qwen/qwen3.8-27b']);
   const ORIGINS = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim().replace(/\/$/, '')).filter(Boolean);
   const origin = (req.headers.get('origin') || '').replace(/\/$/, '');
   const cors = { vary: 'Origin', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'Content-Type' };
