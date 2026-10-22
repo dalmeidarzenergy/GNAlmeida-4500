@@ -206,9 +206,9 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
     <button class="pri" id="zSave">Alterar zona</button>
   </div></div>
   <div class="modal hide" id="goalM" role="dialog" aria-modal="true"><div class="sheet">
-    <div class="row" style="align-items:center"><b style="font-size:17px">🎯 Meta do dia</b><button id="gX" style="flex:none" aria-label="Fechar">✕</button></div>
+    <div class="row" style="align-items:center"><b style="font-size:17px">🎯 Meta do dia — <span id="gName"></span></b><button id="gX" style="flex:none" aria-label="Fechar">✕</button></div>
     <div class="row"><div><label for="gPortas">Meta de portas</label><input id="gPortas" inputmode="numeric"></div><div><label for="gVendas">Meta de vendas</label><input id="gVendas" inputmode="numeric"></div></div>
-    <p class="tag">Define os objetivos do dia para a tua equipa.</p>
+    <p class="tag">Define os objetivos de portas e vendas deste comercial para hoje.</p>
     <button class="pri" id="gSave">Guardar meta</button>
   </div></div>
   <section id="v-hist" class="hide">
@@ -246,10 +246,13 @@ var S={shift:null,doors:[],mgr:""},sel=null,$=function(i){return document.getEle
 var CFG=window.D2D_CONFIG||{};
 var META={portas:CFG.goal||40,vendas:5};
 async function loadMeta(){if(!CFG.endpoint)return;try{var r=await api("/meta");if(r.ok){var m=await r.json();if(m&&m.portas!=null)META={portas:Number(m.portas)||40,vendas:m.vendas!=null?Number(m.vendas)||0:5}}else{META={portas:CFG.goal||40,vendas:5}}}catch(e){META={portas:CFG.goal||40,vendas:5}}render()}
-$("btnGoalEdit").onclick=function(){$("gPortas").value=META.portas;$("gVendas").value=META.vendas;$("goalM").classList.remove("hide")};
+var GOAL=null;
+function openGoal(c){GOAL={employeeId:c.employeeId,name:c.name,portas:(c.meta&&c.meta.portas)||40,vendas:(c.meta&&c.meta.vendas)||5};$("gName").textContent=GOAL.name;$("gPortas").value=GOAL.portas;$("gVendas").value=GOAL.vendas;$("goalM").classList.remove("hide")}
 $("gX").onclick=function(){$("goalM").classList.add("hide")};
 $("goalM").onclick=function(e){if(e.target===this)this.classList.add("hide")};
-$("gSave").onclick=async function(){var p=parseInt($("gPortas").value,10),v=parseInt($("gVendas").value,10);if(isNaN(p)||isNaN(v)||p<0||v<0||p>10000||v>10000){toast("Indica números válidos (0–10000).");return}if(!CFG.endpoint){META={portas:p,vendas:v};$("goalM").classList.add("hide");render();toast("Meta atualizada (modo local)");return}var b=this;b.disabled=true;try{var r=await api("/meta",{method:"POST",body:JSON.stringify({portas:p,vendas:v})});if(r.ok){await loadMeta();$("goalM").classList.add("hide");toast("Meta atualizada ✔")}else if(r.status===401||r.status===403){toast("Sem permissão para alterar a meta.")}else{toast("Não foi possível guardar a meta.")}}catch(e){toast("Sem ligação.")}b.disabled=false};
+$("gSave").onclick=async function(){var p=parseInt($("gPortas").value,10),v=parseInt($("gVendas").value,10);if(isNaN(p)||isNaN(v)||p<0||v<0||p>10000||v>10000){toast("Indica números válidos (0–10000).");return}if(!GOAL||!GOAL.employeeId){toast("Seleciona um membro da equipa.");return}
+ if(!CFG.endpoint){GOAL.portas=p;GOAL.vendas=v;$("goalM").classList.add("hide");loadTeam();toast("Meta atualizada (modo local)");return}
+ var b=this;b.disabled=true;try{var r=await api("/meta",{method:"POST",body:JSON.stringify({employeeId:GOAL.employeeId,portas:p,vendas:v})});if(r.ok){$("goalM").classList.add("hide");await loadTeam();toast("Meta de "+GOAL.name+" atualizada ✔")}else if(r.status===401||r.status===403){toast("Sem permissão para alterar esta meta.")}else if(r.status===422){toast("Não podes definir a meta dessa pessoa.")}else{toast("Não foi possível guardar a meta.")}}catch(e){toast("Sem ligação.")}b.disabled=false};
 var q=new URLSearchParams(location.search);
 var USER=Object.assign({id:q.get("id")||"",name:q.get("nome")||"",role:q.get("role")||""},CFG.user||{});var ISLEAD=USER.role==="chefe";
 window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate();loadMeta()}});
@@ -276,7 +279,7 @@ function report(){var s=S.shift,t=S.doors.length,c=cnt("lead")+cnt("venda"),r=t?
 function nm(k){return RES.filter(function(x){return x[0]===k})[0][1]}
 function render(){
  var s=S.shift,on=s&&!s.end;
- $("active").classList.toggle("hide",!on);$("endCard").classList.toggle("hide",!on);var gn=S.doors.length,vn=cnt("venda"),gp=META.portas||40,gv=META.vendas||5;$("goalCard").classList.toggle("hide",!on);$("goalTxtP").textContent=gn>=gp?"🎉 Meta atingida · "+gn+" portas":gn+" / "+gp+" portas";$("goalBarP").style.width=Math.min(gp?gn/gp*100:0,100)+"%";$("goalTxtV").textContent=vn>=gv?"🎉 Meta atingida · "+vn+" vendas":vn+" / "+gv+" vendas";$("goalBarV").style.width=Math.min(gv?vn/gv*100:0,100)+"%";$("btnGoalEdit").classList.toggle("hide",!ISLEAD);$("startCard").classList.toggle("hide",!!on);
+ $("active").classList.toggle("hide",!on);$("endCard").classList.toggle("hide",!on);var gn=S.doors.length,vn=cnt("venda"),gp=META.portas||40,gv=META.vendas||5;$("goalCard").classList.toggle("hide",!on);$("goalTxtP").textContent=gn>=gp?"🎉 Meta atingida · "+gn+" portas":gn+" / "+gp+" portas";$("goalBarP").style.width=Math.min(gp?gn/gp*100:0,100)+"%";$("goalTxtV").textContent=vn>=gv?"🎉 Meta atingida · "+vn+" vendas":vn+" / "+gv+" vendas";$("goalBarV").style.width=Math.min(gv?vn/gv*100:0,100)+"%";$("btnGoalEdit").classList.add("hide");$("startCard").classList.toggle("hide",!!on);
  if(on)$("aInfo").textContent=s.name+" · "+s.zone+" · desde "+hm(s.start);
  $("sub").textContent=READONLY?"A ver dados da equipa (só consulta)":(on?"Turno em curso":"Gestão de porta a porta");
  $("chips").innerHTML="";RES.forEach(function(x){var b=document.createElement("button");b.className="chip"+(sel===x[0]?" on":"");b.textContent=x[1];b.onclick=function(){sel=x[0];render()};$("chips").appendChild(b)});
@@ -426,10 +429,12 @@ function teamChart(){var T=treeList(),mx=Math.max.apply(0,[1].concat(T.map(funct
 function removeCom(id){if(TEAM.some(function(c){return c.parentId===id})){toast("Remove primeiro quem está abaixo desta pessoa.");return}var c=TEAM.filter(function(x){return x.id===id})[0];TEAM=TEAM.filter(function(x){return x.id!==id});emit("comercial_removido",{id:id,name:c&&c.name});if(curCom===id)curCom="all";fillTeam();toast("Removido da equipa")}
 function renderEq(){if(!ISLEAD)return;var T=treeList(),box=$("eqList");$("eqSub").textContent=T.length+(T.length===1?" pessoa":" pessoas")+" abaixo de ti · toca para ver o relatório";box.innerHTML="";if(!T.length){box.innerHTML="<p class='tag'>Ainda sem comerciais. Adiciona o primeiro.</p>";return}
  T.forEach(function(o){var c=o.c,D=c.doors||[],on=c.shift&&!c.shift.end,v=D.filter(function(d){return d.res==="venda"}).length,e=document.createElement("div");e.className="door";e.style.cssText="cursor:pointer;align-items:center;padding-left:"+(o.d*16)+"px";
-  e.innerHTML="<div style='display:flex;align-items:center;gap:8px'><i class='dotc'></i><div><b></b><div class='tag'></div></div></div><button class='x'>✕</button>";
-  e.querySelector(".dotc").style.background=on?"var(--ok)":"var(--bd)";e.querySelector("b").textContent=c.name;e.querySelector(".tag").textContent=(c.role==="chefe"?"Chefe de equipa":"Comercial")+" · "+(on?"turno ativo · "+D.length+" portas · "+v+" vendas":"sem turno");
+  var mp=(c.meta&&c.meta.portas!=null)?c.meta.portas:40,mv=(c.meta&&c.meta.vendas!=null)?c.meta.vendas:5;
+  e.innerHTML="<div style='display:flex;align-items:center;gap:8px;min-width:0'><i class='dotc'></i><div style='min-width:0'><b></b><div class='tag'></div></div></div><button class='x' aria-label='Meta'>🎯</button><button class='x' aria-label='Remover'>✕</button>";
+  e.querySelector(".dotc").style.background=on?"var(--ok)":"var(--bd)";e.querySelector("b").textContent=c.name;e.querySelector(".tag").textContent=(c.role==="chefe"?"Chefe de equipa":"Comercial")+" · 🎯 "+mp+" portas · "+mv+" vendas"+(on?" · turno ativo · "+D.length+" portas · "+v+" vendas":" · sem turno");
   e.onclick=function(){curCom=c.id;$("selCom").value=c.id;pickCom(c.id);view("rel")};
-  var x=e.querySelector(".x");x.onclick=function(ev){ev.stopPropagation();if(!x.dataset.c){x.dataset.c=1;x.textContent="Remover?";setTimeout(function(){delete x.dataset.c;x.textContent="✕"},4000);return}removeCom(c.id)};box.appendChild(e)})}
+  var g=e.querySelector("[aria-label='Meta']");g.onclick=function(ev){ev.stopPropagation();openGoal(c)};
+  var x=e.querySelector("[aria-label='Remover']");x.onclick=function(ev){ev.stopPropagation();if(!x.dataset.c){x.dataset.c=1;x.textContent="Remover?";setTimeout(function(){delete x.dataset.c;x.textContent="✕"},4000);return}removeCom(c.id)};box.appendChild(e)})}
 function openNew(){$("nNome").value="";$("nCont").value="";$("nRole").value="comercial";var s=$("nPar");s.innerHTML="";var o=document.createElement("option");o.value=USER.id||"";o.textContent="Eu ("+(USER.name||"chefe")+")";s.appendChild(o);treeList().forEach(function(x){if(x.c.role==="chefe"){var p=document.createElement("option");p.value=x.c.id;p.textContent=new Array(x.d+2).join("– ")+x.c.name;s.appendChild(p)}});$("newM").classList.remove("hide");$("nNome").focus()}
 $("btnNovoCom").onclick=openNew;$("nX").onclick=function(){$("newM").classList.add("hide")};$("newM").onclick=function(e){if(e.target===this)this.classList.add("hide")};
 $("nSave").onclick=function(){var n=$("nNome").value.trim(),ct=$("nCont").value.trim();if(!n){toast("Indica o nome.");return}if(!ct){toast("Indica o e-mail ou telemóvel para o acesso.");return}var m={id:"novo-"+Date.now(),name:n,contact:ct,role:$("nRole").value,parentId:$("nPar").value||USER.id||null,shift:null,doors:[],streets:[],history:[]};TEAM.push(m);emit("comercial_criado",{id:m.id,name:m.name,contact:m.contact,role:m.role,parentId:m.parentId});$("newM").classList.add("hide");fillTeam();toast("✅ "+n+" adicionado à equipa")};
