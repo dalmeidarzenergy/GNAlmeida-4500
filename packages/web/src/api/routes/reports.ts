@@ -202,7 +202,7 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
   const supTotal = [...supMap.values()].reduce((n, x) => n + x.count, 0);
   const total = counted.reduce((s, r) => s + r.total, 0);
   return {
-    quality: await saleQuality(rows),
+    quality: await saleQuality(rows, end),
     byOldSupplier: [...supMap.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)).map((x) => ({ ...x, share: supTotal ? x.count / supTotal : 0 })),
     byTeam: await teamRanking(counted, end),
     byMonth,
@@ -238,7 +238,7 @@ function addMonthsIso(d: string, n: number) {
  * - Chargeback: das vendas que chegaram a "Em Fornecimento", as que passaram a "Baixa" até 3 meses depois da primeira entrada em fornecimento.
  * - Baixas: das vendas registadas, as que estão ou estiveram em "Baixa". "Pedido de Baixa" não conta em nenhuma.
  */
-async function churn(rows: { id: number; status: string }[]) {
+async function churn(rows: { id: number; status: string }[], periodEnd?: string) {
   const ids = rows.map((r) => r.id);
   const hist = ids.length
     ? await db
@@ -246,7 +246,8 @@ async function churn(rows: { id: number; status: string }[]) {
         .from(saleStatusHistory)
         .where(and(inArray(saleStatusHistory.saleId, ids), eq(saleStatusHistory.energy, "luz"), inArray(saleStatusHistory.status, ["Em Fornecimento", "Baixa"])))
     : [];
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
+  // Limite da janela de maturing: fim do período do relatório, ou hoje se não definido.
+  const cutoff = periodEnd ? `${periodEnd}-31` : new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
   let supplied = 0;
   let chargeback = 0;
   let maturing = 0;
@@ -260,7 +261,7 @@ async function churn(rows: { id: number; status: string }[]) {
     supplied++;
     const limit = addMonthsIso(first, 3);
     if (baixaDates.some((d) => d >= first && d <= limit)) chargeback++;
-    else if (limit > today) maturing++;
+    else if (limit > cutoff) maturing++;
   }
   return {
     chargeback: { hits: chargeback, base: supplied, maturing, rate: supplied ? chargeback / supplied : null },
@@ -275,7 +276,7 @@ async function churn(rows: { id: number; status: string }[]) {
  */
 const PEL_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
 
-async function saleQuality(allRows: { id: number; date: string; status: string; ddc: unknown; fe: unknown; svc: unknown; consent: unknown }[]) {
+async function saleQuality(allRows: { id: number; date: string; status: string; ddc: unknown; fe: unknown; svc: unknown; consent: unknown }[], periodEnd?: string) {
   const rows = allRows.filter((r) => r.status !== "Anulado");
   const ids = rows.map((r) => r.id);
   const control = ids.length
@@ -301,7 +302,7 @@ async function saleQuality(allRows: { id: number; date: string; status: string; 
     robinson: yesNoRate(rows, "consent", 0),
     contractDays: days.length ? days.reduce((a, b) => a + b, 0) / days.length : null,
     contractBase: days.length,
-    ...(await churn(rows)),
+    ...(await churn(rows, periodEnd)),
   };
 }
 
