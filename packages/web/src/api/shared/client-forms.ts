@@ -63,6 +63,7 @@ export const DEFAULT_SALE_STATUS = "Prospeção";
 
 /** Comercializadores de eletricidade (mercado livre/regulado) para o campo "Antigo Comercializador". */
 const OLD_SUPPLIERS = [
+  "Entrada Direta",
   "EDP Comercial",
   "SU Eletricidade",
   "Endesa",
