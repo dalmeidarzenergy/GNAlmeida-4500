@@ -33,8 +33,6 @@ function Panel({ title, eyebrow, children, className = "" }: { title: string; ey
   );
 }
 
-const SUPPLIER_COLORS = ["#c6f432", "#38bdf8", "#f472b6", "#f5a524", "#a78bfa", "#34d399", "#fb7185", "#facc15", "#9aa39b"];
-
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
 function SalesReports({ month, sellerId, teamId, showPlace = true }: { month: string; sellerId: number | null; teamId: number | null; showPlace?: boolean }) {
@@ -126,27 +124,6 @@ function SalesReports({ month, sellerId, teamId, showPlace = true }: { month: st
                 ))}
                 {!d.topClients.length && <div className="text-[13px] text-ink-3">Sem dados.</div>}
               </div>
-            </Panel>
-            <Panel eyebrow="Luz · LUZ e DUAL · sem baixas nem anuladas" title="Antigo comercializador" className="xl:col-span-2">
-              {!d.byOldSupplier.length ? <Empty title="Sem vendas de luz no período" /> : (
-                <div className="grid items-center gap-6 lg:grid-cols-[280px_1fr]">
-                  <Donut data={d.byOldSupplier.map((x, i) => ({ name: x.name, value: x.count, color: SUPPLIER_COLORS[i % SUPPLIER_COLORS.length] }))} />
-                  <div className="space-y-2.5">
-                    {d.byOldSupplier.map((x, i) => (
-                      <div key={x.name}>
-                        <div className="mb-1 flex items-center justify-between gap-2 text-[12.5px]">
-                          <span className="flex min-w-0 items-center gap-2"><span className="h-2 w-2 shrink-0 rounded-full" style={{ background: SUPPLIER_COLORS[i % SUPPLIER_COLORS.length] }} /><span className="truncate">{x.name}</span></span>
-                          <span className="num shrink-0 text-ink-2">
-                            <span className="font-semibold text-ink">{Math.round(x.share * 100)}%</span> · {x.count}
-                            {x.counted > 0 && <span className="text-volt"> · {x.counted} em fornec.</span>}
-                          </span>
-                        </div>
-                        <Progress value={x.share / (d.byOldSupplier[0]?.share || 1)} color={SUPPLIER_COLORS[i % SUPPLIER_COLORS.length]} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </Panel>
           </div>
         </>
