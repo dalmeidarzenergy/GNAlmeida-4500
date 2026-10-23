@@ -111,9 +111,10 @@ export const commissionTablesRoute = {
   /**
    * Cálculo de comissões de um mês, por vendedor.
    *
-   * Entram as vendas LUZ/Dual com Nível de Tensão BTN cuja ENTRADA em fornecimento caiu neste mês.
-   * O escalão é apurado por essas vendas (as que passaram a Baixa no mesmo mês não contam).
-   * Pagamento por venda: valor do escalão (LUZ ou GÁS) + DDC + FE + PEL, conforme o que a venda tem.
+   * Escalão: apurado apenas pelas vendas LUZ/Dual BTN que entraram em fornecimento no mês
+   * (menos as que baixaram no próprio mês). O GÁS não conta para o escalão.
+   * Pagamento: todas as vendas (LUZ, DUAL, GÁS) são pagas ao valor do escalão atingido
+   * (+ DDC + FE + PEL conforme o que cada venda tem).
    * Chargeback: as vendas que passaram a Baixa neste mês descontam tudo o que foi pago por elas.
    */
   calc: requireView("tabelas-comissionais")
@@ -138,8 +139,10 @@ export const commissionTablesRoute = {
           and(
             eq(saleStatusHistory.energy, "luz"),
             sql`${saleStatusHistory.status} in ('Em Fornecimento', 'Baixa')`,
-            sql`json_extract(${sales.details}, '$.voltageLevel') = 'BTN'`,
-            sql`${sales.service} in ('LUZ', 'DUAL')`,
+            sql`(
+              (json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ', 'DUAL'))
+              OR ${sales.service} = 'GÁS'
+            )`,
           ),
         );
 
@@ -203,7 +206,7 @@ export const commissionTablesRoute = {
           if (!s.isSeller || (!active.length && !chargebacks.length)) return null;
           if (!table) return { sellerId: s.id, sellerName: s.name, sales: active.length, tableName: null, blocked: 0, paidSales: active.length, band: null, unit: 0, gross: 0, commission: 0, chargebackSales: chargebacks.length, chargebackValue: 0, missingTable: true };
 
-          const band = bandFor(table.id, active.length);
+          const band = bandFor(table.id, active.filter(([, e]) => e.service !== "GÁS").length);
           const bandValue = (service: string | null) => (service === "GÁS" ? band?.gas : band?.luz) ?? 0;
           const perDdc = band?.dd ?? 0;
           const perFe = band?.fe ?? 0;

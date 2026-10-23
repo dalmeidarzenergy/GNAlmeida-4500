@@ -80,8 +80,9 @@ export const chiefTablesRoute = {
   /**
    * Cálculo do escalão de chefe de equipa, por chefe e por mês.
    *
-   * Vendas contadas = LUZ/Dual BTN que entraram em fornecimento no mês (menos as que baixaram no próprio mês),
-   * da equipa inteira (o chefe incluído) para o escalão de equipa, e só as próprias para o escalão próprio.
+   * Escalão de equipa e escalão próprio: apurados apenas pelas vendas LUZ/Dual BTN que
+   * entraram em fornecimento no mês (menos as que baixaram no próprio mês) — o GÁS não conta.
+   * Pagamento: todas as vendas (incluindo GÁS) são pagas ao valor do escalão atingido.
    */
   calc: requireView("tabelas-comissionais")
     .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
@@ -105,8 +106,10 @@ export const chiefTablesRoute = {
           and(
             eq(saleStatusHistory.energy, "luz"),
             sql`${saleStatusHistory.status} in ('Em Fornecimento', 'Baixa')`,
-            sql`json_extract(${sales.details}, '$.voltageLevel') = 'BTN'`,
-            sql`${sales.service} in ('LUZ', 'DUAL')`,
+            sql`(
+              (json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ', 'DUAL'))
+              OR ${sales.service} = 'GÁS'
+            )`,
           ),
         );
 
@@ -182,17 +185,23 @@ export const chiefTablesRoute = {
           const table = chiefTableInForce(s.id, s.chiefTableId);
           if (!table) return null;
           const ids = teamOfChief(s.id);
-          let teamCount = 0;
-          for (const id of ids) teamCount += valid.get(id)?.length ?? 0;
-          const own = valid.get(s.id) ?? [];
-          if (!teamCount) return null;
+          let teamBandCount = 0;
+          let teamTotalCount = 0;
+          for (const id of ids) {
+            const all = valid.get(id) ?? [];
+            teamBandCount += all.filter((e) => e.service !== "GÁS").length;
+            teamTotalCount += all.length;
+          }
+          if (!teamBandCount) return null;
 
-          const band = bandFor(table.id, "team", teamCount);
+          const band = bandFor(table.id, "team", teamBandCount);
           const blocked = table.blockedSales ?? 0;
-          const paidSales = Math.max(0, teamCount - blocked);
+          const paidSales = Math.max(0, teamTotalCount - blocked);
           const bandCommission = band?.commission ?? 0;
 
-          const ownBand = bandFor(table.id, "own", own.length);
+          const own = valid.get(s.id) ?? [];
+          const ownBandCount = own.filter((e) => e.service !== "GÁS").length;
+          const ownBand = bandFor(table.id, "own", ownBandCount);
           const ownValue = own.reduce((sum, e) => {
             const d = e.details ?? {};
             const base = (e.service === "GÁS" ? ownBand?.gas : ownBand?.luz) ?? 0;
@@ -204,7 +213,7 @@ export const chiefTablesRoute = {
             sellerName: s.name,
             role: "chefe" as const,
             tableName: table.name,
-            teamSales: teamCount,
+            teamSales: teamTotalCount,
             ownSales: own.length,
             blocked,
             paidSales,
