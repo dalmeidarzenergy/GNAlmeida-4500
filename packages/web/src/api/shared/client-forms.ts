@@ -18,6 +18,7 @@ export const SERVICES = [
   { label: "GÁS", hint: "Gás natural" },
   { label: "DUAL", hint: "Luz + gás" },
   { label: "SOLAR", hint: "Painéis solares" },
+  { label: "MEDEM", hint: "Medição + energia" },
 ] as const;
 export const SERVICE_LABELS: string[] = SERVICES.map((s) => s.label);
 
@@ -182,6 +183,44 @@ export const CAMPAIGN_FIELDS: Record<string, (service: string) => string[]> = {
   campaign: (service) => (service === "DUAL" ? ["LUZ", "DUAL"] : [service]),
   campaignGas: () => ["GÁS", "DUAL"],
 };
+
+/** MEDEM: medição + energia. Estado da venda = LUZ + opção "-" no topo. */
+export const MEDEM_TIPOS = [
+  "Preço fixo",
+  "Contrato Solução Preço Fixo Energia Verde",
+  "Indexado pass-through Verde",
+] as const;
+
+export const MEDEM_PROPOSAL_STATUS = [
+  "Adjudicada",
+  "Pendente de Validação",
+  "Pronta",
+  "Enviada",
+  "Anulada",
+] as const;
+
+const MEDEM_SALE_STATUS = ["-", ...SALE_STATUS];
+
+SALE_FORMS.MEDEM = [
+  { key: "contractNumber", label: "Número de Contrato", kind: "text" },
+  { key: "tipo", label: "Tipo", kind: "select", options: [...MEDEM_TIPOS] },
+  { key: "oldSupplier", label: "Antigo Comercializador", kind: "select", options: OLD_SUPPLIERS },
+  { key: "name", label: "Nome do Cliente", kind: "text", required: true, full: true },
+  { key: "nif", label: "NIF", kind: "text", required: true, pattern: "\d{9}", patternHint: "9 dígitos" },
+  { key: "contact", label: "Contacto", kind: "tel", required: true },
+  { key: "signatureDate", label: "Data de Assinatura", kind: "date" },
+  { key: "address", label: "Morada Completa", kind: "text", full: true },
+  { key: "city", label: "Localidade", kind: "text" },
+  { key: "district", label: "Distrito", kind: "select", options: DISTRICTS },
+  { key: "municipality", label: "Concelho", kind: "select", options: [], optionsFrom: "district" },
+  { key: "cpe", label: "CPE", kind: "text", required: true, pattern: "PT\d{16}[A-Z]{2}", patternHint: "PT + 16 dígitos + 2 letras", placeholder: "PT0002000000000000XX" },
+  { key: "power", label: "Potência (kVA)", kind: "select", options: POWERS_KVA },
+  { key: "campaign", label: "Campanha", kind: "text" },
+  { key: "proposalStatus", label: "Estado da Proposta", kind: "select", options: [...MEDEM_PROPOSAL_STATUS], default: "Enviada" },
+  { key: "saleStatus", label: "Estado da Venda", kind: "select", options: MEDEM_SALE_STATUS, default: "Prospeção" },
+  { key: "notes", label: "Observações", kind: "textarea", full: true },
+];
+
 
 /** Formulário base para os serviços que ainda não têm campos próprios (SOLAR). */
 export const BASE_SALE_FORM: FieldDef[] = [
