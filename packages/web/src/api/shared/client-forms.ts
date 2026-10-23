@@ -118,6 +118,7 @@ export const SALE_FORMS: Record<string, FieldDef[]> = {
 
 /** Comercializadores de gás natural para os campos "Antigo Comercializador" (GÁS/DUAL). */
 const OLD_GAS_SUPPLIERS = [
+  "Entrada Direta",
   "Galp",
   "EDP Comercial",
   "Goldenergy",
