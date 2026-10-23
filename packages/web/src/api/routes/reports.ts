@@ -153,6 +153,7 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
       fe: sql<number | null>`json_extract(${sales.details}, '$.fe')`,
       svc: sql<number | null>`json_extract(${sales.details}, '$.pel')`,
       consent: sql<number | null>`json_extract(${sales.details}, '$.consent')`,
+      contractMonths: sql<number | null>`cast(json_extract(${sales.details}, '$.contractDuration') as real)`,
       district: sql<string | null>`json_extract(${sales.details}, '$.district')`,
       municipality: sql<string | null>`json_extract(${sales.details}, '$.municipality')`,
     })
@@ -236,10 +237,10 @@ function addMonthsIso(d: string, n: number) {
 
 /**
  * Chargeback e baixas, sobre as vendas registadas no período (com os filtros aplicados), pelo estado principal (luz):
- * - Chargeback: das vendas que chegaram a "Em Fornecimento", as que passaram a "Baixa" até 3 meses depois da primeira entrada em fornecimento.
+ * - Chargeback: das vendas que chegaram a "Em Fornecimento", as que passaram a "Baixa" dentro do prazo do contrato (meses da Duração do Contrato da venda).
  * - Baixas: das vendas registadas, as que estão ou estiveram em "Baixa". "Pedido de Baixa" não conta em nenhuma.
  */
-async function churn(rows: { id: number; status: string }[], periodEnd?: string) {
+async function churn(rows: { id: number; status: string; contractMonths?: number | null }[], periodEnd?: string) {
   const ids = rows.map((r) => r.id);
   const hist = ids.length
     ? await db
@@ -260,7 +261,9 @@ async function churn(rows: { id: number; status: string }[], periodEnd?: string)
     const first = h.filter((x) => x.status === "Em Fornecimento").map((x) => x.on).sort()[0];
     if (!first) continue;
     supplied++;
-    const limit = addMonthsIso(first, 3);
+    // Prazo do contrato: os meses indicados na venda; 3 meses por omissão quando nao preenchido.
+    const months = r.contractMonths != null && r.contractMonths > 0 ? Math.round(r.contractMonths) : 3;
+    const limit = addMonthsIso(first, months);
     if (baixaDates.some((d) => d >= first && d <= limit)) chargeback++;
     else if (limit > cutoff) maturing++;
   }
@@ -277,7 +280,7 @@ async function churn(rows: { id: number; status: string }[], periodEnd?: string)
  */
 const PEL_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
 
-async function saleQuality(allRows: { id: number; date: string; status: string; ddc: unknown; fe: unknown; svc: unknown; consent: unknown }[], periodEnd?: string) {
+async function saleQuality(allRows: { id: number; date: string; status: string; ddc: unknown; fe: unknown; svc: unknown; consent: unknown; contractMonths?: number | null }[], periodEnd?: string) {
   const rows = allRows.filter((r) => r.status !== "Anulado");
   const ids = rows.map((r) => r.id);
   const control = ids.length

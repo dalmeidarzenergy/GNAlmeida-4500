@@ -108,8 +108,8 @@ export default function MedemPage() {
               accent="var(--rose)"
               sub={
                 <>
-                  {d.quality.chargeback.hits} de {d.quality.chargeback.base} em fornecimento passaram a Baixa em 3 meses
-                  {d.quality.chargeback.maturing > 0 && <span className="text-ink-3"> · {d.quality.chargeback.maturing} ainda dentro dos 3 meses</span>}
+                  {d.quality.chargeback.hits} de {d.quality.chargeback.base} em fornecimento passaram a Baixa dentro do prazo do contrato
+                  {d.quality.chargeback.maturing > 0 && <span className="text-ink-3"> · {d.quality.chargeback.maturing} ainda dentro do prazo do contrato</span>}
                 </>
               }
             />
