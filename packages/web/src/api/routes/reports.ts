@@ -14,7 +14,7 @@ const FORECAST_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
 const COUNTED = SALE_COUNTED;
 
 /** Por defeito, os painéis, rankings e gráficos só contabilizam vendas LUZ e DUAL. */
-const DEFAULT_SERVICES = ["LUZ", "DUAL"];
+const DEFAULT_SERVICES = ["LUZ", "DUAL", "MEDEM"];
 const servicesInput = z.array(z.enum(SERVICE_LABELS as [string, ...string[]])).min(1).optional();
 
 /**
@@ -619,6 +619,71 @@ export const reports = {
         statuses: period.byStatus,
         districts: period.byDistrict,
         concelhos: period.byConcelho,
+      };
+    }),
+  medem: authed
+    .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), months: z.number().int().min(0).max(240).optional(), sellerId: z.number().nullable().optional(), teamId: z.number().nullable().optional(), district: z.string().max(80).nullable().optional(), municipality: z.string().max(80).nullable().optional() }))
+    .handler(async ({ input, context }) => {
+      if (context.role === "rh") return null;
+      const scope = await resolveScope(context, input.sellerId, input.teamId);
+      const month = input.month ?? new Date().toISOString().slice(0, 7);
+      const months = input.months ?? 1;
+      const medemSvc = ["MEDEM"];
+      const place = { district: input.district, municipality: input.municipality };
+
+      // Base report filtered to MEDEM only.
+      const base = await salesReport(months, scope, month, medemSvc, place);
+
+      // MEDEM-specific breakdowns: tipo, estado da proposta, pontos, crédito.
+      let keys: string[];
+      if (months === 0) {
+        const endKey = monthKeys(1, month)[0];
+        const sellerCond = sellerWhere(scope);
+        const [first] = await db.select({ d: sql<string | null>`min(${sales.date})` }).from(sales).where(sellerCond);
+        keys = monthRangeKeys((first?.d ?? `${endKey}-01`).slice(0, 7), endKey);
+      } else {
+        keys = monthKeys(months, month);
+      }
+      const from = `${keys[0]}-01`;
+      const to = `${keys.at(-1)}-31`;
+      const sellerCond = sellerWhere(scope);
+      const medemRows = await db
+        .select({
+          tipo: sql<string | null>`json_extract(${sales.details}, '$.tipo')`,
+          proposalStatus: sql<string | null>`json_extract(${sales.details}, '$.proposalStatus')`,
+          points: sql<number | null>`cast(json_extract(${sales.details}, '$.points') as real)`,
+          credit: sql<number | null>`cast(json_extract(${sales.details}, '$.credit') as real)`,
+          status: sales.status,
+          district: sql<string | null>`json_extract(${sales.details}, '$.district')`,
+          municipality: sql<string | null>`json_extract(${sales.details}, '$.municipality')`,
+        })
+        .from(sales)
+        .where(and(gte(sales.date, from), lte(sales.date, to), sellerCond, eq(sales.service, "MEDEM")))
+        .then((list) => (place.district || place.municipality ? list.filter((r) => matchesPlace(r, place.district, place.municipality)) : list));
+
+      const tipoMap = new Map<string, { name: string; count: number }>();
+      const propMap = new Map<string, { name: string; count: number }>();
+      let totalPoints = 0;
+      let totalCredit = 0;
+      for (const r of medemRows) {
+        const t = (r.tipo || "Sem tipo").trim();
+        const x = tipoMap.get(t) ?? { name: t, count: 0 };
+        x.count++;
+        tipoMap.set(t, x);
+        const ps = (r.proposalStatus || "Sem estado").trim();
+        const y = propMap.get(ps) ?? { name: ps, count: 0 };
+        y.count++;
+        propMap.set(ps, y);
+        if (r.points) totalPoints += Number(r.points);
+        if (r.credit) totalCredit += Number(r.credit);
+      }
+
+      return {
+        ...base,
+        byTipo: [...tipoMap.values()].sort((a, b) => b.count - a.count).map((x) => ({ ...x, share: medemRows.length ? x.count / medemRows.length : 0 })),
+        byProposalStatus: [...propMap.values()].sort((a, b) => b.count - a.count).map((x) => ({ ...x, share: medemRows.length ? x.count / medemRows.length : 0 })),
+        totalPoints: Math.round(totalPoints * 100) / 100,
+        totalCredit: Math.round(totalCredit * 100) / 100,
       };
     }),
 };

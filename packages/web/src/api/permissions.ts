@@ -32,6 +32,7 @@ export const MODULES = [
   { key: "relatorios", label: "Relatórios", group: "Análise" },
   { key: "evolucao", label: "Evolução", group: "Análise" },
   { key: "comparativo", label: "Comparativo", group: "Análise" },
+  { key: "medem", label: "Análise MEDEM", group: "Análise" },
   { key: "utilizadores", label: "Utilizadores", group: "Análise" },
 ] as const;
 
@@ -61,6 +62,7 @@ const ACCESS: Record<ModuleKey, ModuleAccess> = {
   relatorios: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor"] },
   evolucao: { view: ["admin", "diretor", "rh", "chefe", "vendedor"], edit: ["admin", "diretor"] },
   comparativo: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor"] },
+  medem: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor"] },
   utilizadores: { view: ["admin", "diretor", "backoffice"], edit: ["admin", "diretor"] },
 };
 
