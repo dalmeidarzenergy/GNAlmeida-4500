@@ -13,8 +13,8 @@ const FORECAST_COUNTED = ["Em Fornecimento", "Control", "Em Processo", "Prospeç
 const FORECAST_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
 const COUNTED = SALE_COUNTED;
 
-/** Por defeito, os painéis, rankings e gráficos só contabilizam vendas LUZ e DUAL. */
-const DEFAULT_SERVICES = ["LUZ", "DUAL", "MEDEM"];
+/** Por defeito, os painéis, rankings e gráficos só contabilizam vendas LUZ e DUAL (MEDEM tem a sua própria aba). */
+const DEFAULT_SERVICES = ["LUZ", "DUAL"];
 const servicesInput = z.array(z.enum(SERVICE_LABELS as [string, ...string[]])).min(1).optional();
 
 /**
@@ -653,18 +653,26 @@ export const reports = {
           proposalStatus: sql<string | null>`json_extract(${sales.details}, '$.proposalStatus')`,
           points: sql<number | null>`cast(json_extract(${sales.details}, '$.points') as real)`,
           credit: sql<number | null>`cast(json_extract(${sales.details}, '$.credit') as real)`,
+          consumption: sql<number | null>`cast(json_extract(${sales.details}, '$.consumption') as real)`,
           status: sales.status,
+          month: sql<string>`substr(${sales.date}, 1, 7)`,
+          sellerName: employees.name,
           district: sql<string | null>`json_extract(${sales.details}, '$.district')`,
           municipality: sql<string | null>`json_extract(${sales.details}, '$.municipality')`,
         })
         .from(sales)
+        .leftJoin(employees, eq(employees.id, sales.sellerId))
         .where(and(gte(sales.date, from), lte(sales.date, to), sellerCond, eq(sales.service, "MEDEM")))
         .then((list) => (place.district || place.municipality ? list.filter((r) => matchesPlace(r, place.district, place.municipality)) : list));
 
       const tipoMap = new Map<string, { name: string; count: number }>();
       const propMap = new Map<string, { name: string; count: number }>();
+      const monthConsMap = new Map<string, number>();
+      const sellerConsMap = new Map<string, number>();
       let totalPoints = 0;
       let totalCredit = 0;
+      let totalConsumption = 0;
+      let consumptionCount = 0;
       for (const r of medemRows) {
         const t = (r.tipo || "Sem tipo").trim();
         const x = tipoMap.get(t) ?? { name: t, count: 0 };
@@ -676,14 +684,30 @@ export const reports = {
         propMap.set(ps, y);
         if (r.points) totalPoints += Number(r.points);
         if (r.credit) totalCredit += Number(r.credit);
+        if (r.consumption) {
+          const c = Number(r.consumption);
+          totalConsumption += c;
+          consumptionCount++;
+          monthConsMap.set(r.month, (monthConsMap.get(r.month) ?? 0) + c);
+          if (r.sellerName) sellerConsMap.set(r.sellerName, (sellerConsMap.get(r.sellerName) ?? 0) + c);
+        }
       }
+
+      const sellersById = new Map(base.bySeller.map((s) => [s.id, s.name]));
 
       return {
         ...base,
         byTipo: [...tipoMap.values()].sort((a, b) => b.count - a.count).map((x) => ({ ...x, share: medemRows.length ? x.count / medemRows.length : 0 })),
         byProposalStatus: [...propMap.values()].sort((a, b) => b.count - a.count).map((x) => ({ ...x, share: medemRows.length ? x.count / medemRows.length : 0 })),
+        byMonthConsumption: keys.map((k) => ({ month: k, consumption: Math.round((monthConsMap.get(k) ?? 0) * 10) / 10 })),
+        bySellerConsumption: [...sellerConsMap.entries()]
+          .map(([id, c]) => ({ name: sellersById.get(id) ?? `#${id}`, consumption: Math.round(c * 10) / 10 }))
+          .sort((a, b) => b.consumption - a.consumption),
         totalPoints: Math.round(totalPoints * 100) / 100,
         totalCredit: Math.round(totalCredit * 100) / 100,
+        totalConsumption: Math.round(totalConsumption * 10) / 10,
+        avgConsumption: consumptionCount ? Math.round((totalConsumption / consumptionCount) * 10) / 10 : 0,
+        consumptionCount,
       };
     }),
 };

@@ -1,7 +1,7 @@
 import { SERVICE_LABELS } from "../../api/shared/client-forms";
 
-/** Serviços contabilizados por defeito nos painéis, rankings e gráficos. */
-export const DASHBOARD_SERVICES = ["LUZ", "DUAL", "MEDEM"];
+/** Serviços contabilizados por defeito nos painéis, rankings e gráficos (MEDEM tem a sua própria aba). */
+export const DASHBOARD_SERVICES = ["LUZ", "DUAL"];
 
 /** Filtro de tipo de venda (LUZ, GÁS, DUAL, SOLAR) com seleção múltipla; fica sempre pelo menos um ativo. */
 export function ServiceFilter({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {

@@ -4,7 +4,7 @@ import { useMedemReport } from "../queries/reports";
 import { useMe } from "../queries/me";
 import { PageHeader, Tabs, Stat, Progress, Empty } from "../components/ui/kit";
 import { TrendChart, BarsChart, Donut } from "../components/charts";
-import { fmtEur, fmtMonth, monthLabel, thisMonth } from "../lib/format";
+import { fmtMonth, monthLabel, thisMonth } from "../lib/format";
 import { MonthYearFilter } from "../components/month-year-filter";
 import { EmployeeFilter } from "../components/employee-filter";
 import { TeamFilter, useTeamIds } from "../components/team-filter";
@@ -76,7 +76,7 @@ export default function MedemPage() {
           <span className="text-[12.5px] text-ink-3">{period}</span>
         </div>
         {d && (
-          <button className="btn btn-ghost" onClick={() => downloadCsv(`medem-${month}.csv`, [["Métrica", "Valor"], ["Em Fornecimento", d.orders], ["Vendas registadas", d.byStatus.reduce((s, x) => s + x.count, 0)], [], ["Tipo", "Vendas", "%"], ...d.byTipo.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Estado da Proposta", "Vendas", "%"], ...d.byProposalStatus.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Vendedor", "Vendas"], ...d.bySeller.map((s) => [s.name, s.orders])])}>
+          <button className="btn btn-ghost" onClick={() => downloadCsv(`medem-${month}.csv`, [["Métrica", "Valor"], ["Em Fornecimento", d.orders], ["Vendas registadas", d.byStatus.reduce((s, x) => s + x.count, 0)], ["Total de consumo (MWh)", d.totalConsumption], ["Crédito", d.totalCredit], [], ["Tipo", "Vendas", "%"], ...d.byTipo.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Estado da Proposta", "Vendas", "%"], ...d.byProposalStatus.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Vendedor", "Vendas"], ...d.bySeller.map((s) => [s.name, s.orders]), [], ["Vendedor", "Consumo (MWh)"], ...d.bySellerConsumption.map((s) => [s.name, s.consumption])])}>
             <Download size={14} /> Exportar CSV
           </button>
         )}
@@ -89,7 +89,8 @@ export default function MedemPage() {
           <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
             <Stat label="Em fornecimento" value={d.orders} accent="var(--volt)" />
             <Stat delay={40} label="Vendas registadas" value={d.byStatus.reduce((s, x) => s + x.count, 0)} sub={d.byStatus.length ? `${d.byStatus.length} estados` : "sem registos"} accent="var(--sky)" />
-            <Stat delay={80} label="Número de pontos" value={d.totalPoints.toLocaleString("pt-PT")} sub={`${fmtEur(d.totalCredit)} de crédito`} accent="var(--rose)" />
+            <Stat delay={80} label="Total de consumo" value={`${d.totalConsumption.toLocaleString("pt-PT")} MWh`} sub={d.consumptionCount ? `${d.consumptionCount} vendas com consumo` : "sem consumo registado"} accent="var(--volt)" />
+            <Stat delay={120} label="Crédito" value={d.totalCredit.toLocaleString("pt-PT")} sub="total acumulado" accent="var(--rose)" />
           </div>
 
           <div className="mb-4 grid gap-4 xl:grid-cols-2">
@@ -116,6 +117,19 @@ export default function MedemPage() {
             <div className="label-mono mb-1">Evolução · {period}</div>
             <div className="mb-4 font-display text-[16px] font-semibold">Vendas MEDEM por mês</div>
             <TrendChart data={d.byMonth} dataKey="orders" money={false} />
+          </div>
+
+          <div className="mb-4 grid gap-4 xl:grid-cols-2">
+            <div className="card rise p-5">
+              <div className="label-mono mb-1">Consumo · {period}</div>
+              <div className="mb-4 font-display text-[16px] font-semibold">Consumo anual por mês (MWh)</div>
+              {!d.byMonthConsumption.some((m) => m.consumption > 0) ? <Empty title="Sem consumo registado no período" /> : <TrendChart data={d.byMonthConsumption} dataKey="consumption" money={false} />}
+            </div>
+            <div className="card rise p-5">
+              <div className="label-mono mb-1">Consumo · {period}</div>
+              <div className="mb-4 font-display text-[16px] font-semibold">Consumo por vendedor (MWh)</div>
+              {!d.bySellerConsumption.length ? <Empty title="Sem consumo registado no período" /> : <BarsChart money={false} data={d.bySellerConsumption} dataKey="consumption" xKey="name" height={300} />}
+            </div>
           </div>
 
           <div className="mb-4 grid gap-4 xl:grid-cols-2">
