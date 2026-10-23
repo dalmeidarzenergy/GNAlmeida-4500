@@ -435,8 +435,9 @@ export const simuladorPropostas = sqliteTable("simulador_propostas", {
 });
 
 /**
- * Tabelas comissionais: comissões fixas por venda (LUZ, GÁS, DDC, FE, PEL) e escalões
- * MEDEM (faixas por nº de pontos) e SOLAR (faixas por nº de painéis). Aplicam-se por funcionário.
+ * Tabelas comissionais: aplicam-se por funcionário e definem a remuneração por serviço vendido.
+ * Os escalões de clientes (mensais) escalam LUZ, GÁS, DD, FE e PEL; o MEDEM escala por pontos
+ * e o Solar pela quantidade de painéis.
  */
 export const commissionTables = sqliteTable("commission_tables", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -444,29 +445,34 @@ export const commissionTables = sqliteTable("commission_tables", {
   description: text("description"),
   color: text("color").notNull().default("#c6f432"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
-  /** Comissões fixas por venda (€). */
-  luz: real("luz"),
-  gas: real("gas"),
-  ddc: real("ddc"),
-  fe: real("fe"),
-  pel: real("pel"),
   createdAt: createdAt(),
 });
 
-/** Escalões de uma tabela comisional: faixas MEDEM (por nº de pontos) ou SOLAR (por nº de painéis). */
+/**
+ * Escalões de uma tabela comisional.
+ * kind = "clients" (faixas mensais de nº de clientes → luz/gas/dd/fe/pel),
+ *        "medem" (faixas por nº de pontos → commission) ou
+ *        "solar" (faixas por nº de painéis → commission).
+ */
 export const commissionRows = sqliteTable("commission_rows", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   tableId: integer("table_id")
     .notNull()
     .references(() => commissionTables.id, { onDelete: "cascade" }),
-  /** "medem" (faixas por nº de pontos) | "solar" (faixas por nº de painéis solares). */
-  kind: text("kind").notNull().default("medem"),
-  /** Limite inferior da faixa (pontos ou painéis). */
+  /** "clients" | "medem" | "solar". */
+  kind: text("kind").notNull().default("clients"),
+  /** Limite inferior da faixa (nº de clientes, pontos ou painéis). */
   min: real("min"),
-  /** Limite superior da faixa (pontos ou painéis). */
+  /** Limite superior da faixa (vazio = sem limite, ex.: ">= 40"). */
   max: real("max"),
-  /** Comissão (€) dessa faixa. */
+  /** Comissão (€) — usada pelo MEDEM e pelo Solar. */
   commission: real("commission"),
+  /** Comissões (€) por serviço vendido — usadas pelo escalão de clientes. */
+  luz: real("luz"),
+  gas: real("gas"),
+  dd: real("dd"),
+  fe: real("fe"),
+  pel: real("pel"),
   /** Ordem de apresentação dentro do escalonamento. */
   position: integer("position").notNull().default(0),
   createdAt: createdAt(),

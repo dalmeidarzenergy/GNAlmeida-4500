@@ -2,40 +2,97 @@ import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
 import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill } from "../components/ui/kit";
-import { errMsg, fmtEur } from "../lib/format";
+import { errMsg } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useCommissionTables>["data"]>[number];
-type Row = Table["medemRows"][number];
-type DraftRow = { min: string; max: string; commission: string };
+
+type ClientDraft = { min: string; max: string; luz: string; gas: string; dd: string; fe: string; pel: string };
+type BandDraft = { min: string; max: string; commission: string };
 
 const COLORS = ["#c6f432", "#f5a524", "#38bdf8", "#a78bfa", "#f472b6", "#34d399", "#fb7185", "#facc15"];
 
-const emptyDraft = (): DraftRow => ({ min: "", max: "", commission: "" });
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
 const str = (v: number | null | undefined) => (v == null ? "" : String(v));
+const eur = (v: number | null | undefined) => (v == null ? "—" : `${v.toFixed(2).replace(".", ",")}€`);
 
-/** Campo numérico de comissão fixa (€). */
-function MoneyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+const emptyClient = (): ClientDraft => ({ min: "", max: "", luz: "", gas: "", dd: "", fe: "", pel: "" });
+const emptyBand = (): BandDraft => ({ min: "", max: "", commission: "" });
+
+/** Colunas de serviço do escalão de clientes (cores da tabela da empresa). */
+const CLIENT_COLS: { key: keyof ClientDraft; label: string; color: string }[] = [
+  { key: "luz", label: "LUZ", color: "#2f8f4e" },
+  { key: "gas", label: "GÁS", color: "#3d9ad9" },
+  { key: "dd", label: "DD", color: "#e2622a" },
+  { key: "fe", label: "FE", color: "#7cc4e8" },
+  { key: "pel", label: "PEL", color: "#7cc4e8" },
+];
+
+/** Escalões por nº de clientes (mensal) → LUZ / GÁS / DD / FE / PEL. */
+function ClientsEditor({ rows, onChange }: { rows: ClientDraft[]; onChange: (r: ClientDraft[]) => void }) {
+  const setRow = (i: number, patch: Partial<ClientDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = () => onChange([...rows, emptyClient()]);
+  const del = (i: number) => onChange(rows.length === 1 ? [emptyClient()] : rows.filter((_, j) => j !== i));
   return (
-    <Field label={label}>
-      <input aria-label={label} className="input num" placeholder="€" value={value} onChange={(e) => onChange(e.target.value)} />
-    </Field>
+    <div className="mt-6">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-display text-[14px] font-semibold">Escalões por nº de clientes (mensal)</div>
+          <div className="text-[11.5px] text-ink-3">Valor de remuneração por serviço vendido, conforme os clientes angariados no mês. Deixa em branco o que não se aplica.</div>
+        </div>
+        <button type="button" className="btn btn-ghost shrink-0" onClick={add}><Plus size={14} /> Escalão</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[660px] border-collapse text-[12.5px]">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3">
+              <th className="px-2 pb-2 font-medium">De</th>
+              <th className="px-2 pb-2 font-medium">Até</th>
+              {CLIENT_COLS.map((c) => (
+                <th key={c.key} className="px-2 pb-2 font-medium" style={{ color: c.color }}>{c.label} (€)</th>
+              ))}
+              <th className="w-10 pb-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t border-line">
+                <td className="px-1 py-2 align-top">
+                  <input aria-label={`Clientes mínimo ${i + 1}`} className="input num" placeholder="0" value={r.min} onChange={(e) => setRow(i, { min: e.target.value })} />
+                </td>
+                <td className="px-1 py-2 align-top">
+                  <input aria-label={`Clientes máximo ${i + 1}`} className="input num" placeholder="sem limite" value={r.max} onChange={(e) => setRow(i, { max: e.target.value })} />
+                </td>
+                {CLIENT_COLS.map((c) => (
+                  <td key={c.key} className="px-1 py-2 align-top">
+                    <input aria-label={`${c.label} escalão ${i + 1}`} className="input num" placeholder="€" value={r[c.key]} onChange={(e) => setRow(i, { [c.key]: e.target.value } as Partial<ClientDraft>)} />
+                  </td>
+                ))}
+                <td className="px-1 py-2 align-top">
+                  <button type="button" aria-label={`Remover escalão ${i + 1}`} className="btn-icon" onClick={() => del(i)}><Trash2 size={14} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11.5px] text-ink-3">Deixa o “Até” vazio no último escalão (ex.: ≥ 40 clientes).</p>
+    </div>
   );
 }
 
-/** Linhas de escalões (MEDEM por pontos ou SOLAR por painéis). */
-function EscaloesEditor({ title, hint, unit, rows, onChange }: { title: string; hint: string; unit: string; rows: DraftRow[]; onChange: (rows: DraftRow[]) => void }) {
-  const setRow = (i: number, patch: Partial<DraftRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  const add = () => onChange([...rows, emptyDraft()]);
-  const del = (i: number) => onChange(rows.length === 1 ? [emptyDraft()] : rows.filter((_, j) => j !== i));
+/** Escalões genéricos: MEDEM (por pontos) e Solar (por painéis). */
+function BandEditor({ title, hint, unit, rows, onChange }: { title: string; hint: string; unit: string; rows: BandDraft[]; onChange: (r: BandDraft[]) => void }) {
+  const setRow = (i: number, patch: Partial<BandDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = () => onChange([...rows, emptyBand()]);
+  const del = (i: number) => onChange(rows.length === 1 ? [emptyBand()] : rows.filter((_, j) => j !== i));
   return (
     <div className="mt-6">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <div className="font-display text-[14px] font-semibold">{title}</div>
           <div className="text-[11.5px] text-ink-3">{hint}</div>
         </div>
-        <button type="button" className="btn btn-ghost" onClick={add}><Plus size={14} /> Escalão</button>
+        <button type="button" className="btn btn-ghost shrink-0" onClick={add}><Plus size={14} /> Escalão</button>
       </div>
       <div className="space-y-2">
         {rows.map((r, i) => (
@@ -64,16 +121,14 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
   const [description, setDescription] = useState(initial?.description ?? "");
   const [color, setColor] = useState(initial?.color ?? COLORS[0]);
   const [active, setActive] = useState(initial?.active ?? true);
-  const [luz, setLuz] = useState(str(initial?.luz));
-  const [gas, setGas] = useState(str(initial?.gas));
-  const [ddc, setDdc] = useState(str(initial?.ddc));
-  const [fe, setFe] = useState(str(initial?.fe));
-  const [pel, setPel] = useState(str(initial?.pel));
-  const [medemRows, setMedemRows] = useState<DraftRow[]>(initial?.medemRows.length ? initial.medemRows.map((r) => ({ min: str(r.min), max: str(r.max), commission: str(r.commission) })) : [emptyDraft()]);
-  const [solarRows, setSolarRows] = useState<DraftRow[]>(initial?.solarRows.length ? initial.solarRows.map((r) => ({ min: str(r.min), max: str(r.max), commission: str(r.commission) })) : [emptyDraft()]);
+  const [clientRows, setClientRows] = useState<ClientDraft[]>(
+    initial?.clientRows.length
+      ? initial.clientRows.map((r) => ({ min: str(r.min), max: str(r.max), luz: str(r.luz), gas: str(r.gas), dd: str(r.dd), fe: str(r.fe), pel: str(r.pel) }))
+      : [emptyClient()],
+  );
+  const [medemRows, setMedemRows] = useState<BandDraft[]>(initial?.medemRows.length ? initial.medemRows.map((r) => ({ min: str(r.min), max: str(r.max), commission: str(r.commission) })) : [emptyBand()]);
+  const [solarRows, setSolarRows] = useState<BandDraft[]>(initial?.solarRows.length ? initial.solarRows.map((r) => ({ min: str(r.min), max: str(r.max), commission: str(r.commission) })) : [emptyBand()]);
   const [error, setError] = useState<string | null>(null);
-
-  const toRow = (r: DraftRow) => ({ min: num(r.min), max: num(r.max), commission: num(r.commission) });
 
   return (
     <form
@@ -85,13 +140,9 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
           description: description || null,
           color,
           active,
-          luz: num(luz),
-          gas: num(gas),
-          ddc: num(ddc),
-          fe: num(fe),
-          pel: num(pel),
-          medemRows: medemRows.map(toRow),
-          solarRows: solarRows.map(toRow),
+          clientRows: clientRows.map((r) => ({ kind: "clients" as const, min: num(r.min), max: num(r.max), luz: num(r.luz), gas: num(r.gas), dd: num(r.dd), fe: num(r.fe), pel: num(r.pel) })),
+          medemRows: medemRows.map((r) => ({ kind: "medem" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
+          solarRows: solarRows.map((r) => ({ kind: "solar" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
         };
         try {
           if (initial) await save.update.mutateAsync({ ...p, id: initial.id });
@@ -124,20 +175,9 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
         </Field>
       </div>
 
-      <div className="mt-6">
-        <div className="font-display text-[14px] font-semibold">Comissões fixas (por venda)</div>
-        <div className="text-[11.5px] text-ink-3">Valores pagos por cada venda. Deixa em branco os que não se aplicam.</div>
-        <div className="mt-3 grid gap-4 sm:grid-cols-5">
-          <MoneyField label="LUZ (€)" value={luz} onChange={setLuz} />
-          <MoneyField label="GÁS (€)" value={gas} onChange={setGas} />
-          <MoneyField label="DDC (€)" value={ddc} onChange={setDdc} />
-          <MoneyField label="FE (€)" value={fe} onChange={setFe} />
-          <MoneyField label="PEL (€)" value={pel} onChange={setPel} />
-        </div>
-      </div>
-
-      <EscaloesEditor title="Escalões MEDEM" hint="Faixas por número de pontos." unit="pontos" rows={medemRows} onChange={setMedemRows} />
-      <EscaloesEditor title="Tabela Solar" hint="Faixas por quantidade de painéis solares." unit="painéis" rows={solarRows} onChange={setSolarRows} />
+      <ClientsEditor rows={clientRows} onChange={setClientRows} />
+      <BandEditor title="Escalões MEDEM" hint="Faixas por número de pontos." unit="pontos" rows={medemRows} onChange={setMedemRows} />
+      <BandEditor title="Tabela Solar" hint="Faixas por quantidade de painéis solares." unit="painéis" rows={solarRows} onChange={setSolarRows} />
 
       <SubmitRow pending={save.isPending} onCancel={onClose} error={error} extra={initial && <ConfirmDelete pending={remove.isPending} onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onClose(); }} />} />
     </form>
@@ -158,7 +198,7 @@ export default function CommissionTablesPage() {
       {tables.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton h-52 rounded-[14px]" />)}</div>
       ) : !list.length ? (
-        <div className="card"><Empty title="Sem tabelas comissionais" text="Crie a primeira tabela de comissões (LUZ, GÁS, DDC, FE, PEL), escalões MEDEM e tabela Solar." /></div>
+        <div className="card"><Empty title="Sem tabelas comissionais" text="Crie a primeira tabela de comissões com escalões de clientes, MEDEM e Solar." /></div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {list.map((t, i) => (
@@ -170,13 +210,11 @@ export default function CommissionTablesPage() {
               </div>
               <div className="mt-4 font-display text-[17px] font-semibold">{t.name}</div>
               <div className="mt-1 line-clamp-1 text-[12.5px] text-ink-3">{t.description || "Sem descrição"}</div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {!t.active && <Pill tone="muted">Inativa</Pill>}
-              </div>
+              {!t.active && <div className="mt-3"><Pill tone="muted">Inativa</Pill></div>}
               <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3 text-center">
                 <div>
-                  <div className="text-[10.5px] uppercase tracking-wide text-ink-3">LUZ</div>
-                  <div className="num text-[13px] font-semibold">{t.luz != null ? fmtEur(t.luz) : "—"}</div>
+                  <div className="text-[10.5px] uppercase tracking-wide text-ink-3">Clientes</div>
+                  <div className="num text-[13px] font-semibold">{t.clientRows.length} escalões</div>
                 </div>
                 <div>
                   <div className="text-[10.5px] uppercase tracking-wide text-ink-3">MEDEM</div>
@@ -186,6 +224,14 @@ export default function CommissionTablesPage() {
                   <div className="text-[10.5px] uppercase tracking-wide text-ink-3">Solar</div>
                   <div className="num text-[13px] font-semibold">{t.solarRows.length} faixas</div>
                 </div>
+              </div>
+              <div className="mt-3 space-y-1 border-t border-line pt-3 text-[11.5px]">
+                {t.clientRows.slice(0, 4).map((r, j) => (
+                  <div key={j} className="flex items-center justify-between gap-2">
+                    <span className="text-ink-3">{r.min ?? 0}{r.max == null ? "+" : `–${r.max}`}</span>
+                    <span className="num text-ink-2">{eur(r.luz)} · {eur(r.gas)} · {eur(r.dd)} · {eur(r.fe)} · {eur(r.pel)}</span>
+                  </div>
+                ))}
               </div>
             </button>
           ))}
