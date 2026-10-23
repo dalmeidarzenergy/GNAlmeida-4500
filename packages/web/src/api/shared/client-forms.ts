@@ -93,6 +93,7 @@ const OLD_SUPPLIERS = [
 export const SALE_FORMS: Record<string, FieldDef[]> = {
   LUZ: [
     { key: "contractNumber", label: "Número de Contrato", kind: "text" },
+  { key: "proposalNumber", label: "Número da Proposta", kind: "text" },
     { key: "oldSupplier", label: "Antigo Comercializador", kind: "select", options: OLD_SUPPLIERS },
     { key: "name", label: "Nome do Cliente", kind: "text", required: true, full: true },
     { key: "nif", label: "NIF", kind: "text", required: true, pattern: "\\d{9}", patternHint: "9 dígitos" },
@@ -204,6 +205,7 @@ const MEDEM_SALE_STATUS = [...SALE_STATUS];
 
 SALE_FORMS.MEDEM = [
   { key: "contractNumber", label: "Número de Contrato", kind: "text" },
+  { key: "proposalNumber", label: "Número da Proposta", kind: "text" },
   { key: "tipo", label: "Tipo", kind: "select", options: [...MEDEM_TIPOS] },
   { key: "oldSupplier", label: "Antigo Comercializador", kind: "select", options: OLD_SUPPLIERS },
   { key: "name", label: "Nome do Cliente", kind: "text", required: true, full: true },
@@ -218,7 +220,6 @@ SALE_FORMS.MEDEM = [
   { key: "power", label: "Potência (kVA)", kind: "select", options: POWERS_KVA },
   { key: "voltageLevel", label: "Nível de Tensão", kind: "select", options: ["BTN", "BTE", "MT"], default: "BTN" },
   { key: "proposalStatus", label: "Estado da Proposta", kind: "select", options: [...MEDEM_PROPOSAL_STATUS], default: "Enviada" },
-  { key: "proposalNumber", label: "Número da Proposta", kind: "text" },
   { key: "contractDuration", label: "Duração do Contrato", kind: "text" },
   { key: "credit", label: "Crédito", kind: "text" },
   { key: "points", label: "Número de Pontos", kind: "text" },
