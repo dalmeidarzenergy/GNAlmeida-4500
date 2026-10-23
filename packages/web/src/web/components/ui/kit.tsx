@@ -17,14 +17,17 @@ export function PageHeader({ eyebrow, title, children }: { eyebrow: string; titl
   );
 }
 
-export function Pill({ label, color }: { label: string; color: string }) {
+const TONE_COLORS: Record<string, string> = { amber: "#f5a524", sky: "#38bdf8", muted: "var(--ink-3)", green: "#34d399", red: "#fb7185", volt: "var(--volt)" };
+
+export function Pill({ label, color, tone, children }: { label?: string; color?: string; tone?: string; children?: ReactNode }) {
+  const c = color ?? (tone ? TONE_COLORS[tone] ?? "var(--ink-3)" : "var(--ink-3)");
   return (
     <span
       className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[3px] text-[11.5px] font-medium"
-      style={{ color, borderColor: `color-mix(in srgb, ${color} 30%, transparent)`, background: `color-mix(in srgb, ${color} 9%, transparent)` }}
+      style={{ color: c, borderColor: `color-mix(in srgb, ${c} 30%, transparent)`, background: `color-mix(in srgb, ${c} 9%, transparent)` }}
     >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-      {label}
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />
+      {children ?? label}
     </span>
   );
 }

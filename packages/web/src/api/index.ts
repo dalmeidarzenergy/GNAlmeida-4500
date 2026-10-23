@@ -5,6 +5,7 @@ import { ping } from "./routes/ping";
 import { me, users } from "./routes/users";
 import { hr } from "./routes/hr";
 import { recruitment } from "./routes/recruitment";
+import { commissionTablesRoute } from "./routes/commission-tables";
 import { sales } from "./routes/sales";
 import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
@@ -22,6 +23,7 @@ export const router = {
   users,
   hr,
   recruitment,
+  commissionTables: commissionTablesRoute,
   sales,
   reports,
   campaigns,

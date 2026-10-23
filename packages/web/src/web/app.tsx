@@ -17,6 +17,7 @@ import ReportsPage from "./pages/reports";
 import EvolutionPage from "./pages/evolution";
 import ComparisonPage from "./pages/comparison";
 import MedemPage from "./pages/medem";
+import CommissionTablesPage from "./pages/commission-tables";
 import UsersPage from "./pages/users";
 import AgendaPage from "./pages/agenda";
 import D2DPage from "./pages/d2d";
@@ -29,6 +30,7 @@ const routes: [string, React.ComponentType][] = [
   ["/equipas", TeamsPage],
   ["/ausencias", AbsencesPage],
   ["/recrutamento", RecruitmentPage],
+  ["/tabelas-comissionais", CommissionTablesPage],
   ["/clientes", ClientsPage],
   ["/vendas/importar", SalesImportPage],
   ["/vendas", SalesPage],

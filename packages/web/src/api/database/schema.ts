@@ -431,3 +431,36 @@ export const simuladorPropostas = sqliteTable("simulador_propostas", {
   data: text("data", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
   createdAt: createdAt(),
 });
+
+/** Tabelas comissionais: conjuntos de escalões (por nível ou por faixas de vendas) com valores de referência. */
+export const commissionTables = sqliteTable("commission_tables", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  description: text("description"),
+  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
+  /** Como a tabela escala: "none" (escalões fixos) | "sales" (faixas de vendas). */
+  scaleBy: text("scale_by").notNull().default("none"),
+  color: text("color").notNull().default("#c6f432"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: createdAt(),
+});
+
+/** Escalões/linhas de uma tabela comisional. Os valores são opcionais e ficam em `values`. */
+export const commissionRows = sqliteTable("commission_rows", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tableId: integer("table_id")
+    .notNull()
+    .references(() => commissionTables.id, { onDelete: "cascade" }),
+  /** Nome do escalão (ex.: "Nível 1", "0-10 vendas"). */
+  label: text("label").notNull(),
+  /** Limites da faixa, quando a tabela escala por vendas. */
+  minSales: real("min_sales"),
+  maxSales: real("max_sales"),
+  /** Valores de referência: salário base (€), comissão por venda (€), e extras livres. */
+  baseSalary: real("base_salary"),
+  commissionPerSale: real("commission_per_sale"),
+  extras: text("extras", { mode: "json" }).$type<Record<string, number | string | null>>(),
+  /** Ordem de apresentação dentro da tabela. */
+  position: integer("position").notNull().default(0),
+  createdAt: createdAt(),
+});
