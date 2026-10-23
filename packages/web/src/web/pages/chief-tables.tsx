@@ -35,7 +35,7 @@ function TeamEditor({ rows, onChange }: { rows: TeamDraft[]; onChange: (r: TeamD
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <div className="font-display text-[14px] font-semibold">Escalões por vendas da equipa (mensal)</div>
-          <div className="text-[11.5px] text-ink-3">Valor fixo pago ao chefe conforme o total de vendas LUZ/Dual BTN da equipa no mês (as dele contam).</div>
+          <div className="text-[11.5px] text-ink-3">Só vendas LUZ/Dual BTN em fornecimento no mês contam para o escalão (não contam as que baixaram no próprio mês). O GÁS não conta para o escalão, mas é pago pelo valor GÁS do escalão atingido. As vendas do próprio chefe contam.</div>
         </div>
         <button type="button" className="btn btn-ghost shrink-0" onClick={add}><Plus size={14} /> Escalão</button>
       </div>
@@ -194,7 +194,7 @@ function ChiefCalcPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div>
           <div className="font-display text-[15px] font-semibold">Escalão de chefe de equipa</div>
-          <div className="text-[11.5px] text-ink-3">Vendas LUZ/Dual BTN da equipa em fornecimento no mês. O escalão de equipa paga valor fixo; as vendas próprias do chefe são pagas por serviço.</div>
+          <div className="text-[11.5px] text-ink-3">O escalão de equipa apura-se pelas vendas LUZ/Dual BTN da equipa em fornecimento no mês (as do próprio chefe contam; o GÁS não conta). As vendas próprias do chefe são pagas por serviço, pelo escalão próprio.</div>
         </div>
         <input aria-label="Mês" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
       </div>

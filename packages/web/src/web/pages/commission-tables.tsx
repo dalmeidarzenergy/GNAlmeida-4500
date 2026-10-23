@@ -178,7 +178,7 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
         <Field label="Bloqueio de vendas (nº)" className="sm:col-span-2">
           <input aria-label="Bloqueio de vendas" className="input num" placeholder="0" value={blockedSales} onChange={(e) => setBlockedSales(e.target.value)} />
           <p className="mt-1.5 text-[11.5px] text-ink-3">
-            Nº de vendas LUZ/Dual BTN em fornecimento que não são pagas em cada mês. O escalão é apurado pelo total de vendas, antes do bloqueio.
+            Só vendas LUZ/Dual BTN em fornecimento contam para o escalão. Nº de vendas que não são pagas em cada mês; o escalão apura-se pelo total, antes do bloqueio. O GÁS não conta para o escalão, mas é pago pelo valor GÁS do escalão atingido.
           </p>
         </Field>
       </div>
@@ -204,7 +204,7 @@ function CalcPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div>
           <div className="font-display text-[15px] font-semibold">Cálculo de comissões</div>
-          <div className="text-[11.5px] text-ink-3">Vendas LUZ/Dual BTN em fornecimento no mês. O escalão apura-se pelo total de vendas; o bloqueio da tabela reduz o nº de vendas pagas.</div>
+          <div className="text-[11.5px] text-ink-3">Escalão pelas vendas LUZ/Dual BTN em fornecimento no mês (o GÁS não conta para o escalão, mas é pago pelo valor GÁS do escalão atingido). O bloqueio da tabela reduz o nº de vendas pagas.</div>
         </div>
         <input aria-label="Mês" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
       </div>
