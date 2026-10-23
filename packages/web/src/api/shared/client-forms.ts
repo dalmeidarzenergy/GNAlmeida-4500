@@ -3,6 +3,9 @@
  * Módulo puro (sem dependências de servidor) — usado pela API (validação) e pela web (formulário).
  */
 import { ALL_CONCELHOS, CONCELHOS } from "./concelhos";
+import { OLD_SUPPLIERS, OLD_GAS_SUPPLIERS } from "./suppliers";
+
+export { OLD_SUPPLIERS, OLD_GAS_SUPPLIERS };
 
 export type FieldDef =
   | { key: string; label: string; kind: "text" | "textarea" | "date" | "tel"; required?: boolean; pattern?: string; patternHint?: string; placeholder?: string; suggestions?: string[]; full?: boolean }
@@ -62,33 +65,6 @@ export const SALE_STATUS = [
 export const SALE_COUNTED = ["Em Fornecimento"];
 export const DEFAULT_SALE_STATUS = "Prospeção";
 
-/** Comercializadores de eletricidade (mercado livre/regulado) para o campo "Antigo Comercializador". */
-const OLD_SUPPLIERS = [
-  "Entrada Direta",
-  "EDP Comercial",
-  "SU Eletricidade",
-  "Yes Energy",
-  "Endesa",
-  "Galp",
-  "Goldenergy",
-  "Iberdrola",
-  "Repsol",
-  "Plenitude",
-  "Naturgy",
-  "MEO Energia",
-  "Luzboa",
-  "Coopérnico",
-  "G9 Energy",
-  "Ylce",
-  "Muon",
-  "Acciona Energía",
-  "Audax Renovables",
-  "Axpo Iberia",
-  "Elergone",
-  "Ezuenergia",
-  "Alfa Energia",
-  "Ibelectra",
-];
 
 export const SALE_FORMS: Record<string, FieldDef[]> = {
   LUZ: [
@@ -116,21 +92,6 @@ export const SALE_FORMS: Record<string, FieldDef[]> = {
   ],
 };
 
-/** Comercializadores de gás natural para os campos "Antigo Comercializador" (GÁS/DUAL). */
-const OLD_GAS_SUPPLIERS = [
-  "Entrada Direta",
-  "Galp",
-  "EDP Comercial",
-  "Goldenergy",
-  "Endesa",
-  "Repsol",
-  "Plenitude",
-  "Naturgy",
-  "Iberdrola",
-  "Ylce",
-  "Dourogás",
-  "Comercializador de Último Recurso",
-];
 
 export const GAS_PRESSURE = ["BP"];
 export const GAS_TIERS = ["Escalão 1", "Escalão 2", "Escalão 3", "Escalão 4"];

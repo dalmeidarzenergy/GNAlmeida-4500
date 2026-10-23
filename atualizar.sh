@@ -15,10 +15,10 @@ cd packages/web
 python3 - <<'PY'
 import sqlite3
 c = sqlite3.connect("src/data.db")
-for t in ("commission_rows", "commission_tables"):
+for t in ("commission_rows", "commission_tables", "chief_rows", "chief_tables"):
     c.execute(f"DROP TABLE IF EXISTS {t}")
 c.commit()
-print("  tabelas commission_* removidas (vazias)")
+print("  tabelas commission_* e chief_* removidas (vazias)")
 PY
 
 bun --env-file=../../.env drizzle-kit push
@@ -35,8 +35,14 @@ if "blocked_sales" not in cols:
 
 emp = [r[1] for r in c.execute("PRAGMA table_info(employees)").fetchall()]
 assert "commission_table_id" in emp, "ERRO: employees.commission_table_id em falta"
+if "chief_table_id" not in emp:
+    c.execute("ALTER TABLE employees ADD COLUMN chief_table_id integer REFERENCES chief_tables(id)")
+    c.commit()
+    print("  coluna chief_table_id adicionada")
+
 tabs = [r[0] for r in c.execute("select name from sqlite_master where type='table'").fetchall()]
 assert "commission_tables" in tabs and "commission_rows" in tabs, "ERRO: tabelas commission_* em falta"
+assert "chief_tables" in tabs and "chief_rows" in tabs, "ERRO: tabelas chief_* em falta"
 print("  OK: schema em ordem")
 PY
 
@@ -53,4 +59,4 @@ echo "==> 4/4  Verificacao"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:${PORT:-3000}/funcionarios || echo 000)
 echo "  /funcionarios -> HTTP $CODE"
 echo ""
-echo "Feito. Confirma no CRM: Funcionarios carrega, aba Tabelas Comissionais, e a vista Calculo de comissoes."
+echo "Feito. Confirma no CRM: Funcionarios, Tabelas Comissionais, Escaloes de Chefe de Equipa e Calculo de comissoes."

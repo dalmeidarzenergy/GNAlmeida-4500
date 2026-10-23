@@ -59,6 +59,8 @@ export const employees = sqliteTable("employees", {
   commissionRate: real("commission_rate").notNull().default(0),
   /** Tabela comisional aplicada a este funcionário. */
   commissionTableId: integer("commission_table_id").references(() => commissionTables.id, { onDelete: "set null" }),
+  /** Escalão de chefe de equipa aplicado a este funcionário (só para chefes). */
+  chiefTableId: integer("chief_table_id").references(() => chiefTables.id, { onDelete: "set null" }),
   vacationDays: integer("vacation_days").notNull().default(22),
   /** ETT (empresa de trabalho temporário): Vertente Humana ou Talenter. */
   ett: text("ett"),
@@ -476,6 +478,48 @@ export const commissionRows = sqliteTable("commission_rows", {
   fe: real("fe"),
   pel: real("pel"),
   /** Ordem de apresentação dentro do escalonamento. */
+  position: integer("position").notNull().default(0),
+  createdAt: createdAt(),
+});
+
+/**
+ * Escalão de Chefe de Equipa.
+ * Ao contrário da tabela de vendedor (que paga por venda), o chefe recebe por escalão:
+ * o escalão é apurado pelo TOTAL de vendas válidas da equipa (as dele incluídas) e paga um valor fixo.
+ */
+export const chiefTables = sqliteTable("chief_tables", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color").notNull().default("#c6f432"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  /** Nº de vendas da equipa que não são pagas (bloqueio mensal). */
+  blockedSales: real("blocked_sales").notNull().default(0),
+  createdAt: createdAt(),
+});
+
+/**
+ * Escalões de uma tabela de chefe.
+ * kind = "team"  (vendas da equipa inteira → `commission` fixo)
+ *        "own"   (vendas próprias do chefe → LUZ/GÁS/DD/FE/PEL, igual à tabela de vendedor)
+ */
+export const chiefRows = sqliteTable("chief_rows", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tableId: integer("table_id")
+    .notNull()
+    .references(() => chiefTables.id, { onDelete: "cascade" }),
+  /** "team" | "own". */
+  kind: text("kind").notNull().default("team"),
+  min: real("min"),
+  max: real("max"),
+  /** Comissão fixa (€) — usada pelo escalão de equipa. */
+  commission: real("commission"),
+  /** Comissões (€) por serviço vendido — usadas pelo escalão próprio. */
+  luz: real("luz"),
+  gas: real("gas"),
+  dd: real("dd"),
+  fe: real("fe"),
+  pel: real("pel"),
   position: integer("position").notNull().default(0),
   createdAt: createdAt(),
 });

@@ -49,6 +49,7 @@ const employeeInput = z.object({
   isSeller: z.boolean().default(false),
   commissionRate: z.number().min(0).max(100).default(0),
   commissionTableId: z.number().nullable().optional(),
+  chiefTableId: z.number().nullable().optional(),
   vacationDays: z.number().int().min(0).default(22),
   /** ETT (empresa de trabalho temporário) e tipo de vínculo; as opções de vínculo vêm do cargo. */
   ett: z.enum(ETTS as [string, ...string[]]).nullable().optional(),
@@ -320,6 +321,8 @@ export const hr = {
           commissionRate: employees.commissionRate,
           commissionTableId: employees.commissionTableId,
           commissionTableName: sql<string | null>`(select ct.name from commission_tables ct where ct.id = ${employees.commissionTableId})`,
+          chiefTableId: employees.chiefTableId,
+          chiefTableName: sql<string | null>`(select ch.name from chief_tables ch where ch.id = ${employees.chiefTableId})`,
           vacationDays: employees.vacationDays,
           ett: employees.ett,
           bond: employees.bond,

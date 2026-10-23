@@ -8,6 +8,7 @@ import { localWithPhotos } from "../lib/s3";
 import { activeInMonth } from "../shared/hierarchy";
 import { monthWorkdays } from "../shared/workdays";
 import { matchesPlace } from "../shared/concelhos";
+import { SUPPLIER_EXCLUDED_STATUS, normalizeSupplier } from "../shared/suppliers";
 
 const FORECAST_COUNTED = ["Em Fornecimento", "Control", "Em Processo", "Prospeção", "Pedido", "Pendente", "Lead", "Não Contactado", "Agendado", "Orçamento Enviado", "Negociação", "Fechado", "Contrato Enviado", "Em Instalação", "Ativado"];
 const FORECAST_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
@@ -89,37 +90,6 @@ function monthRangeKeys(start: string, end: string) {
   return out;
 }
 
-/** Agrupa variantes do mesmo comercializador (ex.: "Gold Energy" e "Goldenergy"). */
-const SUPPLIER_ALIASES: [RegExp, string][] = [
-  [/gold\s*energy/, "Goldenergy"],
-  [/\bedp\b/, "EDP Comercial"],
-  [/endesa/, "Endesa"],
-  [/galp/, "Galp"],
-  [/entrada\s*dire(c)?ta/, "Entrada Direta"],
-  [/\bsu\s*ele(c)?tricidade/, "SU Eletricidade"],
-  [/yes\s*energy/, "Yes Energy"],
-  [/ibelectra/, "Ibelectra"],
-  [/iberdrola/, "Iberdrola"],
-  [/repsol/, "Repsol"],
-  [/meo/, "MEO Energia"],
-  [/luzboa/, "Luzboa"],
-  [/coop[eé]rnico/, "Coopérnico"],
-  [/plenitude|eni\b/, "Plenitude"],
-  [/muon/, "Muon"],
-  [/ylce/, "Ylce"],
-  [/g9/, "G9 Energy"],
-];
-/** Estados que não entram na análise do antigo comercializador. */
-const SUPPLIER_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
-
-function normalizeSupplier(v: string | null) {
-  const raw = (v ?? "").trim();
-  if (!raw) return "Entrada Direta";
-  const k = raw.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  for (const [re, name] of SUPPLIER_ALIASES) if (re.test(k)) return name;
-  return raw;
-}
-
 /** Filtro de local da venda: distrito e/ou concelho (opcionais). */
 type PlaceFilter = { district?: string | null; municipality?: string | null };
 
@@ -190,11 +160,11 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
     statusMap[r.status].count++;
     statusMap[r.status].total += r.total;
   }
-  // Antigo comercializador (LUZ, DUAL e GÁS): vendas do período em todos os estados, exceto Baixa, Pedido de Baixa e Anulado.
+  // Antigo comercializador: vendas do período em todos os estados, exceto Baixa, Pedido de Baixa e Anulado.
+  // Inclui MEDEM (e qualquer serviço), para a aba de Análise MEDEM ter os seus próprios comercializadores.
   const supMap = new Map<string, { name: string; count: number; counted: number }>();
   for (const r of rows) {
-    if (r.service !== "LUZ" && r.service !== "DUAL" && r.service !== "GÁS") continue;
-    if (SUPPLIER_EXCLUDED.includes(r.status)) continue;
+    if (SUPPLIER_EXCLUDED_STATUS.includes(r.status)) continue;
     const name = normalizeSupplier(r.oldSupplier);
     const x = supMap.get(name) ?? { name, count: 0, counted: 0 };
     x.count++;
