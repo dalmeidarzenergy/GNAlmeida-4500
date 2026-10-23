@@ -18,7 +18,7 @@ export const SERVICES = [
   { label: "GÁS", hint: "Gás natural" },
   { label: "DUAL", hint: "Luz + gás" },
   { label: "SOLAR", hint: "Painéis solares" },
-  { label: "MEDEM", hint: "Medição + energia" },
+  { label: "MEDEM", hint: "Propostas à Medida" },
 ] as const;
 export const SERVICE_LABELS: string[] = SERVICES.map((s) => s.label);
 
