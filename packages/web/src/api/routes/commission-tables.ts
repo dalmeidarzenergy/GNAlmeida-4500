@@ -2,26 +2,27 @@ import { z } from "zod";
 import { asc, eq, sql } from "drizzle-orm";
 import { requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { commissionRows, commissionTables, departments } from "../database/schema";
+import { commissionRows, commissionTables } from "../database/schema";
 
 const rowInput = z.object({
-  label: z.string().min(1),
-  minSales: z.number().nullable().optional(),
-  maxSales: z.number().nullable().optional(),
-  baseSalary: z.number().nullable().optional(),
-  commissionPerSale: z.number().nullable().optional(),
-  extras: z.record(z.string(), z.union([z.number(), z.string(), z.null()])).nullable().optional(),
-  position: z.number().int().optional(),
+  kind: z.enum(["medem", "solar"]),
+  min: z.number().nullable().optional(),
+  max: z.number().nullable().optional(),
+  commission: z.number().nullable().optional(),
 });
 
 const tableInput = z.object({
-  name: z.string().min(1),
+  name: z.string().min(1, "Indique o nome da tabela."),
   description: z.string().nullable().optional(),
-  departmentId: z.number().nullable().optional(),
-  scaleBy: z.enum(["none", "sales"]).default("none"),
   color: z.string().default("#c6f432"),
   active: z.boolean().default(true),
-  rows: z.array(rowInput).default([]),
+  luz: z.number().nullable().optional(),
+  gas: z.number().nullable().optional(),
+  ddc: z.number().nullable().optional(),
+  fe: z.number().nullable().optional(),
+  pel: z.number().nullable().optional(),
+  medemRows: z.array(rowInput).default([]),
+  solarRows: z.array(rowInput).default([]),
 });
 
 export const commissionTablesRoute = {
@@ -31,52 +32,56 @@ export const commissionTablesRoute = {
         id: commissionTables.id,
         name: commissionTables.name,
         description: commissionTables.description,
-        departmentId: commissionTables.departmentId,
-        departmentName: departments.name,
-        scaleBy: commissionTables.scaleBy,
         color: commissionTables.color,
         active: commissionTables.active,
+        luz: commissionTables.luz,
+        gas: commissionTables.gas,
+        ddc: commissionTables.ddc,
+        fe: commissionTables.fe,
+        pel: commissionTables.pel,
         createdAt: commissionTables.createdAt,
-        rowCount: sql<number>`(select count(*) from commission_rows r where r.table_id = ${commissionTables.id})`,
       })
       .from(commissionTables)
-      .leftJoin(departments, eq(departments.id, commissionTables.departmentId))
       .orderBy(asc(commissionTables.name));
 
     const rows = await db
       .select({
         id: commissionRows.id,
         tableId: commissionRows.tableId,
-        label: commissionRows.label,
-        minSales: commissionRows.minSales,
-        maxSales: commissionRows.maxSales,
-        baseSalary: commissionRows.baseSalary,
-        commissionPerSale: commissionRows.commissionPerSale,
-        extras: commissionRows.extras,
+        kind: commissionRows.kind,
+        min: commissionRows.min,
+        max: commissionRows.max,
+        commission: commissionRows.commission,
         position: commissionRows.position,
       })
       .from(commissionRows)
       .orderBy(asc(commissionRows.position), asc(commissionRows.id));
 
-    return tables.map((t) => ({ ...t, rows: rows.filter((r) => r.tableId === t.id) }));
+    return tables.map((t) => ({
+      ...t,
+      medemRows: rows.filter((r) => r.tableId === t.id && r.kind === "medem"),
+      solarRows: rows.filter((r) => r.tableId === t.id && r.kind === "solar"),
+    }));
   }),
 
   create: requireEdit("tabelas-comissionais").input(tableInput).handler(async ({ input }) => {
-    const { rows, ...data } = input;
+    const { medemRows, solarRows, ...data } = input;
     const [table] = await db.insert(commissionTables).values(data).returning();
-    if (rows.length) {
-      await db.insert(commissionRows).values(rows.map((r, i) => ({ ...r, tableId: table.id, position: r.position ?? i })));
+    const all = [...medemRows.map((r) => ({ ...r, kind: "medem" as const })), ...solarRows.map((r) => ({ ...r, kind: "solar" as const }))];
+    if (all.length) {
+      await db.insert(commissionRows).values(all.map((r, i) => ({ tableId: table.id, kind: r.kind, min: r.min ?? null, max: r.max ?? null, commission: r.commission ?? null, position: i })));
     }
     return table;
   }),
 
   update: requireEdit("tabelas-comissionais").input(tableInput.extend({ id: z.number() })).handler(async ({ input }) => {
-    const { id, rows, ...data } = input;
+    const { id, medemRows, solarRows, ...data } = input;
     await db.update(commissionTables).set(data).where(eq(commissionTables.id, id));
-    // Substitui os escalões pelos enviados (a página edita a tabela como um todo).
+    // A página edita a tabela como um todo: substitui todos os escalões.
     await db.delete(commissionRows).where(eq(commissionRows.tableId, id));
-    if (rows.length) {
-      await db.insert(commissionRows).values(rows.map((r, i) => ({ ...r, tableId: id, position: r.position ?? i })));
+    const all = [...medemRows.map((r) => ({ ...r, kind: "medem" as const })), ...solarRows.map((r) => ({ ...r, kind: "solar" as const }))];
+    if (all.length) {
+      await db.insert(commissionRows).values(all.map((r, i) => ({ tableId: id, kind: r.kind, min: r.min ?? null, max: r.max ?? null, commission: r.commission ?? null, position: i })));
     }
     return { ok: true };
   }),

@@ -3,7 +3,7 @@ import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { authed, requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { absences, calendars, departments, employees, positions, teamMemberships, teams, userRoles } from "../database/schema";
+import { absences, calendars, commissionTables, departments, employees, positions, teamMemberships, teams, userRoles } from "../database/schema";
 import { localWithPhotos } from "../lib/s3";
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { ensureTeamCalendar, syncPersonalCalendarTeam } from "./agenda";
@@ -48,6 +48,7 @@ const employeeInput = z.object({
   status: z.enum(["ativo", "pendente", "suspenso", "blacklist", "inativo"]).default("ativo"),
   isSeller: z.boolean().default(false),
   commissionRate: z.number().min(0).max(100).default(0),
+  commissionTableId: z.number().nullable().optional(),
   vacationDays: z.number().int().min(0).default(22),
   /** ETT (empresa de trabalho temporário) e tipo de vínculo; as opções de vínculo vêm do cargo. */
   ett: z.enum(ETTS as [string, ...string[]]).nullable().optional(),
@@ -317,6 +318,8 @@ export const hr = {
           status: employees.status,
           isSeller: employees.isSeller,
           commissionRate: employees.commissionRate,
+          commissionTableId: employees.commissionTableId,
+          commissionTableName: sql<string | null>`(select ct.name from commission_tables ct where ct.id = ${employees.commissionTableId})`,
           vacationDays: employees.vacationDays,
           ett: employees.ett,
           bond: employees.bond,

@@ -1,65 +1,99 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
-import { useDepartments } from "../queries/hr";
 import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill } from "../components/ui/kit";
 import { errMsg, fmtEur } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useCommissionTables>["data"]>[number];
-type Row = Table["rows"][number];
-type Draft = { label: string; minSales: string; maxSales: string; baseSalary: string; commissionPerSale: string };
+type Row = Table["medemRows"][number];
+type DraftRow = { min: string; max: string; commission: string };
 
 const COLORS = ["#c6f432", "#f5a524", "#38bdf8", "#a78bfa", "#f472b6", "#34d399", "#fb7185", "#facc15"];
-const SCALE_LABEL: Record<string, string> = { none: "Escalões fixos", sales: "Por faixas de vendas" };
 
-const emptyDraft = (): Draft => ({ label: "", minSales: "", maxSales: "", baseSalary: "", commissionPerSale: "" });
-
+const emptyDraft = (): DraftRow => ({ min: "", max: "", commission: "" });
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
 const str = (v: number | null | undefined) => (v == null ? "" : String(v));
 
+/** Campo numérico de comissão fixa (€). */
+function MoneyField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <Field label={label}>
+      <input aria-label={label} className="input num" placeholder="€" value={value} onChange={(e) => onChange(e.target.value)} />
+    </Field>
+  );
+}
+
+/** Linhas de escalões (MEDEM por pontos ou SOLAR por painéis). */
+function EscaloesEditor({ title, hint, unit, rows, onChange }: { title: string; hint: string; unit: string; rows: DraftRow[]; onChange: (rows: DraftRow[]) => void }) {
+  const setRow = (i: number, patch: Partial<DraftRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = () => onChange([...rows, emptyDraft()]);
+  const del = (i: number) => onChange(rows.length === 1 ? [emptyDraft()] : rows.filter((_, j) => j !== i));
+  return (
+    <div className="mt-6">
+      <div className="mb-2 flex items-center justify-between">
+        <div>
+          <div className="font-display text-[14px] font-semibold">{title}</div>
+          <div className="text-[11.5px] text-ink-3">{hint}</div>
+        </div>
+        <button type="button" className="btn btn-ghost" onClick={add}><Plus size={14} /> Escalão</button>
+      </div>
+      <div className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={i} className="grid gap-2 rounded-[10px] border border-line p-3 sm:grid-cols-12">
+            <div className="sm:col-span-4">
+              <input aria-label={`${title} mínimo ${i + 1}`} className="input num" placeholder={`De (${unit})`} value={r.min} onChange={(e) => setRow(i, { min: e.target.value })} />
+            </div>
+            <div className="sm:col-span-4">
+              <input aria-label={`${title} máximo ${i + 1}`} className="input num" placeholder={`Até (${unit})`} value={r.max} onChange={(e) => setRow(i, { max: e.target.value })} />
+            </div>
+            <div className="sm:col-span-3">
+              <input aria-label={`${title} comissão ${i + 1}`} className="input num" placeholder="Comissão €" value={r.commission} onChange={(e) => setRow(i, { commission: e.target.value })} />
+            </div>
+            <button type="button" aria-label={`Remover escalão ${i + 1}`} className="btn-icon sm:col-span-1" onClick={() => del(i)}><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TableForm({ initial, onClose }: { initial: Table | null; onClose: () => void }) {
-  const depts = useDepartments();
   const save = useSaveCommissionTable();
   const remove = useRemoveCommissionTable();
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [departmentId, setDept] = useState<number | null>(initial?.departmentId ?? null);
-  const [scaleBy, setScaleBy] = useState<"none" | "sales">((initial?.scaleBy as "none" | "sales") ?? "none");
   const [color, setColor] = useState(initial?.color ?? COLORS[0]);
   const [active, setActive] = useState(initial?.active ?? true);
-  const [rows, setRows] = useState<Draft[]>(
-    initial?.rows.length
-      ? initial.rows.map((r) => ({ label: r.label, minSales: str(r.minSales), maxSales: str(r.maxSales), baseSalary: str(r.baseSalary), commissionPerSale: str(r.commissionPerSale) }))
-      : [emptyDraft()],
-  );
+  const [luz, setLuz] = useState(str(initial?.luz));
+  const [gas, setGas] = useState(str(initial?.gas));
+  const [ddc, setDdc] = useState(str(initial?.ddc));
+  const [fe, setFe] = useState(str(initial?.fe));
+  const [pel, setPel] = useState(str(initial?.pel));
+  const [medemRows, setMedemRows] = useState<DraftRow[]>(initial?.medemRows.length ? initial.medemRows.map((r) => ({ min: str(r.min), max: str(r.max), commission: str(r.commission) })) : [emptyDraft()]);
+  const [solarRows, setSolarRows] = useState<DraftRow[]>(initial?.solarRows.length ? initial.solarRows.map((r) => ({ min: str(r.min), max: str(r.max), commission: str(r.commission) })) : [emptyDraft()]);
   const [error, setError] = useState<string | null>(null);
 
-  const setRow = (i: number, patch: Partial<Draft>) => setRows((p) => p.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const toRow = (r: DraftRow) => ({ min: num(r.min), max: num(r.max), commission: num(r.commission) });
 
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
         setError(null);
-        const clean = rows.filter((r) => r.label.trim() !== "");
-        if (!clean.length) return setError("Adicione pelo menos um escalão à tabela.");
+        const p = {
+          name,
+          description: description || null,
+          color,
+          active,
+          luz: num(luz),
+          gas: num(gas),
+          ddc: num(ddc),
+          fe: num(fe),
+          pel: num(pel),
+          medemRows: medemRows.map(toRow),
+          solarRows: solarRows.map(toRow),
+        };
         try {
-          const p = {
-            name,
-            description: description || null,
-            departmentId,
-            scaleBy,
-            color,
-            active,
-            rows: clean.map((r, i) => ({
-              label: r.label.trim(),
-              minSales: scaleBy === "sales" ? num(r.minSales) : null,
-              maxSales: scaleBy === "sales" ? num(r.maxSales) : null,
-              baseSalary: num(r.baseSalary),
-              commissionPerSale: num(r.commissionPerSale),
-              position: i,
-            })),
-          };
           if (initial) await save.update.mutateAsync({ ...p, id: initial.id });
           else await save.create.mutateAsync(p);
           onClose();
@@ -74,18 +108,6 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
         </Field>
         <Field label="Descrição" className="sm:col-span-2">
           <textarea aria-label="Descrição" className="input" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </Field>
-        <Field label="Departamento">
-          <select className="input" value={departmentId ?? ""} onChange={(e) => setDept(e.target.value ? Number(e.target.value) : null)}>
-            <option value="">—</option>
-            {depts.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Tipo de escalonamento">
-          <select aria-label="Tipo de escalonamento" className="input" value={scaleBy} onChange={(e) => setScaleBy(e.target.value as "none" | "sales")}>
-            <option value="none">Escalões fixos (níveis)</option>
-            <option value="sales">Por faixas de vendas</option>
-          </select>
         </Field>
         <Field label="Cor">
           <div className="flex flex-wrap gap-2">
@@ -102,42 +124,20 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
         </Field>
       </div>
 
-      <div className="mt-6 mb-2 flex items-center justify-between">
-        <span className="label-mono">Escalões</span>
-        <button type="button" className="btn btn-ghost" onClick={() => setRows((p) => [...p, emptyDraft()])}>
-          <Plus size={14} /> Escalão
-        </button>
+      <div className="mt-6">
+        <div className="font-display text-[14px] font-semibold">Comissões fixas (por venda)</div>
+        <div className="text-[11.5px] text-ink-3">Valores pagos por cada venda. Deixa em branco os que não se aplicam.</div>
+        <div className="mt-3 grid gap-4 sm:grid-cols-5">
+          <MoneyField label="LUZ (€)" value={luz} onChange={setLuz} />
+          <MoneyField label="GÁS (€)" value={gas} onChange={setGas} />
+          <MoneyField label="DDC (€)" value={ddc} onChange={setDdc} />
+          <MoneyField label="FE (€)" value={fe} onChange={setFe} />
+          <MoneyField label="PEL (€)" value={pel} onChange={setPel} />
+        </div>
       </div>
 
-      <div className="space-y-2">
-        {rows.map((r, i) => (
-          <div key={i} className="grid gap-2 rounded-[10px] border border-line p-3 sm:grid-cols-12">
-            <div className={scaleBy === "sales" ? "sm:col-span-4" : "sm:col-span-6"}>
-              <input aria-label={`Escalão ${i + 1}`} className="input" placeholder={scaleBy === "sales" ? "Sem nome (opcional)" : "Ex.: Nível 1"} value={r.label} onChange={(e) => setRow(i, { label: e.target.value })} />
-            </div>
-            {scaleBy === "sales" && (
-              <>
-                <div className="sm:col-span-2">
-                  <input aria-label={`Mínimo de vendas ${i + 1}`} className="input num" placeholder="De" value={r.minSales} onChange={(e) => setRow(i, { minSales: e.target.value })} />
-                </div>
-                <div className="sm:col-span-2">
-                  <input aria-label={`Máximo de vendas ${i + 1}`} className="input num" placeholder="Até" value={r.maxSales} onChange={(e) => setRow(i, { maxSales: e.target.value })} />
-                </div>
-              </>
-            )}
-            <div className={scaleBy === "sales" ? "sm:col-span-2" : "sm:col-span-2"}>
-              <input aria-label={`Salário base ${i + 1}`} className="input num" placeholder="Salário base €" value={r.baseSalary} onChange={(e) => setRow(i, { baseSalary: e.target.value })} />
-            </div>
-            <div className={scaleBy === "sales" ? "sm:col-span-2" : "sm:col-span-3"}>
-              <input aria-label={`Comissão por venda ${i + 1}`} className="input num" placeholder="Comissão/venda €" value={r.commissionPerSale} onChange={(e) => setRow(i, { commissionPerSale: e.target.value })} />
-            </div>
-            <button type="button" aria-label={`Remover escalão ${i + 1}`} className="btn-icon sm:col-span-1" onClick={() => setRows((p) => (p.length === 1 ? [emptyDraft()] : p.filter((_, j) => j !== i)))}>
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
-      </div>
-      <p className="mt-2 text-[11.5px] text-ink-3">Podes deixar o salário ou a comissão em branco — os dois valores são opcionais.</p>
+      <EscaloesEditor title="Escalões MEDEM" hint="Faixas por número de pontos." unit="pontos" rows={medemRows} onChange={setMedemRows} />
+      <EscaloesEditor title="Tabela Solar" hint="Faixas por quantidade de painéis solares." unit="painéis" rows={solarRows} onChange={setSolarRows} />
 
       <SubmitRow pending={save.isPending} onCancel={onClose} error={error} extra={initial && <ConfirmDelete pending={remove.isPending} onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onClose(); }} />} />
     </form>
@@ -158,7 +158,7 @@ export default function CommissionTablesPage() {
       {tables.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton h-52 rounded-[14px]" />)}</div>
       ) : !list.length ? (
-        <div className="card"><Empty title="Sem tabelas comissionais" text="Crie a primeira tabela de escalões e valores." /></div>
+        <div className="card"><Empty title="Sem tabelas comissionais" text="Crie a primeira tabela de comissões (LUZ, GÁS, DDC, FE, PEL), escalões MEDEM e tabela Solar." /></div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {list.map((t, i) => (
@@ -171,27 +171,22 @@ export default function CommissionTablesPage() {
               <div className="mt-4 font-display text-[17px] font-semibold">{t.name}</div>
               <div className="mt-1 line-clamp-1 text-[12.5px] text-ink-3">{t.description || "Sem descrição"}</div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Pill tone={t.scaleBy === "sales" ? "amber" : "sky"}>{SCALE_LABEL[t.scaleBy] ?? t.scaleBy}</Pill>
                 {!t.active && <Pill tone="muted">Inativa</Pill>}
               </div>
-              <div className="mt-5 flex items-end justify-between">
+              <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line pt-3 text-center">
                 <div>
-                  <div className="label-mono">escalões</div>
-                  <div className="num text-[22px] font-semibold leading-none">{t.rowCount}</div>
+                  <div className="text-[10.5px] uppercase tracking-wide text-ink-3">LUZ</div>
+                  <div className="num text-[13px] font-semibold">{t.luz != null ? fmtEur(t.luz) : "—"}</div>
                 </div>
-                <div className="text-right">
-                  <div className="label-mono">salário base</div>
-                  <div className="num text-[13px]">
-                    {(() => {
-                      const vals = t.rows.map((r) => r.baseSalary).filter((v): v is number => v != null);
-                      if (!vals.length) return "—";
-                      const mn = Math.min(...vals), mx = Math.max(...vals);
-                      return mn === mx ? fmtEur(mn) : `${fmtEur(mn)} – ${fmtEur(mx)}`;
-                    })()}
-                  </div>
+                <div>
+                  <div className="text-[10.5px] uppercase tracking-wide text-ink-3">MEDEM</div>
+                  <div className="num text-[13px] font-semibold">{t.medemRows.length} escalões</div>
+                </div>
+                <div>
+                  <div className="text-[10.5px] uppercase tracking-wide text-ink-3">Solar</div>
+                  <div className="num text-[13px] font-semibold">{t.solarRows.length} faixas</div>
                 </div>
               </div>
-              {t.departmentName && <div className="mt-3 text-[12px] text-ink-3">{t.departmentName}</div>}
             </button>
           ))}
         </div>

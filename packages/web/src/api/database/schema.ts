@@ -57,6 +57,8 @@ export const employees = sqliteTable("employees", {
   status: text("status").notNull().default("ativo"),
   isSeller: integer("is_seller", { mode: "boolean" }).notNull().default(false),
   commissionRate: real("commission_rate").notNull().default(0),
+  /** Tabela comisional aplicada a este funcionário. */
+  commissionTableId: integer("commission_table_id").references(() => commissionTables.id, { onDelete: "set null" }),
   vacationDays: integer("vacation_days").notNull().default(22),
   /** ETT (empresa de trabalho temporário): Vertente Humana ou Talenter. */
   ett: text("ett"),
@@ -432,35 +434,40 @@ export const simuladorPropostas = sqliteTable("simulador_propostas", {
   createdAt: createdAt(),
 });
 
-/** Tabelas comissionais: conjuntos de escalões (por nível ou por faixas de vendas) com valores de referência. */
+/**
+ * Tabelas comissionais: comissões fixas por venda (LUZ, GÁS, DDC, FE, PEL) e escalões
+ * MEDEM (faixas por nº de pontos) e SOLAR (faixas por nº de painéis). Aplicam-se por funcionário.
+ */
 export const commissionTables = sqliteTable("commission_tables", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   description: text("description"),
-  departmentId: integer("department_id").references(() => departments.id, { onDelete: "set null" }),
-  /** Como a tabela escala: "none" (escalões fixos) | "sales" (faixas de vendas). */
-  scaleBy: text("scale_by").notNull().default("none"),
   color: text("color").notNull().default("#c6f432"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
+  /** Comissões fixas por venda (€). */
+  luz: real("luz"),
+  gas: real("gas"),
+  ddc: real("ddc"),
+  fe: real("fe"),
+  pel: real("pel"),
   createdAt: createdAt(),
 });
 
-/** Escalões/linhas de uma tabela comisional. Os valores são opcionais e ficam em `values`. */
+/** Escalões de uma tabela comisional: faixas MEDEM (por nº de pontos) ou SOLAR (por nº de painéis). */
 export const commissionRows = sqliteTable("commission_rows", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   tableId: integer("table_id")
     .notNull()
     .references(() => commissionTables.id, { onDelete: "cascade" }),
-  /** Nome do escalão (ex.: "Nível 1", "0-10 vendas"). */
-  label: text("label").notNull(),
-  /** Limites da faixa, quando a tabela escala por vendas. */
-  minSales: real("min_sales"),
-  maxSales: real("max_sales"),
-  /** Valores de referência: salário base (€), comissão por venda (€), e extras livres. */
-  baseSalary: real("base_salary"),
-  commissionPerSale: real("commission_per_sale"),
-  extras: text("extras", { mode: "json" }).$type<Record<string, number | string | null>>(),
-  /** Ordem de apresentação dentro da tabela. */
+  /** "medem" (faixas por nº de pontos) | "solar" (faixas por nº de painéis solares). */
+  kind: text("kind").notNull().default("medem"),
+  /** Limite inferior da faixa (pontos ou painéis). */
+  min: real("min"),
+  /** Limite superior da faixa (pontos ou painéis). */
+  max: real("max"),
+  /** Comissão (€) dessa faixa. */
+  commission: real("commission"),
+  /** Ordem de apresentação dentro do escalonamento. */
   position: integer("position").notNull().default(0),
   createdAt: createdAt(),
 });
