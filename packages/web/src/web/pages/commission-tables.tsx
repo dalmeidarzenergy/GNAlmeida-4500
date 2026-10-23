@@ -224,7 +224,9 @@ function CalcPanel() {
                 <th className="px-3 py-3 text-right font-medium">Bloqueio</th>
                 <th className="px-3 py-3 text-right font-medium">Pagas</th>
                 <th className="px-3 py-3 text-right font-medium">€/venda</th>
-                <th className="px-5 py-3 text-right font-medium">Comissão</th>
+                <th className="px-3 py-3 text-right font-medium">Bruto</th>
+                <th className="px-3 py-3 text-right font-medium">Chargeback</th>
+                <th className="px-5 py-3 text-right font-medium">A pagar</th>
               </tr>
             </thead>
             <tbody>
@@ -236,7 +238,9 @@ function CalcPanel() {
                   <td className="num px-3 py-3 text-right">{r.band ? `${r.band.min ?? 0}${r.band.max == null ? "+" : `–${r.band.max}`}` : "—"}</td>
                   <td className="num px-3 py-3 text-right text-ink-2">−{r.blocked}</td>
                   <td className="num px-3 py-3 text-right">{r.paidSales}</td>
-                  <td className="num px-3 py-3 text-right">{fmtEur(r.commission && r.paidSales ? r.commission / r.paidSales : 0)}</td>
+                  <td className="num px-3 py-3 text-right">{fmtEur(r.unit ?? 0)}</td>
+                  <td className="num px-3 py-3 text-right">{fmtEur(r.gross ?? 0)}</td>
+                  <td className="num px-3 py-3 text-right text-danger">{r.chargebackValue ? `−${fmtEur(r.chargebackValue)}` : "—"}</td>
                   <td className="num px-5 py-3 text-right font-semibold">{fmtEur(r.commission)}</td>
                 </tr>
               ))}
@@ -244,6 +248,8 @@ function CalcPanel() {
             <tfoot>
               <tr className="border-t border-line bg-surface-2/40">
                 <td className="px-5 py-3 font-display font-semibold" colSpan={7}>Total</td>
+                <td className="num px-3 py-3 text-right font-semibold">{fmtEur(calc.data?.totals.gross ?? 0)}</td>
+                <td className="num px-3 py-3 text-right font-semibold text-danger">{calc.data?.totals.chargeback ? `−${fmtEur(calc.data.totals.chargeback)}` : "—"}</td>
                 <td className="num px-5 py-3 text-right font-display text-[15px] font-semibold">{fmtEur(total)}</td>
               </tr>
             </tfoot>

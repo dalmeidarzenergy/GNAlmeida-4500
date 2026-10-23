@@ -111,10 +111,10 @@ export const commissionTablesRoute = {
   /**
    * Cálculo de comissões de um mês, por vendedor.
    *
-   * Escalão: nº de vendas LUZ (ou a luz das DUAL) com Nível de Tensão BTN que entraram em
-   * "Em Fornecimento" dentro do mês escolhido.
-   * Bloqueio: à tabela aplicada ao vendedor é descontado um nº fixo de vendas; o escalão é
-   * determinado pelo nº de vendas ANTES do bloqueio, e o valor pago é comissão × (vendas − bloqueio).
+   * Entram as vendas LUZ/Dual com Nível de Tensão BTN cuja ENTRADA em fornecimento caiu neste mês.
+   * O escalão é apurado por essas vendas (as que passaram a Baixa no mesmo mês não contam).
+   * Pagamento por venda: valor do escalão (LUZ ou GÁS) + DDC + FE + PEL, conforme o que a venda tem.
+   * Chargeback: as vendas que passaram a Baixa neste mês descontam tudo o que foi pago por elas.
    */
   calc: requireView("tabelas-comissionais")
     .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
@@ -123,70 +123,118 @@ export const commissionTablesRoute = {
       const lastDay = new Date(Number(input.month.slice(0, 4)), Number(input.month.slice(5, 7)), 0).getDate();
       const to = `${input.month}-${String(lastDay).padStart(2, "0")}`;
 
-      // Vendas LUZ/Dual BTN que entraram em fornecimento no mês, agrupadas por vendedor.
-      const counted = await db
+      const hist = await db
         .select({
+          saleId: saleStatusHistory.saleId,
+          status: saleStatusHistory.status,
+          on: saleStatusHistory.changedOn,
           sellerId: sales.sellerId,
-          saleId: sales.id,
-          on: sql<string>`max(${saleStatusHistory.changedOn})`,
+          service: sales.service,
+          details: sales.details,
         })
         .from(saleStatusHistory)
         .innerJoin(sales, eq(sales.id, saleStatusHistory.saleId))
         .where(
           and(
             eq(saleStatusHistory.energy, "luz"),
-            eq(saleStatusHistory.status, COUNTED_STATUS),
+            sql`${saleStatusHistory.status} in ('Em Fornecimento', 'Baixa')`,
             sql`json_extract(${sales.details}, '$.voltageLevel') = 'BTN'`,
             sql`${sales.service} in ('LUZ', 'DUAL')`,
           ),
-        )
-        .groupBy(saleStatusHistory.saleId);
+        );
 
-      const inMonth = counted.filter((r) => r.on >= from && r.on <= to);
-      const bySeller = new Map<number, number>();
-      for (const r of inMonth) {
-        if (r.sellerId == null) continue;
-        bySeller.set(r.sellerId, (bySeller.get(r.sellerId) ?? 0) + 1);
+      // Entrada em fornecimento da venda (1ª passagem) e datas de baixa.
+      const perSale = new Map<number, { sellerId: number | null; service: string | null; details: Record<string, unknown> | null; suppliedOn: string | null; baixaOn: string[] }>();
+      for (const r of hist) {
+        const e = perSale.get(r.saleId) ?? { sellerId: r.sellerId, service: r.service, details: r.details, suppliedOn: null, baixaOn: [] };
+        if (r.status === "Em Fornecimento") {
+          if (!e.suppliedOn || r.on < e.suppliedOn) e.suppliedOn = r.on;
+        } else if (r.status === "Baixa") {
+          e.baixaOn.push(r.on);
+        }
+        perSale.set(r.saleId, e);
       }
 
       const sellers = await db
-        .select({
-          id: employees.id,
-          name: employees.name,
-          isSeller: employees.isSeller,
-          commissionTableId: employees.commissionTableId,
-        })
+        .select({ id: employees.id, name: employees.name, isSeller: employees.isSeller, commissionTableId: employees.commissionTableId })
         .from(employees);
-
       const tables = await db.select().from(commissionTables);
       const rows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
 
-      const result = sellers
-        .filter((s) => s.isSeller && (bySeller.get(s.id) ?? 0) > 0)
-        .map((s) => {
-          const count = bySeller.get(s.id) ?? 0;
-          const table = tables.find((t) => t.id === s.commissionTableId) ?? null;
-          if (!table) return { sellerId: s.id, sellerName: s.name, sales: count, tableName: null, blocked: 0, paidSales: count, band: null, commission: 0, missingTable: true };
+      // Escalão pelo total de vendas (antes do bloqueio).
+      const bandFor = (tableId: number, count: number) => {
+        const bands = rows.filter((r) => r.tableId === tableId && r.kind === "clients");
+        return (
+          bands.find((b) => count >= (b.min ?? 0) && (b.max == null || count <= b.max)) ??
+          bands.filter((b) => b.max == null && count >= (b.min ?? 0)).at(-1) ??
+          null
+        );
+      };
 
-          const bands = rows.filter((r) => r.tableId === table.id && r.kind === "clients");
-          const band = bands.find((b) => count >= (b.min ?? 0) && (b.max == null || count <= b.max)) ?? bands.filter((b) => b.max == null && count >= (b.min ?? 0)).at(-1) ?? null;
+      const yes = (v: unknown) => (typeof v === "string" ? v.toLowerCase() === "sim" : v === true);
+
+      const result = sellers
+        .map((s) => {
+          const table = tables.find((t) => t.id === s.commissionTableId) ?? null;
+          const mine = [...perSale.entries()].filter(([, e]) => e.sellerId === s.id);
+
+          // Vendas que entraram em fornecimento neste mês e não baixaram no mesmo mês.
+          const entered = mine.filter(([, e]) => e.suppliedOn && e.suppliedOn >= from && e.suppliedOn <= to);
+          const active = entered.filter(([, e]) => !e.baixaOn.some((d) => d >= from && d <= to));
+          // Chargebacks: baixas neste mês de vendas que ENTRARAM antes (já pagas).
+          // Vendas que entraram e baixaram no próprio mês não contam para o escalão nem são pagas,
+          // portanto nunca entram no chargeback.
+          const chargebacks = mine.filter(([, e]) => e.baixaOn.some((d) => d >= from && d <= to) && !!e.suppliedOn && e.suppliedOn < from);
+
+          if (!s.isSeller || (!active.length && !chargebacks.length)) return null;
+          if (!table) return { sellerId: s.id, sellerName: s.name, sales: active.length, tableName: null, blocked: 0, paidSales: active.length, band: null, unit: 0, gross: 0, commission: 0, chargebackSales: chargebacks.length, chargebackValue: 0, missingTable: true };
+
+          const band = bandFor(table.id, active.length);
+          const bandValue = (service: string | null) => (service === "GÁS" ? band?.gas : band?.luz) ?? 0;
+          const perDdc = band?.dd ?? 0;
+          const perFe = band?.fe ?? 0;
+          const perPel = band?.pel ?? 0;
+
+          // Valor pago por uma venda: escalão (LUZ/GÁS) + DDC + FE + PEL conforme o que tem.
+          const valueOf = (e: { service: string | null; details: Record<string, unknown> | null }) => {
+            const d = e.details ?? {};
+            return bandValue(e.service) + (yes(d.ddc) ? perDdc : 0) + (yes(d.fe) ? perFe : 0) + (yes(d.pel) ? perPel : 0);
+          };
+
           const blocked = table.blockedSales ?? 0;
-          const paidSales = Math.max(0, count - blocked);
-          const perSale = band?.luz ?? 0;
+          // O bloqueio remove as `blocked` primeiras vendas (por id); cada venda bloqueada perde o valor todo.
+          const paid = active.slice().sort((a, b) => a[0] - b[0]).slice(blocked);
+          const paidSales = paid.length;
+          const unit = bandValue("LUZ");
+          const gross = paid.reduce((sum, [, e]) => sum + valueOf(e), 0);
+          const chargebackValue = chargebacks.reduce((sum, [, e]) => sum + valueOf(e), 0);
+          // As baixas incluem vendas pagas em meses anteriores; o desconto cai sempre no mês da baixa.
+          const commission = gross - chargebackValue;
+
           return {
             sellerId: s.id,
             sellerName: s.name,
-            sales: count,
+            sales: active.length,
             tableName: table.name,
             blocked,
             paidSales,
             band: band ? { min: band.min, max: band.max } : null,
-            commission: paidSales * perSale,
+            unit,
+            gross,
+            chargebackSales: chargebacks.length,
+            chargebackValue,
+            commission,
             missingTable: false,
           };
         })
+        .filter((x): x is NonNullable<typeof x> => x != null)
         .sort((a, b) => b.commission - a.commission);
 
-      return { month: input.month, from, to, sellers: result };
+      const totals = {
+        commission: result.reduce((s, r) => s + r.commission, 0),
+        gross: result.reduce((s, r) => s + (r.gross ?? 0), 0),
+        chargeback: result.reduce((s, r) => s + (r.chargebackValue ?? 0), 0),
+      };
+      return { month: input.month, from, to, sellers: result, totals };
     }),
 };
