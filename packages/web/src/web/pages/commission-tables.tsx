@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
-import { useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
+import { useCommissionCalc, useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
 import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill } from "../components/ui/kit";
-import { errMsg } from "../lib/format";
+import { errMsg, fmtEur, today } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useCommissionTables>["data"]>[number];
 
@@ -121,6 +121,7 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
   const [description, setDescription] = useState(initial?.description ?? "");
   const [color, setColor] = useState(initial?.color ?? COLORS[0]);
   const [active, setActive] = useState(initial?.active ?? true);
+  const [blockedSales, setBlockedSales] = useState(str(initial?.blockedSales));
   const [clientRows, setClientRows] = useState<ClientDraft[]>(
     initial?.clientRows.length
       ? initial.clientRows.map((r) => ({ min: str(r.min), max: str(r.max), luz: str(r.luz), gas: str(r.gas), dd: str(r.dd), fe: str(r.fe), pel: str(r.pel) }))
@@ -140,6 +141,7 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
           description: description || null,
           color,
           active,
+          blockedSales: num(blockedSales) ?? 0,
           clientRows: clientRows.map((r) => ({ kind: "clients" as const, min: num(r.min), max: num(r.max), luz: num(r.luz), gas: num(r.gas), dd: num(r.dd), fe: num(r.fe), pel: num(r.pel) })),
           medemRows: medemRows.map((r) => ({ kind: "medem" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
           solarRows: solarRows.map((r) => ({ kind: "solar" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
@@ -173,6 +175,12 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
             Tabela ativa
           </label>
         </Field>
+        <Field label="Bloqueio de vendas (nº)" className="sm:col-span-2">
+          <input aria-label="Bloqueio de vendas" className="input num" placeholder="0" value={blockedSales} onChange={(e) => setBlockedSales(e.target.value)} />
+          <p className="mt-1.5 text-[11.5px] text-ink-3">
+            Nº de vendas LUZ/Dual BTN em fornecimento que não são pagas em cada mês. O escalão é apurado pelo total de vendas, antes do bloqueio.
+          </p>
+        </Field>
       </div>
 
       <ClientsEditor rows={clientRows} onChange={setClientRows} />
@@ -181,6 +189,68 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
 
       <SubmitRow pending={save.isPending} onCancel={onClose} error={error} extra={initial && <ConfirmDelete pending={remove.isPending} onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onClose(); }} />} />
     </form>
+  );
+}
+
+/** Cálculo de comissões de um mês, por vendedor. */
+function CalcPanel() {
+  const [month, setMonth] = useState(today().slice(0, 7));
+  const calc = useCommissionCalc(month);
+  const rows = calc.data?.sellers ?? [];
+  const total = rows.reduce((s, r) => s + r.commission, 0);
+
+  return (
+    <div className="card mt-8 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+        <div>
+          <div className="font-display text-[15px] font-semibold">Cálculo de comissões</div>
+          <div className="text-[11.5px] text-ink-3">Vendas LUZ/Dual BTN em fornecimento no mês. O escalão apura-se pelo total de vendas; o bloqueio da tabela reduz o nº de vendas pagas.</div>
+        </div>
+        <input aria-label="Mês" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
+      </div>
+      {calc.isLoading ? (
+        <div className="p-5"><div className="skeleton h-24 rounded-[12px]" /></div>
+      ) : !rows.length ? (
+        <Empty title="Sem vendas neste mês" text="Nenhum vendedor tem vendas LUZ/Dual BTN em fornecimento neste mês." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-[13px]">
+            <thead>
+              <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-3">
+                <th className="px-5 py-3 font-medium">Vendedor</th>
+                <th className="px-3 py-3 font-medium">Tabela</th>
+                <th className="px-3 py-3 text-right font-medium">Vendas</th>
+                <th className="px-3 py-3 text-right font-medium">Escalão</th>
+                <th className="px-3 py-3 text-right font-medium">Bloqueio</th>
+                <th className="px-3 py-3 text-right font-medium">Pagas</th>
+                <th className="px-3 py-3 text-right font-medium">€/venda</th>
+                <th className="px-5 py-3 text-right font-medium">Comissão</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.sellerId} className="border-b border-line last:border-0">
+                  <td className="px-5 py-3 font-medium">{r.sellerName}</td>
+                  <td className="px-3 py-3 text-ink-2">{r.tableName ?? <span className="text-danger">sem tabela</span>}</td>
+                  <td className="num px-3 py-3 text-right">{r.sales}</td>
+                  <td className="num px-3 py-3 text-right">{r.band ? `${r.band.min ?? 0}${r.band.max == null ? "+" : `–${r.band.max}`}` : "—"}</td>
+                  <td className="num px-3 py-3 text-right text-ink-2">−{r.blocked}</td>
+                  <td className="num px-3 py-3 text-right">{r.paidSales}</td>
+                  <td className="num px-3 py-3 text-right">{fmtEur(r.commission && r.paidSales ? r.commission / r.paidSales : 0)}</td>
+                  <td className="num px-5 py-3 text-right font-semibold">{fmtEur(r.commission)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-line bg-surface-2/40">
+                <td className="px-5 py-3 font-display font-semibold" colSpan={7}>Total</td>
+                <td className="num px-5 py-3 text-right font-display text-[15px] font-semibold">{fmtEur(total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -237,6 +307,8 @@ export default function CommissionTablesPage() {
           ))}
         </div>
       )}
+
+      <CalcPanel />
 
       <Modal open={edit !== null} onClose={() => setEdit(null)} title={edit === "new" ? "Nova tabela comisional" : "Editar tabela comisional"} wide>
         {edit !== null && <TableForm key={edit === "new" ? "new" : edit.id} initial={edit === "new" ? null : edit} onClose={() => setEdit(null)} />}

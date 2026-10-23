@@ -240,6 +240,8 @@ export const calendars = sqliteTable("calendars", {
   /** Cor do calendário na vista (herda a da equipa nos pessoais). */
   color: text("color").notNull().default("#c6f432"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
+  /** Nº de vendas LUZ/Dual BTN em fornecimento que não são pagas (bloqueio mensal). */
+  blockedSales: real("blocked_sales").notNull().default(0),
   createdAt: createdAt(),
 });
 

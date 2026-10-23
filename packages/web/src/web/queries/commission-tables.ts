@@ -17,3 +17,7 @@ export function useSaveCommissionTable() {
 
 export const useRemoveCommissionTable = () =>
   useMutation(orpc.commissionTables.remove.mutationOptions({ onSuccess: useInv() }));
+
+/** Cálculo de comissões de um mês, por vendedor. */
+export const useCommissionCalc = (month: string) =>
+  useQuery(orpc.commissionTables.calc.queryOptions({ input: { month } }));
