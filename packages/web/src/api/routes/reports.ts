@@ -189,10 +189,10 @@ async function salesReport(months: number, sellerId: SellerScope, end?: string, 
     statusMap[r.status].count++;
     statusMap[r.status].total += r.total;
   }
-  // Antigo comercializador da luz (LUZ e a parte luz do DUAL): vendas do período em todos os estados, exceto Baixa, Pedido de Baixa e Anulado.
+  // Antigo comercializador (LUZ, DUAL e GÁS): vendas do período em todos os estados, exceto Baixa, Pedido de Baixa e Anulado.
   const supMap = new Map<string, { name: string; count: number; counted: number }>();
   for (const r of rows) {
-    if (r.service !== "LUZ" && r.service !== "DUAL") continue;
+    if (r.service !== "LUZ" && r.service !== "DUAL" && r.service !== "GÁS") continue;
     if (SUPPLIER_EXCLUDED.includes(r.status)) continue;
     const name = normalizeSupplier(r.oldSupplier);
     const x = supMap.get(name) ?? { name, count: 0, counted: 0 };
