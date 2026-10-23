@@ -2,7 +2,7 @@ import { z } from "zod";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { chiefRows, chiefTables, employees, sales, saleStatusHistory, teamMemberships, teams } from "../database/schema";
+import { chiefRows, chiefTables, employeeTables, employees, sales, saleStatusHistory, teamMemberships, teams } from "../database/schema";
 
 const rowInput = z.object({
   kind: z.enum(["team", "own"]),
@@ -133,7 +133,9 @@ export const chiefTablesRoute = {
       }
 
       const staff = await db.select({ id: employees.id, name: employees.name, chiefTableId: employees.chiefTableId }).from(employees);
-      const chiefStaff = staff.filter((s) => s.chiefTableId != null);
+      const chiefAssignments = await db.select().from(employeeTables).where(eq(employeeTables.kind, "chief"));
+      const staffWithTable = staff.filter((s) => s.chiefTableId != null || chiefAssignments.some((a) => a.employeeId === s.id && a.chiefTableId != null));
+      const chiefStaff = staffWithTable;
       const tables = await db.select().from(chiefTables);
       const rows = await db.select().from(chiefRows).orderBy(asc(chiefRows.position));
 
@@ -165,9 +167,19 @@ export const chiefTablesRoute = {
 
       const yes = (v: unknown) => (typeof v === "string" ? v.toLowerCase() === "sim" : v === true);
 
+      // Escalão em vigor no mês: a atribuição cuja vigência cobre o mês, senão o escalão atual.
+      const chiefTableInForce = (employeeId: number, current: number | null) => {
+        const mine = chiefAssignments
+          .filter((a) => a.employeeId === employeeId && a.chiefTableId != null)
+          .filter((a) => a.startDate <= to && (a.endDate == null || a.endDate >= from))
+          .sort((x, y) => (x.startDate < y.startDate ? 1 : -1));
+        const id = mine.length ? mine[0].chiefTableId : current;
+        return tables.find((t) => t.id === id) ?? null;
+      };
+
       const result = chiefStaff
         .map((s) => {
-          const table = tables.find((t) => t.id === s.chiefTableId) ?? null;
+          const table = chiefTableInForce(s.id, s.chiefTableId);
           if (!table) return null;
           const ids = teamOfChief(s.id);
           let teamCount = 0;

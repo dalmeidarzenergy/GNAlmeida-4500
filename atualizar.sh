@@ -15,7 +15,7 @@ cd packages/web
 python3 - <<'PY'
 import sqlite3
 c = sqlite3.connect("src/data.db")
-for t in ("commission_rows", "commission_tables", "chief_rows", "chief_tables"):
+for t in ("commission_rows", "commission_tables", "chief_rows", "chief_tables", "employee_tables"):
     c.execute(f"DROP TABLE IF EXISTS {t}")
 c.commit()
 print("  tabelas commission_* e chief_* removidas (vazias)")
@@ -43,6 +43,7 @@ if "chief_table_id" not in emp:
 tabs = [r[0] for r in c.execute("select name from sqlite_master where type='table'").fetchall()]
 assert "commission_tables" in tabs and "commission_rows" in tabs, "ERRO: tabelas commission_* em falta"
 assert "chief_tables" in tabs and "chief_rows" in tabs, "ERRO: tabelas chief_* em falta"
+assert "employee_tables" in tabs, "ERRO: tabela employee_tables em falta"
 print("  OK: schema em ordem")
 PY
 

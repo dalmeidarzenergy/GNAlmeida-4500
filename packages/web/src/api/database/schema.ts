@@ -523,3 +523,23 @@ export const chiefRows = sqliteTable("chief_rows", {
   position: integer("position").notNull().default(0),
   createdAt: createdAt(),
 });
+
+/**
+ * Histórico de tabelas atribuídas a um funcionário, com vigência por datas.
+ * `kind = "commission"` (tabela comisional de vendedor) | `"chief"` (escalão de chefe de equipa).
+ * `endDate` nulo = em vigor sem fim definido. O cálculo de um mês usa a linha cuja vigência
+ * cobre o mês; se não houver nenhuma, recorre-se à tabela atual do funcionário.
+ */
+export const employeeTables = sqliteTable("employee_tables", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().default("commission"),
+  commissionTableId: integer("commission_table_id").references(() => commissionTables.id, { onDelete: "cascade" }),
+  chiefTableId: integer("chief_table_id").references(() => chiefTables.id, { onDelete: "cascade" }),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+});

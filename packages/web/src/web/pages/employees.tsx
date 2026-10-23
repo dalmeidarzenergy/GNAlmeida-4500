@@ -8,6 +8,7 @@ import { useDepartments, useEmployees, usePositions, useRemoveEmployee, useSaveE
 import { useCommissionTables } from "../queries/commission-tables";
 import { useChiefTables } from "../queries/chief-tables";
 import { PageHeader, Pill, Avatar, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, ConfirmDelete, Progress } from "../components/ui/kit";
+import { EmployeeTableHistory } from "../components/employee-tables";
 import { EMP_STATUS } from "../lib/labels";
 import { ETTS } from "../../api/shared/bonds";
 import { errMsg, fmtDate, fmtEur, tenure, today } from "../lib/format";
@@ -262,6 +263,12 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
           </select>
           <p className="mt-1.5 text-[11.5px] text-ink-3">Escalão de remuneração de chefe de equipa (independente da tabela comisional de vendedor).</p>
         </Field>
+
+        <EmployeeTableHistory
+          employeeId={initial?.id ?? null}
+          commissionOptions={(comTables.data ?? []).map((t) => ({ id: t.id, name: t.name }))}
+          chiefOptions={(chiefTables.data ?? []).map((t) => ({ id: t.id, name: t.name }))}
+        />
       </div>
       <SubmitRow
         pending={save.isPending || uploading}

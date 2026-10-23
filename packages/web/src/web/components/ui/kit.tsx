@@ -2,15 +2,18 @@ import { useEffect, useState, type ReactNode } from "react";
 import { X, Search, Loader2 } from "lucide-react";
 import { initials } from "../../lib/format";
 
-export function PageHeader({ eyebrow, title, children }: { eyebrow: string; title: string; children?: ReactNode }) {
+export function PageHeader({ eyebrow, title, subtitle, children }: { eyebrow?: string; title: string; subtitle?: string; children?: ReactNode }) {
   return (
     <div className="rise mb-7 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <div className="label-mono mb-2 flex items-center gap-2">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-volt shadow-[0_0_10px_var(--volt)]" />
-          {eyebrow}
-        </div>
+        {eyebrow && (
+          <div className="label-mono mb-2 flex items-center gap-2">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-volt shadow-[0_0_10px_var(--volt)]" />
+            {eyebrow}
+          </div>
+        )}
         <h1 className="text-[30px] font-semibold leading-none">{title}</h1>
+        {subtitle && <p className="mt-2 max-w-2xl text-[12.5px] text-ink-2">{subtitle}</p>}
       </div>
       {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
     </div>

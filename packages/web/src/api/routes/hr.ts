@@ -3,7 +3,7 @@ import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { authed, requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { absences, calendars, commissionTables, departments, employees, positions, teamMemberships, teams, userRoles } from "../database/schema";
+import { absences, calendars, chiefTables, commissionTables, departments, employeeTables, employees, positions, teamMemberships, teams, userRoles } from "../database/schema";
 import { localWithPhotos } from "../lib/s3";
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { ensureTeamCalendar, syncPersonalCalendarTeam } from "./agenda";
@@ -390,6 +390,67 @@ export const hr = {
       await db.delete(employees).where(eq(employees.id, input.id));
       return { ok: true };
     }),
+  },
+  /**
+   * Histórico de tabelas (comisional / escalão de chefe) atribuídas a um funcionário, com vigência.
+   * Permite saber que tabela estava em vigor numa dada data.
+   */
+  employeeTables: {
+    list: requireView("funcionarios")
+      .input(z.object({ employeeId: z.number() }))
+      .handler(async ({ input }) => {
+        const rows = await db.select().from(employeeTables).where(eq(employeeTables.employeeId, input.employeeId)).orderBy(desc(employeeTables.startDate), desc(employeeTables.id));
+        const com = await db.select({ id: commissionTables.id, name: commissionTables.name }).from(commissionTables);
+        const chief = await db.select({ id: chiefTables.id, name: chiefTables.name }).from(chiefTables);
+        return rows.map((r) => ({
+          ...r,
+          tableName: r.kind === "chief" ? (chief.find((c) => c.id === r.chiefTableId)?.name ?? null) : (com.find((c) => c.id === r.commissionTableId)?.name ?? null),
+        }));
+      }),
+    /** Todas as atribuições (para o cálculo mensal resolver a tabela em vigor por mês). */
+    all: requireView("tabelas-comissionais").handler(async () => {
+      return db.select().from(employeeTables).orderBy(employeeTables.employeeId, employeeTables.startDate);
+    }),
+    save: requireEdit("funcionarios")
+      .input(
+        z.object({
+          id: z.number().optional(),
+          employeeId: z.number(),
+          kind: z.enum(["commission", "chief"]).default("commission"),
+          tableId: z.number(),
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indique a data de início."),
+          endDate: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullable()
+            .optional(),
+          notes: z.string().nullable().optional(),
+        }),
+      )
+      .handler(async ({ input }) => {
+        if (input.endDate && input.endDate < input.startDate) throw new ORPCError("BAD_REQUEST", { message: "A data de fim não pode ser anterior à data de início." });
+        const values = {
+          employeeId: input.employeeId,
+          kind: input.kind,
+          commissionTableId: input.kind === "commission" ? input.tableId : null,
+          chiefTableId: input.kind === "chief" ? input.tableId : null,
+          startDate: input.startDate,
+          endDate: input.endDate ?? null,
+          notes: input.notes ?? null,
+        };
+        if (input.id) {
+          await db.update(employeeTables).set(values).where(eq(employeeTables.id, input.id));
+        } else {
+          await db.insert(employeeTables).values(values);
+        }
+        return { ok: true };
+      }),
+    remove: requireEdit("funcionarios")
+      .input(z.object({ id: z.number() }))
+      .handler(async ({ input }) => {
+        await db.delete(employeeTables).where(eq(employeeTables.id, input.id));
+        return { ok: true };
+      }),
   },
   teams: {
     list: authed.handler(async ({ context }) => {

@@ -261,8 +261,9 @@ export default function ChiefTablesPage() {
       <PageHeader
         title="Escalões de Chefe de Equipa"
         subtitle="Escalões de remuneração para chefes de equipa: valor fixo por vendas da equipa e valor por venda própria."
-        action={<button className="btn btn-primary" onClick={() => setEdit("new")}><Plus size={15} /> Novo escalão</button>}
-      />
+      >
+        <button className="btn btn-primary" onClick={() => setEdit("new")}><Plus size={15} /> Novo escalão</button>
+      </PageHeader>
 
       {tables.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

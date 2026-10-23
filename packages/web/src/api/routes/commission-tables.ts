@@ -2,7 +2,7 @@ import { z } from "zod";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { authed, requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { commissionRows, commissionTables, employees, sales, saleStatusHistory } from "../database/schema";
+import { commissionRows, commissionTables, employeeTables, employees, sales, saleStatusHistory } from "../database/schema";
 
 /** Estados que contam como venda em fornecimento. */
 const COUNTED_STATUS = "Em Fornecimento";
@@ -160,6 +160,20 @@ export const commissionTablesRoute = {
         .from(employees);
       const tables = await db.select().from(commissionTables);
       const rows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
+      const assignments = await db.select().from(employeeTables).where(eq(employeeTables.kind, "commission"));
+
+      /**
+       * Tabela em vigor no mês: usa a atribuição cuja vigência cobre o mês (a mais recente),
+       * e só recorre à tabela atual do funcionário quando não há histórico.
+       */
+      const tableInForce = (seller: { id: number; commissionTableId: number | null }) => {
+        const mine = assignments
+          .filter((a) => a.employeeId === seller.id && a.commissionTableId != null)
+          .filter((a) => a.startDate <= to && (a.endDate == null || a.endDate >= from))
+          .sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
+        const id = mine.length ? mine[0].commissionTableId : seller.commissionTableId;
+        return tables.find((t) => t.id === id) ?? null;
+      };
 
       // Escalão pelo total de vendas (antes do bloqueio).
       const bandFor = (tableId: number, count: number) => {
@@ -175,7 +189,7 @@ export const commissionTablesRoute = {
 
       const result = sellers
         .map((s) => {
-          const table = tables.find((t) => t.id === s.commissionTableId) ?? null;
+          const table = tableInForce(s);
           const mine = [...perSale.entries()].filter(([, e]) => e.sellerId === s.id);
 
           // Vendas que entraram em fornecimento neste mês e não baixaram no mesmo mês.
