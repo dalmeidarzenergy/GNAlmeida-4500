@@ -76,7 +76,7 @@ export default function MedemPage() {
           <span className="text-[12.5px] text-ink-3">{period}</span>
         </div>
         {d && (
-          <button className="btn btn-ghost" onClick={() => downloadCsv(`medem-${month}.csv`, [["Métrica", "Valor"], ["Em Fornecimento", d.orders], ["Vendas registadas", d.byStatus.reduce((s, x) => s + x.count, 0)], ["Faturação", d.total], [], ["Tipo", "Vendas", "%"], ...d.byTipo.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Estado da Proposta", "Vendas", "%"], ...d.byProposalStatus.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Vendedor", "Vendas", "Faturação"], ...d.bySeller.map((s) => [s.name, s.orders, s.total])])}>
+          <button className="btn btn-ghost" onClick={() => downloadCsv(`medem-${month}.csv`, [["Métrica", "Valor"], ["Em Fornecimento", d.orders], ["Vendas registadas", d.byStatus.reduce((s, x) => s + x.count, 0)], [], ["Tipo", "Vendas", "%"], ...d.byTipo.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Estado da Proposta", "Vendas", "%"], ...d.byProposalStatus.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Vendedor", "Vendas"], ...d.bySeller.map((s) => [s.name, s.orders])])}>
             <Download size={14} /> Exportar CSV
           </button>
         )}
@@ -87,10 +87,9 @@ export default function MedemPage() {
       ) : (
         <>
           <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <Stat label="Em fornecimento" value={d.orders} accent="var(--volt)" sub={`${fmtEur(d.total)} faturado`} />
+            <Stat label="Em fornecimento" value={d.orders} accent="var(--volt)" />
             <Stat delay={40} label="Vendas registadas" value={d.byStatus.reduce((s, x) => s + x.count, 0)} sub={d.byStatus.length ? `${d.byStatus.length} estados` : "sem registos"} accent="var(--sky)" />
-            <Stat delay={80} label="Ticket médio" value={fmtEur(d.avgTicket)} sub="por venda em fornecimento" accent="var(--amber)" />
-            <Stat delay={120} label="Número de pontos" value={d.totalPoints.toLocaleString("pt-PT")} sub={`${fmtEur(d.totalCredit)} de crédito`} accent="var(--rose)" />
+            <Stat delay={80} label="Número de pontos" value={d.totalPoints.toLocaleString("pt-PT")} sub={`${fmtEur(d.totalCredit)} de crédito`} accent="var(--rose)" />
           </div>
 
           <div className="mb-4 grid gap-4 xl:grid-cols-2">
@@ -147,7 +146,6 @@ export default function MedemPage() {
                     <tr className="border-b border-line text-left">
                       <th className="label-mono px-5 py-3 font-normal">Vendedor</th>
                       <th className="label-mono px-5 py-3 text-right font-normal">Vendas</th>
-                      <th className="label-mono px-5 py-3 text-right font-normal">Faturação</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -155,7 +153,6 @@ export default function MedemPage() {
                       <tr key={s.name} className="border-b border-line/60">
                         <td className="px-5 py-2.5">{s.name}</td>
                         <td className="num px-5 py-2.5 text-right font-semibold">{s.orders}</td>
-                        <td className="num px-5 py-2.5 text-right text-ink-2">{fmtEur(s.total)}</td>
                       </tr>
                     ))}
                   </tbody>
