@@ -93,7 +93,6 @@ const OLD_SUPPLIERS = [
 export const SALE_FORMS: Record<string, FieldDef[]> = {
   LUZ: [
     { key: "contractNumber", label: "Número de Contrato", kind: "text" },
-  { key: "proposalNumber", label: "Número da Proposta", kind: "text" },
     { key: "oldSupplier", label: "Antigo Comercializador", kind: "select", options: OLD_SUPPLIERS },
     { key: "name", label: "Nome do Cliente", kind: "text", required: true, full: true },
     { key: "nif", label: "NIF", kind: "text", required: true, pattern: "\\d{9}", patternHint: "9 dígitos" },
