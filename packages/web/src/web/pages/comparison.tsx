@@ -13,7 +13,7 @@ import { DASHBOARD_SERVICES, ServiceFilter } from "../components/service-filter"
 
 const SUPPLIER_COLORS = ["#c6f432", "#38bdf8", "#f472b6", "#f5a524", "#a78bfa", "#34d399", "#fb7185", "#facc15", "#9aa39b"];
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
-const dec = (v: number | null) => (v == null ? "—" : v.toLocaleString("pt-PT", { maximumFractionDigits: 1 }));
+const dec = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-PT", { maximumFractionDigits: 1 }));
 
 /** +X% de a para b (positivo = subiu). */
 function delta(a: number | null, b: number | null) {

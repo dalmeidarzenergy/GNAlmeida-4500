@@ -97,6 +97,7 @@ const SUPPLIER_ALIASES: [RegExp, string][] = [
   [/galp/, "Galp"],
   [/entrada\s*dire(c)?ta/, "Entrada Direta"],
   [/\bsu\s*ele(c)?tricidade/, "SU Eletricidade"],
+  [/yes\s*energy/, "Yes Energy"],
   [/ibelectra/, "Ibelectra"],
   [/iberdrola/, "Iberdrola"],
   [/repsol/, "Repsol"],

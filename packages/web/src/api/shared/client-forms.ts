@@ -66,6 +66,7 @@ const OLD_SUPPLIERS = [
   "Entrada Direta",
   "EDP Comercial",
   "SU Eletricidade",
+  "Yes Energy",
   "Endesa",
   "Galp",
   "Goldenergy",
