@@ -76,7 +76,7 @@ export default function MedemPage() {
           <span className="text-[12.5px] text-ink-3">{period}</span>
         </div>
         {d && (
-          <button className="btn btn-ghost" onClick={() => downloadCsv(`medem-${month}.csv`, [["Métrica", "Valor"], ["Em Fornecimento", d.orders], ["Vendas registadas", d.byStatus.reduce((s, x) => s + x.count, 0)], ["Total de consumo (MWh)", d.totalConsumption], ["Crédito", d.totalCredit], [], ["Tipo", "Vendas", "%"], ...d.byTipo.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Estado da Proposta", "Vendas", "%"], ...d.byProposalStatus.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Vendedor", "Vendas"], ...d.bySeller.map((s) => [s.name, s.orders]), [], ["Vendedor", "Consumo (MWh)"], ...d.bySellerConsumption.map((s) => [s.name, s.consumption])])}>
+          <button className="btn btn-ghost" onClick={() => downloadCsv(`medem-${month}.csv`, [["Métrica", "Valor"], ["Em Fornecimento", d.orders], ["Vendas registadas", d.byStatus.reduce((s, x) => s + x.count, 0)], ["Total de consumo (MWh)", d.totalConsumption], [], ["Tipo", "Vendas", "%"], ...d.byTipo.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Estado da Proposta", "Vendas", "%"], ...d.byProposalStatus.map((x) => [x.name, x.count, Math.round((x.share ?? 0) * 100)]), [], ["Vendedor", "Vendas"], ...d.bySeller.map((s) => [s.name, s.orders]), [], ["Vendedor", "Consumo (MWh)"], ...d.bySellerConsumption.map((s) => [s.name, s.consumption])])}>
             <Download size={14} /> Exportar CSV
           </button>
         )}
@@ -87,10 +87,32 @@ export default function MedemPage() {
       ) : (
         <>
           <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <Stat label="Em fornecimento" value={d.orders} accent="var(--volt)" />
+            <Stat label="Em Fornecimento" value={d.orders} accent="var(--volt)" />
             <Stat delay={40} label="Vendas registadas" value={d.byStatus.reduce((s, x) => s + x.count, 0)} sub={d.byStatus.length ? `${d.byStatus.length} estados` : "sem registos"} accent="var(--sky)" />
             <Stat delay={80} label="Total de consumo" value={`${d.totalConsumption.toLocaleString("pt-PT")} MWh`} sub={d.consumptionCount ? `${d.consumptionCount} vendas com consumo` : "sem consumo registado"} accent="var(--volt)" />
-            <Stat delay={120} label="Crédito" value={d.totalCredit.toLocaleString("pt-PT")} sub="total acumulado" accent="var(--rose)" />
+            <Stat delay={120} label="Taxa de DDC" value={pct(d.quality.ddc.rate)} sub={`${d.quality.ddc.hits} de ${d.quality.ddc.base} vendas com DDC`} accent="var(--rose)" />
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-3">
+            <Stat delay={160} label="Taxa de FE" value={pct(d.quality.fe.rate)} sub={`${d.quality.fe.hits} de ${d.quality.fe.base} vendas com FE`} accent="var(--rose)" />
+            <Stat
+              delay={200}
+              label="Média de contratação"
+              value={d.quality.contractDays == null ? "—" : `${d.quality.contractDays.toLocaleString("pt-PT", { maximumFractionDigits: 1 })} dias`}
+              sub={d.quality.contractBase ? `da venda até Control · ${d.quality.contractBase} venda(s)` : "ainda sem vendas em Control"}
+              accent="var(--rose)"
+            />
+            <Stat
+              delay={240}
+              label="Taxa de Chargeback"
+              value={pct(d.quality.chargeback.rate)}
+              accent="var(--rose)"
+              sub={
+                <>
+                  {d.quality.chargeback.hits} de {d.quality.chargeback.base} em fornecimento passaram a Baixa em 3 meses
+                  {d.quality.chargeback.maturing > 0 && <span className="text-ink-3"> · {d.quality.chargeback.maturing} ainda dentro dos 3 meses</span>}
+                </>
+              }
+            />
           </div>
 
           <div className="mb-4 grid gap-4 xl:grid-cols-2">
