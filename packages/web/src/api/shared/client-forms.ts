@@ -200,7 +200,7 @@ export const MEDEM_PROPOSAL_STATUS = [
   "Anulada",
 ] as const;
 
-const MEDEM_SALE_STATUS = ["-", ...SALE_STATUS];
+const MEDEM_SALE_STATUS = [...SALE_STATUS];
 
 SALE_FORMS.MEDEM = [
   { key: "contractNumber", label: "Número de Contrato", kind: "text" },
@@ -216,8 +216,15 @@ SALE_FORMS.MEDEM = [
   { key: "municipality", label: "Concelho", kind: "select", options: [], optionsFrom: "district" },
   { key: "cpe", label: "CPE", kind: "text", required: true, pattern: "PT\d{16}[A-Z]{2}", patternHint: "PT + 16 dígitos + 2 letras", placeholder: "PT0002000000000000XX" },
   { key: "power", label: "Potência (kVA)", kind: "select", options: POWERS_KVA },
-  { key: "campaign", label: "Campanha", kind: "text" },
+  { key: "voltageLevel", label: "Nível de Tensão", kind: "select", options: ["BTN", "BTE", "MT"], default: "BTN" },
   { key: "proposalStatus", label: "Estado da Proposta", kind: "select", options: [...MEDEM_PROPOSAL_STATUS], default: "Enviada" },
+  { key: "proposalNumber", label: "Número da Proposta", kind: "text" },
+  { key: "contractDuration", label: "Duração do Contrato", kind: "text" },
+  { key: "credit", label: "Crédito", kind: "text" },
+  { key: "points", label: "Número de Pontos", kind: "text" },
+  { key: "ddc", label: "DDC", kind: "yesno" },
+  { key: "fe", label: "FE", kind: "yesno" },
+  { key: "consent", label: "Consentimentos", kind: "yesno" },
   { key: "saleStatus", label: "Estado da Venda", kind: "select", options: MEDEM_SALE_STATUS, default: "Prospeção" },
   { key: "notes", label: "Observações", kind: "textarea", full: true },
 ];
