@@ -55,7 +55,6 @@ export const employees = sqliteTable("employees", {
   terminationDate: text("termination_date"),
   salary: real("salary").notNull().default(0),
   status: text("status").notNull().default("ativo"),
-  isSeller: integer("is_seller", { mode: "boolean" }).notNull().default(false),
   commissionRate: real("commission_rate").notNull().default(0),
   /** Tabela comisional aplicada a este funcionário. */
   commissionTableId: integer("commission_table_id").references(() => commissionTables.id, { onDelete: "set null" }),
@@ -64,7 +63,6 @@ export const employees = sqliteTable("employees", {
   category: text("category"),
   /** Escalão de chefe de equipa aplicado a este funcionário (só para chefes). */
   chiefTableId: integer("chief_table_id").references(() => chiefTables.id, { onDelete: "set null" }),
-  vacationDays: integer("vacation_days").notNull().default(22),
   /** ETT (empresa de trabalho temporário): Vertente Humana ou Talenter. */
   ett: text("ett"),
   /** Tipo de vínculo (Bolsa de Formação 5h/6h, Contrato 5h/6h); as opções dependem do cargo. */

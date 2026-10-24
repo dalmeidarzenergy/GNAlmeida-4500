@@ -7,7 +7,7 @@ import { TeamFilter, useTeamIds } from "../components/team-filter";
 import { useDepartments, useEmployees, usePositions, useRemoveEmployee, useSaveEmployee } from "../queries/hr";
 import { useCommissionTables } from "../queries/commission-tables";
 import { useChiefTables } from "../queries/chief-tables";
-import { PageHeader, Pill, Avatar, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, ConfirmDelete, Progress } from "../components/ui/kit";
+import { PageHeader, Pill, Avatar, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, ConfirmDelete } from "../components/ui/kit";
 import { EmployeeTableHistory } from "../components/employee-tables";
 import { EMP_STATUS } from "../lib/labels";
 import { ETTS } from "../../api/shared/bonds";
@@ -18,7 +18,7 @@ type Emp = NonNullable<ReturnType<typeof useEmployees>["data"]>[number];
 
 const blank = {
   name: "", email: "", phone: "", nif: "", photoKey: null as string | null, departmentId: null as number | null, positionId: null as number | null, managerId: null as number | null,
-  hireDate: today(), terminationDate: "" as string, salary: 0, status: "ativo" as "ativo" | "pendente" | "suspenso" | "blacklist" | "inativo", isSeller: false, commissionRate: 0, vacationDays: 22,
+  hireDate: today(), terminationDate: "" as string, salary: 0, status: "ativo" as "ativo" | "pendente" | "suspenso" | "blacklist" | "inativo", commissionRate: 0,
   commissionTableId: null as number | null, chiefTableId: null as number | null, category: null as string | null, ett: "" as string, bond: "" as string,
 };
 
@@ -136,7 +136,7 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
     if (f.bond && !allowedBonds.includes(f.bond)) return setError("O vínculo escolhido não é aceite pelo cargo.");
     const payload = {
       name: f.name, email: f.email, phone: f.phone || null, nif: f.nif || null, photoKey: f.photoKey ?? null, departmentId: f.departmentId, positionId: f.positionId, managerId: f.managerId,
-      hireDate: f.hireDate, terminationDate: f.status === "inativo" ? f.terminationDate : null, salary: Number(f.salary), status: f.status, isSeller: f.isSeller, commissionRate: Number(f.commissionRate), vacationDays: Number(f.vacationDays),
+      hireDate: f.hireDate, terminationDate: f.status === "inativo" ? f.terminationDate : null, salary: Number(f.salary), status: f.status, commissionRate: Number(f.commissionRate),
       commissionTableId: f.commissionTableId, chiefTableId: f.chiefTableId, ett: f.ett || null, bond: f.bond || null,
     };
     try {
@@ -241,35 +241,22 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
             <p className="mt-1.5 text-[11.5px] text-ink-3">Último dia ativo. Conta como ativo nos relatórios até este mês.</p>
           </Field>
         )}
-        <Field label="Dias de férias / ano">
-          <input aria-label="Dias de férias / ano" className="input num" type="number" min={0} value={f.vacationDays} onChange={(e) => set("vacationDays", Number(e.target.value))} />
+        <Field label="Categoria comercial" className="sm:col-span-2">
+          <select aria-label="Categoria comercial" className="input" value={f.category ?? ""} onChange={(e) => set("category", (e.target.value || null) as typeof f.category)}>
+            <option value="">— Escolher categoria —</option>
+            {COMMISSION_GROUP_OPTIONS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+          </select>
+          <p className="mt-1.5 text-[11.5px] text-ink-3">Define de que grupo podem ser as tabelas atribuídas. Só pode ter tabelas deste grupo.</p>
         </Field>
-        <div className="rounded-[12px] border border-line bg-bg p-4 sm:col-span-2">
-          <label className="flex cursor-pointer items-center gap-3 text-[13px]">
-            <input type="checkbox" aria-label="É vendedor" className="h-4 w-4 accent-[var(--volt)]" checked={f.isSeller} onChange={(e) => set("isSeller", e.target.checked)} />
-            <span>É vendedor (aparece em vendas, metas e comissões)</span>
-          </label>
-        </div>
-        {f.isSeller && (
-          <>
-            <Field label="Categoria comercial" className="sm:col-span-2">
-              <select aria-label="Categoria comercial" className="input" value={f.category ?? ""} onChange={(e) => set("category", (e.target.value || null) as typeof f.category)}>
-                <option value="">— Escolher categoria —</option>
-                {COMMISSION_GROUP_OPTIONS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
-              </select>
-              <p className="mt-1.5 text-[11.5px] text-ink-3">Define de que grupo podem ser as tabelas atribuídas. Só pode ter tabelas deste grupo.</p>
-            </Field>
-            <Field label="Tabela comisional principal" className="sm:col-span-2">
-              <select aria-label="Tabela comisional principal" className="input" value={f.commissionTableId ?? ""} onChange={(e) => set("commissionTableId", e.target.value ? Number(e.target.value) : null)}>
-                <option value="">— Sem tabela —</option>
-                {principalOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-              <p className="mt-1.5 text-[11.5px] text-ink-3">
-                {f.category ? "Só aparecem tabelas do grupo " + (COMMISSION_GROUP_LABEL[f.category] ?? f.category) + "." : "Escolhe primeiro a categoria comercial para ver as tabelas do grupo."}
-              </p>
-            </Field>
-          </>
-        )}
+        <Field label="Tabela comisional principal" className="sm:col-span-2">
+          <select aria-label="Tabela comisional principal" className="input" value={f.commissionTableId ?? ""} onChange={(e) => set("commissionTableId", e.target.value ? Number(e.target.value) : null)}>
+            <option value="">— Sem tabela —</option>
+            {principalOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <p className="mt-1.5 text-[11.5px] text-ink-3">
+            {f.category ? "Só aparecem tabelas do grupo " + (COMMISSION_GROUP_LABEL[f.category] ?? f.category) + "." : "Escolhe primeiro a categoria comercial para ver as tabelas do grupo."}
+          </p>
+        </Field>
         <Field label="Escalão de chefe de equipa" className="sm:col-span-2">
           <select aria-label="Escalão de chefe de equipa" className="input" value={f.chiefTableId ?? ""} onChange={(e) => set("chiefTableId", e.target.value ? Number(e.target.value) : null)}>
             <option value="">— Sem escalão de chefe —</option>
@@ -404,14 +391,12 @@ export default function EmployeesPage() {
                   <th>Responsável</th>
                   <th>Admissão</th>
                   <th className="text-right">Salário</th>
-                  <th>Férias {new Date().getFullYear()}</th>
                   <th>Estado</th>
                   <th aria-label="Ações" />
                 </tr>
               </thead>
               <tbody>
                 {list.map((e) => {
-                  const left = e.vacationDays - Number(e.vacationUsed);
                   return (
                     <tr key={e.id} className="cursor-pointer" onClick={() => setEditing(e)}>
                       <td>
@@ -420,7 +405,6 @@ export default function EmployeesPage() {
                           <div>
                             <div className="flex items-center gap-2 font-medium">
                               {e.name}
-                              {e.isSeller && <span className="rounded bg-volt/10 px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wider text-volt">Vendas</span>}
                             </div>
                             <div className="mt-0.5 flex items-center gap-3 text-[11.5px] text-ink-3">
                               <span className="flex items-center gap-1"><Mail size={11} />{e.email}</span>
@@ -451,10 +435,6 @@ export default function EmployeesPage() {
                         <div className="text-[11.5px] text-ink-3">{tenure(e.hireDate)}</div>
                       </td>
                       <td className="num text-right">{fmtEur(e.salary)}</td>
-                      <td className="w-40">
-                        <div className="num mb-1.5 text-[12px]"><span className={left < 5 ? "text-amber" : ""}>{left}</span><span className="text-ink-3"> / {e.vacationDays} dias</span></div>
-                        <Progress value={Number(e.vacationUsed) / (e.vacationDays || 1)} color="var(--sky)" />
-                      </td>
                       <td>
                         <Pill {...EMP_STATUS[e.status]} />
                         {e.status === "inativo" && (

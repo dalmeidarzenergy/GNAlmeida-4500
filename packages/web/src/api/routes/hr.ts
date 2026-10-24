@@ -47,13 +47,11 @@ const employeeInput = z.object({
   terminationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   salary: z.number().min(0),
   status: z.enum(["ativo", "pendente", "suspenso", "blacklist", "inativo"]).default("ativo"),
-  isSeller: z.boolean().default(false),
   commissionRate: z.number().min(0).max(100).default(0),
   commissionTableId: z.number().nullable().optional(),
   chiefTableId: z.number().nullable().optional(),
   /** Categoria comercial; define de que grupo podem ser as tabelas atribuídas. */
   category: z.enum(COMMISSION_GROUPS).nullable().optional(),
-  vacationDays: z.number().int().min(0).default(22),
   /** ETT (empresa de trabalho temporário) e tipo de vínculo; as opções de vínculo vêm do cargo. */
   ett: z.enum(ETTS as [string, ...string[]]).nullable().optional(),
   bond: z.enum(BONDS as [string, ...string[]]).nullable().optional(),
@@ -301,7 +299,6 @@ export const hr = {
   },
   employees: {
     list: requireView("funcionarios").handler(async ({ context }) => {
-      const year = new Date().getFullYear().toString();
       const scope = context.role === "chefe" ? await teamScopeIds(context) : null;
       const rows = await db
         .select({
@@ -320,21 +317,18 @@ export const hr = {
           terminationDate: employees.terminationDate,
           salary: employees.salary,
           status: employees.status,
-          isSeller: employees.isSeller,
           commissionRate: employees.commissionRate,
           commissionTableId: employees.commissionTableId,
           commissionTableName: sql<string | null>`(select ct.name from commission_tables ct where ct.id = ${employees.commissionTableId})`,
           category: employees.category,
           chiefTableId: employees.chiefTableId,
           chiefTableName: sql<string | null>`(select ch.name from chief_tables ch where ch.id = ${employees.chiefTableId})`,
-          vacationDays: employees.vacationDays,
           ett: employees.ett,
           bond: employees.bond,
           bondTypes: sql<string | null>`(select p.bond_types from positions p where p.id = ${employees.positionId})`,
           departmentName: departments.name,
           departmentColor: departments.color,
           positionTitle: positions.title,
-          vacationUsed: sql<number>`(select coalesce(sum(a.days),0) from absences a where a.employee_id = ${employees.id} and a.type = 'ferias' and a.status = 'aprovado' and substr(a.start_date,1,4) = ${year})`,
         })
         .from(employees)
         .leftJoin(departments, eq(departments.id, employees.departmentId))
@@ -359,7 +353,7 @@ export const hr = {
     options: authed.handler(async ({ context }) => {
       const scope = context.role === "chefe" ? await teamScopeIds(context) : context.role === "vendedor" ? [context.employeeId ?? -1] : null;
       return db
-        .select({ id: employees.id, name: employees.name, isSeller: employees.isSeller, status: employees.status, hireDate: employees.hireDate, terminationDate: employees.terminationDate })
+        .select({ id: employees.id, name: employees.name, status: employees.status, hireDate: employees.hireDate, terminationDate: employees.terminationDate })
         .from(employees)
         .where(scope ? inArray(employees.id, scope.length ? scope : [-1]) : undefined)
         .orderBy(employees.name);

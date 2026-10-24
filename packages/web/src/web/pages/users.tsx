@@ -58,7 +58,7 @@ function UserRow({ u, isSelf, canEdit, canEditData, canAssign }: { u: U; isSelf:
       <td>
         <select className="input h-9 w-56" value={emp ?? ""} disabled={disabled} onChange={(e) => setEmp(e.target.value ? Number(e.target.value) : null)}>
           <option value="">Sem ficha associada</option>
-          {emps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}{x.isSeller ? " · vendedor" : ""}</option>)}
+          {emps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
       </td>
       <td className="w-44 text-right">
@@ -360,7 +360,7 @@ function CreateModal({ onClose, canCreatePrivileged }: { onClose: () => void; ca
         <Field label={`Ficha de funcionário${role === "chefe" || role === "vendedor" ? " (obrigatória)" : ""}`}>
           <select className="input" value={emp} onChange={(e) => setEmp(e.target.value ? Number(e.target.value) : "")}>
             <option value="">Sem ficha associada</option>
-            {emps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}{x.isSeller ? " · vendedor" : ""}</option>)}
+            {emps.data?.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </Field>
         <div className="flex max-h-[40vh] flex-col overflow-y-auto rounded-[10px] border border-line p-3">

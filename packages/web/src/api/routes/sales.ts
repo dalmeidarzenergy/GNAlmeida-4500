@@ -421,7 +421,7 @@ export const sales = {
       const sellers = await db
         .select()
         .from(employees)
-        .where(own ? eq(employees.id, own) : eq(employees.isSeller, true))
+        .where(own ? eq(employees.id, own) : undefined)
         .orderBy(employees.name)
         .then((rows) => (own ? rows : rows.filter((e) => activeInMonth(e, input.month))));
       const targets = await db.select().from(salesTargets).where(eq(salesTargets.month, input.month));

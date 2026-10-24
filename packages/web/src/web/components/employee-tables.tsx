@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useEmployeeTables, useRemoveEmployeeTable, useSaveEmployeeTable } from "../queries/employee-tables";
 import { Field, Pill } from "./ui/kit";
 import { COMMISSION_GROUP_LABEL, type CommissionGroup } from "../../api/shared/commission-groups";
@@ -7,7 +7,7 @@ import { errMsg, fmtDate, today } from "../lib/format";
 
 type Option = { id: number; name: string };
 
-const blankRow = () => ({ kind: "commission" as "commission" | "chief", tableId: "", startDate: today(), endDate: "" });
+const blankRow = () => ({ id: undefined as number | undefined, kind: "commission" as "commission" | "chief", tableId: "", startDate: today(), endDate: "" });
 
 /** Histórico de tabelas atribuídas ao funcionário, com datas de vigência. */
 export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptions, category = null }: { employeeId: number | null; commissionOptions: Option[]; chiefOptions: Option[]; category?: string | null }) {
@@ -55,7 +55,7 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
                 <th className="px-2 pb-2 font-medium">Tabela</th>
                 <th className="px-2 pb-2 font-medium">De</th>
                 <th className="px-2 pb-2 font-medium">Até</th>
-                <th className="w-10 pb-2" />
+                <th className="w-16 pb-2" />
               </tr>
             </thead>
             <tbody>
@@ -66,15 +66,35 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
                   <td className="num px-2 py-2">{fmtDate(r.startDate)}</td>
                   <td className="num px-2 py-2">{r.endDate ? fmtDate(r.endDate) : <span className="text-ink-3">em vigor</span>}</td>
                   <td className="px-2 py-2">
-                    <button
-                      type="button"
-                      aria-label={`Remover período ${r.id}`}
-                      className="btn-icon"
-                      disabled={remove.isPending}
-                      onClick={async () => { await remove.mutateAsync({ id: r.id }); }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        aria-label={`Editar datas do período ${r.id}`}
+                        className="btn-icon"
+                        disabled={remove.isPending}
+                        onClick={() => {
+                          setError(null);
+                          setDraft({
+                            id: r.id,
+                            kind: r.kind,
+                            tableId: String(r.kind === "chief" ? r.chiefTableId ?? "" : r.commissionTableId ?? ""),
+                            startDate: r.startDate,
+                            endDate: r.endDate ?? "",
+                          });
+                        }}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Remover período ${r.id}`}
+                        className="btn-icon"
+                        disabled={remove.isPending}
+                        onClick={async () => { await remove.mutateAsync({ id: r.id }); }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -117,6 +137,7 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
                 if (!draft.startDate) return setError("Indique a data de início.");
                 try {
                   await save.mutateAsync({
+                    id: draft.id,
                     employeeId,
                     kind: draft.kind,
                     tableId: Number(draft.tableId),
@@ -129,7 +150,7 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
                 }
               }}
             >
-              Adicionar período
+              {draft.id != null ? "Guardar alterações" : "Adicionar período"}
             </button>
             <button type="button" className="btn btn-ghost" onClick={() => { setDraft(null); setError(null); }}>Cancelar</button>
           </div>

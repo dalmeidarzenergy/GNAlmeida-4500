@@ -19,6 +19,15 @@ for t in ("commission_rows", "commission_tables", "chief_rows", "chief_tables", 
     c.execute(f"DROP TABLE IF EXISTS {t}")
 c.commit()
 print("  tabelas commission_* e chief_* removidas (vazias)")
+
+# Colunas antigas retiradas do schema (is_seller, vacation_days): removemos antes do push
+# para o drizzle-kit nao pedir confirmacao interativa.
+empcols = [r[1] for r in c.execute("PRAGMA table_info(employees)").fetchall()]
+for col in ("is_seller", "vacation_days"):
+    if col in empcols:
+        c.execute(f"ALTER TABLE employees DROP COLUMN {col}")
+        c.commit()
+        print(f"  coluna employees.{col} removida")
 PY
 
 bun --env-file=../../.env drizzle-kit push

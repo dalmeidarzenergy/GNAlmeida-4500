@@ -365,7 +365,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   }
 
   const staff = await db
-    .select({ id: employees.id, name: employees.name, isSeller: employees.isSeller, commissionTableId: employees.commissionTableId, chiefTableId: employees.chiefTableId })
+    .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId, chiefTableId: employees.chiefTableId })
     .from(employees);
   const cTables = await db.select().from(commissionTables);
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
@@ -440,7 +440,6 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
 
   // ---- Comerciais ----
   for (const s of staff) {
-    if (!s.isSeller) continue;
     const mine = valid.get(s.id) ?? [];
     const cb = chargeback.get(s.id) ?? [];
     if (!mine.length && !cb.length) continue;

@@ -161,7 +161,7 @@ export const commissionTablesRoute = {
       }
 
       const sellers = await db
-        .select({ id: employees.id, name: employees.name, isSeller: employees.isSeller, commissionTableId: employees.commissionTableId })
+        .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId })
         .from(employees);
       const tables = await db.select().from(commissionTables);
       const rows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
@@ -205,7 +205,7 @@ export const commissionTablesRoute = {
           // portanto nunca entram no chargeback.
           const chargebacks = mine.filter(([, e]) => e.baixaOn.some((d) => d >= from && d <= to) && !!e.suppliedOn && e.suppliedOn < from);
 
-          if (!s.isSeller || (!active.length && !chargebacks.length)) return null;
+          if (!active.length && !chargebacks.length) return null;
           if (!table) return { sellerId: s.id, sellerName: s.name, sales: active.length, tableName: null, blocked: 0, paidSales: active.length, band: null, unit: 0, gross: 0, commission: 0, chargebackSales: chargebacks.length, chargebackValue: 0, missingTable: true };
 
           const band = bandFor(table.id, active.filter(([, e]) => e.service !== "GÁS").length);
