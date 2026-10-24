@@ -248,12 +248,12 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
           </label>
         </div>
         {f.isSeller && (
-          <Field label="Tabela comisional" className="sm:col-span-2">
-            <select aria-label="Tabela comisional" className="input" value={f.commissionTableId ?? ""} onChange={(e) => set("commissionTableId", e.target.value ? Number(e.target.value) : null)}>
+          <Field label="Tabela comisional principal" className="sm:col-span-2">
+            <select aria-label="Tabela comisional principal" className="input" value={f.commissionTableId ?? ""} onChange={(e) => set("commissionTableId", e.target.value ? Number(e.target.value) : null)}>
               <option value="">— Sem tabela —</option>
               {(comTables.data ?? []).filter((t) => t.active).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <p className="mt-1.5 text-[11.5px] text-ink-3">Tabela de comissões aplicada a este vendedor (LUZ, GÁS, DDC, FE, PEL, MEDEM e Solar).</p>
+            <p className="mt-1.5 text-[11.5px] text-ink-3">Tabela de comissões usada quando não houver nenhum período registado abaixo. Podes atribuir mais do que uma tabela no histórico.</p>
           </Field>
         )}
         <Field label="Escalão de chefe de equipa" className="sm:col-span-2">

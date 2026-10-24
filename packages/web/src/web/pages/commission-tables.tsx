@@ -38,6 +38,24 @@ const CLIENT_COLS: { key: keyof ClientDraft; label: string; color: string }[] = 
   { key: "pel", label: "PEL", color: "#7cc4e8" },
 ];
 
+/** Separadores internos do formulário (aspeto igual ao Tabs, mas independentes do menu). */
+function SubTabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { key: T; label: string }[] }) {
+  return (
+    <div className="mb-1 mt-3 inline-flex rounded-[11px] border border-line bg-surface p-1">
+      {items.map((it) => (
+        <button
+          key={it.key}
+          type="button"
+          onClick={() => onChange(it.key)}
+          className={`flex h-8 items-center gap-2 rounded-lg px-3 text-[12.5px] font-medium transition ${value === it.key ? "bg-surface-2 text-ink shadow-[inset_0_0_0_1px_var(--line)]" : "text-ink-2 hover:text-ink"}`}
+        >
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Escalões por nº de clientes (mensal) → LUZ / GÁS / DD / FE / PEL. */
 function ClientsEditor({ rows, onChange }: { rows: ClientDraft[]; onChange: (r: ClientDraft[]) => void }) {
   const setRow = (i: number, patch: Partial<ClientDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -165,6 +183,7 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
   const [active, setActive] = useState(initial?.active ?? true);
   const [blockedSales, setBlockedSales] = useState(str(initial?.blockedSales));
   const [kind, setKind] = useState(initial?.regime ?? regime);
+  const [medemTab, setMedemTab] = useState<"comercial" | "pontos">("pontos");
   const [clientRows, setClientRows] = useState<ClientDraft[]>(
     initial?.clientRows.length
       ? initial.clientRows.map((r) => ({ min: str(r.min), max: str(r.max), luz: str(r.luz), gas: str(r.gas), dd: str(r.dd), fe: str(r.fe), pel: str(r.pel) }))
@@ -235,9 +254,24 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
         </Field>
       </div>
 
-      <ClientsEditor rows={clientRows} onChange={setClientRows} />
-      <BandEditor title="Escalões MEDEM" hint="Faixas por número de pontos." unit="pontos" rows={medemRows} onChange={setMedemRows} />
-      <SolarEditor rows={solarRows} onChange={setSolarRows} />
+      {kind === "RES+BTN NEG" && <ClientsEditor rows={clientRows} onChange={setClientRows} />}
+
+      {kind === "MEDEM" && (
+        <>
+          <div className="mt-6">
+            <div className="font-display text-[14px] font-semibold">Escalões MEDEM</div>
+            <div className="text-[11.5px] text-ink-3">Esta tabela tem duas partes. Escolhe qual queres preencher.</div>
+          </div>
+          <SubTabs value={medemTab} onChange={setMedemTab} items={[{ key: "comercial", label: "Escalões de comercial (RES+BTN NEG)" }, { key: "pontos", label: "Escalões por pontos" }]} />
+          {medemTab === "comercial" ? (
+            <ClientsEditor rows={clientRows} onChange={setClientRows} />
+          ) : (
+            <BandEditor title="Escalões por pontos" hint="Faixas por número de pontos." unit="pontos" rows={medemRows} onChange={setMedemRows} />
+          )}
+        </>
+      )}
+
+      {kind === "SOLAR" && <SolarEditor rows={solarRows} onChange={setSolarRows} />}
 
       <SubmitRow pending={save.isPending} onCancel={onClose} error={error} extra={initial && <ConfirmDelete pending={remove.isPending} onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onClose(); }} />} />
     </form>
