@@ -80,9 +80,10 @@ export const chiefTablesRoute = {
   /**
    * Cálculo do escalão de chefe de equipa, por chefe e por mês.
    *
-   * Escalão de equipa e escalão próprio: apurados apenas pelas vendas LUZ/Dual BTN que
-   * entraram em fornecimento no mês (menos as que baixaram no próprio mês) — o GÁS não conta.
-   * Pagamento: todas as vendas (incluindo GÁS) são pagas ao valor do escalão atingido.
+   * comissão de equipa: escalonada por nº de vendas LUZ/Dual BTN em fornecimento no mês,
+   * e paga-se € por venda LUZ e € por venda GÁS do escalão atingido (igual à tabela de vendedor).
+   * Escalão próprio do chefe: as suas próprias vendas, com o mesmo critério.
+   * Chargeback: as vendas que passaram a Baixa neste mês descontam tudo o que foi pago por elas.
    */
   calc: requireView("tabelas-comissionais")
     .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
@@ -124,15 +125,25 @@ export const chiefTablesRoute = {
         perSale.set(r.saleId, e);
       }
 
-      // Vendas válidas do mês, por vendedor.
-      const valid = new Map<number, { service: string | null; details: Record<string, unknown> | null }[]>();
+      // Vendas válidas do mês, por vendedor (entraram em fornecimento este mês e não baixaram).
+      type SaleLite = { service: string | null; details: Record<string, unknown> | null };
+      const valid = new Map<number, SaleLite[]>();
+      // Chargebacks do mês, por vendedor: vendas que baixaram agora e já tinham entrado antes.
+      const chargeback = new Map<number, SaleLite[]>();
       for (const [, e] of perSale) {
         if (e.sellerId == null) continue;
-        if (!e.suppliedOn || e.suppliedOn < from || e.suppliedOn > to) continue;
-        if (e.baixaOn.some((d) => d >= from && d <= to)) continue;
-        const list = valid.get(e.sellerId) ?? [];
-        list.push({ service: e.service, details: e.details });
-        valid.set(e.sellerId, list);
+        const lite: SaleLite = { service: e.service, details: e.details };
+        const baixou = e.baixaOn.some((d) => d >= from && d <= to);
+        if (e.suppliedOn && e.suppliedOn >= from && e.suppliedOn <= to) {
+          if (baixou) continue; // entrou e baixou no próprio mês: não conta nem paga
+          const list = valid.get(e.sellerId) ?? [];
+          list.push(lite);
+          valid.set(e.sellerId, list);
+        } else if (baixou && e.suppliedOn && e.suppliedOn < from) {
+          const list = chargeback.get(e.sellerId) ?? [];
+          list.push(lite);
+          chargeback.set(e.sellerId, list);
+        }
       }
 
       const staff = await db.select({ id: employees.id, name: employees.name, chiefTableId: employees.chiefTableId }).from(employees);
@@ -194,19 +205,38 @@ export const chiefTablesRoute = {
           }
           if (!teamBandCount) return null;
 
+          // Escalão de equipa: apurado pelas vendas LUZ/Dual BTN da equipa em fornecimento.
           const band = bandFor(table.id, "team", teamBandCount);
           const blocked = table.blockedSales ?? 0;
-          const paidSales = Math.max(0, teamTotalCount - blocked);
-          const bandCommission = band?.commission ?? 0;
 
+          // Vendas de equipa pagas na verdade: o bloqueio remove as primeiras (por id).
+          const teamSalesList: { id: number; e: SaleLite }[] = [];
+          for (const id of ids) for (const e of valid.get(id) ?? []) teamSalesList.push({ id, e });
+          const teamPaidList = teamSalesList.slice().sort((a, b) => a.id - b.id);
+          const teamPaid = teamPaidList.slice(Math.min(blocked, teamPaidList.length));
+          const paidSales = teamPaid.length;
+
+          // € por venda: LUZ/Dual → luz; GÁS → gas; + DDC/FE/PEL conforme a venda tem.
+          const valueOf = (e: SaleLite, b: typeof band) => {
+            const d = e.details ?? {};
+            const base = (e.service === "GÁS" ? b?.gas : b?.luz) ?? 0;
+            return base + (yes(d.ddc) ? b?.dd ?? 0 : 0) + (yes(d.fe) ? b?.fe ?? 0 : 0) + (yes(d.pel) ? b?.pel ?? 0 : 0);
+          };
+          const teamGross = teamPaid.reduce((sum, x) => sum + valueOf(x.e, band), 0);
+
+          // Chargeback de equipa: vendas de elementos da equipa que baixaram este mês.
+          let teamChargeback = 0;
+          for (const id of ids) for (const e of chargeback.get(id) ?? []) teamChargeback += valueOf(e, band);
+
+          // Escalão próprio do chefe: as suas próprias vendas, mesmo critério.
           const own = valid.get(s.id) ?? [];
           const ownBandCount = own.filter((e) => e.service !== "GÁS").length;
           const ownBand = bandFor(table.id, "own", ownBandCount);
-          const ownValue = own.reduce((sum, e) => {
-            const d = e.details ?? {};
-            const base = (e.service === "GÁS" ? ownBand?.gas : ownBand?.luz) ?? 0;
-            return sum + base + (yes(d.ddc) ? ownBand?.dd ?? 0 : 0) + (yes(d.fe) ? ownBand?.fe ?? 0 : 0) + (yes(d.pel) ? ownBand?.pel ?? 0 : 0);
-          }, 0);
+          const ownValue = own.reduce((sum, e) => sum + valueOf(e, ownBand), 0);
+          const ownChargeback = (chargeback.get(s.id) ?? []).reduce((sum, e) => sum + valueOf(e, ownBand), 0);
+
+          const teamCommission = teamGross - teamChargeback;
+          const ownCommission = ownValue - ownChargeback;
 
           return {
             sellerId: s.id,
@@ -218,17 +248,23 @@ export const chiefTablesRoute = {
             blocked,
             paidSales,
             band: band ? { min: band.min, max: band.max } : null,
-            teamCommission: bandCommission,
+            teamCommission,
+            teamChargeback,
             ownBand: ownBand ? { min: ownBand.min, max: ownBand.max } : null,
-            ownCommission: ownValue,
-            commission: bandCommission + ownValue,
+            ownCommission,
+            ownChargeback,
+            chargeback: teamChargeback + ownChargeback,
+            commission: teamCommission + ownCommission,
             missingTable: false,
           };
         })
         .filter((x): x is NonNullable<typeof x> => x != null)
         .sort((a, b) => b.commission - a.commission);
 
-      const totals = { commission: result.reduce((s, r) => s + r.commission, 0) };
+      const totals = {
+        commission: result.reduce((s, r) => s + r.commission, 0),
+        chargeback: result.reduce((s, r) => s + (r.chargeback ?? 0), 0),
+      };
       return { month: input.month, from, to, chiefs: result, totals };
     }),
 };

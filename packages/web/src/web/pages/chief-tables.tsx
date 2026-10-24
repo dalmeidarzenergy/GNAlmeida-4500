@@ -6,7 +6,7 @@ import { errMsg, fmtEur, today } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useChiefTables>["data"]>[number];
 
-type TeamDraft = { min: string; max: string; commission: string };
+type TeamDraft = { min: string; max: string; luz: string; gas: string };
 type OwnDraft = { min: string; max: string; luz: string; gas: string; dd: string; fe: string; pel: string };
 
 const COLORS = ["#c6f432", "#f5a524", "#38bdf8", "#a78bfa", "#f472b6", "#34d399", "#fb7185", "#facc15"];
@@ -14,7 +14,7 @@ const COLORS = ["#c6f432", "#f5a524", "#38bdf8", "#a78bfa", "#f472b6", "#34d399"
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
 const str = (v: number | null | undefined) => (v == null ? "" : String(v));
 
-const emptyTeam = (): TeamDraft => ({ min: "", max: "", commission: "" });
+const emptyTeam = (): TeamDraft => ({ min: "", max: "", luz: "", gas: "" });
 const emptyOwn = (): OwnDraft => ({ min: "", max: "", luz: "", gas: "", dd: "", fe: "", pel: "" });
 
 const OWN_COLS: { key: keyof OwnDraft; label: string; color: string }[] = [
@@ -25,7 +25,7 @@ const OWN_COLS: { key: keyof OwnDraft; label: string; color: string }[] = [
   { key: "pel", label: "PEL", color: "#7cc4e8" },
 ];
 
-/** Escalões por nº de vendas da EQUIPA → valor fixo (€). */
+/** Escalões por nº de vendas da EQUIPA → comissão LUZ (€/venda) e comissão GÁS (€/venda). */
 function TeamEditor({ rows, onChange }: { rows: TeamDraft[]; onChange: (r: TeamDraft[]) => void }) {
   const setRow = (i: number, patch: Partial<TeamDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => onChange([...rows, emptyTeam()]);
@@ -35,7 +35,7 @@ function TeamEditor({ rows, onChange }: { rows: TeamDraft[]; onChange: (r: TeamD
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <div className="font-display text-[14px] font-semibold">Escalões por vendas da equipa (mensal)</div>
-          <div className="text-[11.5px] text-ink-3">Só vendas LUZ/Dual BTN em fornecimento no mês contam para o escalão (não contam as que baixaram no próprio mês). O GÁS não conta para o escalão, mas é pago pelo valor GÁS do escalão atingido. As vendas do próprio chefe contam.</div>
+          <div className="text-[11.5px] text-ink-3">O escalão apura-se pelas vendas LUZ/Dual BTN em fornecimento no mês (não contam as que baixaram no próprio mês). O GÁS não conta para o escalão, mas é pago pela comissão GÁS do escalão atingido. As vendas do próprio chefe contam para o escalão.</div>
         </div>
         <button type="button" className="btn btn-ghost shrink-0" onClick={add}><Plus size={14} /> Escalão</button>
       </div>
@@ -45,7 +45,8 @@ function TeamEditor({ rows, onChange }: { rows: TeamDraft[]; onChange: (r: TeamD
             <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3">
               <th className="px-2 pb-2 font-medium">De</th>
               <th className="px-2 pb-2 font-medium">Até</th>
-              <th className="px-2 pb-2 font-medium">Comissão (€)</th>
+              <th className="px-2 pb-2 font-medium" style={{ color: "#2f8f4e" }}>Comissão LUZ (€)</th>
+              <th className="px-2 pb-2 font-medium" style={{ color: "#3d9ad9" }}>Comissão GÁS (€)</th>
               <th className="w-10 pb-2" />
             </tr>
           </thead>
@@ -54,7 +55,8 @@ function TeamEditor({ rows, onChange }: { rows: TeamDraft[]; onChange: (r: TeamD
               <tr key={i} className="border-t border-line">
                 <td className="px-1 py-2 align-top"><input aria-label={`Equipa mínimo ${i + 1}`} className="input num" placeholder="0" value={r.min} onChange={(e) => setRow(i, { min: e.target.value })} /></td>
                 <td className="px-1 py-2 align-top"><input aria-label={`Equipa máximo ${i + 1}`} className="input num" placeholder="sem limite" value={r.max} onChange={(e) => setRow(i, { max: e.target.value })} /></td>
-                <td className="px-1 py-2 align-top"><input aria-label={`Equipa comissão ${i + 1}`} className="input num" placeholder="€" value={r.commission} onChange={(e) => setRow(i, { commission: e.target.value })} /></td>
+                <td className="px-1 py-2 align-top"><input aria-label={`Equipa comissão LUZ ${i + 1}`} className="input num" placeholder="€" value={r.luz} onChange={(e) => setRow(i, { luz: e.target.value })} /></td>
+                <td className="px-1 py-2 align-top"><input aria-label={`Equipa comissão GÁS ${i + 1}`} className="input num" placeholder="€" value={r.gas} onChange={(e) => setRow(i, { gas: e.target.value })} /></td>
                 <td className="px-1 py-2 align-top"><button type="button" aria-label={`Remover escalão equipa ${i + 1}`} className="btn-icon" onClick={() => del(i)}><Trash2 size={14} /></button></td>
               </tr>
             ))}
@@ -116,7 +118,7 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
   const [active, setActive] = useState(initial?.active ?? true);
   const [blockedSales, setBlockedSales] = useState(str(initial?.blockedSales));
   const [teamRows, setTeamRows] = useState<TeamDraft[]>(
-    initial?.teamRows.length ? initial.teamRows.map((r) => ({ min: str(r.min), max: str(r.max), commission: str(r.commission) })) : [emptyTeam()],
+    initial?.teamRows.length ? initial.teamRows.map((r) => ({ min: str(r.min), max: str(r.max), luz: str(r.luz), gas: str(r.gas) })) : [emptyTeam()],
   );
   const [ownRows, setOwnRows] = useState<OwnDraft[]>(
     initial?.ownRows.length
@@ -136,7 +138,7 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
           color,
           active,
           blockedSales: num(blockedSales) ?? 0,
-          teamRows: teamRows.map((r) => ({ kind: "team" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
+          teamRows: teamRows.map((r) => ({ kind: "team" as const, min: num(r.min), max: num(r.max), luz: num(r.luz), gas: num(r.gas) })),
           ownRows: ownRows.map((r) => ({ kind: "own" as const, min: num(r.min), max: num(r.max), luz: num(r.luz), gas: num(r.gas), dd: num(r.dd), fe: num(r.fe), pel: num(r.pel) })),
         };
         try {
@@ -188,13 +190,14 @@ function ChiefCalcPanel() {
   const calc = useChiefCalc(month);
   const rows = calc.data?.chiefs ?? [];
   const total = rows.reduce((s, r) => s + r.commission, 0);
+  const totalChargeback = rows.reduce((s, r) => s + (r.chargeback ?? 0), 0);
 
   return (
     <div className="card mt-8 overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
         <div>
           <div className="font-display text-[15px] font-semibold">Escalão de chefe de equipa</div>
-          <div className="text-[11.5px] text-ink-3">O escalão de equipa apura-se pelas vendas LUZ/Dual BTN da equipa em fornecimento no mês (as do próprio chefe contam; o GÁS não conta). As vendas próprias do chefe são pagas por serviço, pelo escalão próprio.</div>
+          <div className="text-[11.5px] text-ink-3">O escalão de equipa apura-se pelas vendas LUZ/Dual BTN da equipa em fornecimento no mês (as do próprio chefe contam; o GÁS não conta para o escalão). Cada venda paga-se pelo escalão atingido: € LUZ nas LUZ/Dual BTN e € GÁS nas de GÁS. As baixas do mês descontam o que já foi pago (chargeback), igual aos vendedores.</div>
         </div>
         <input aria-label="Mês" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
       </div>
@@ -204,7 +207,7 @@ function ChiefCalcPanel() {
         <Empty title="Sem chefes com escalão neste mês" text="Nenhum chefe de equipa tem escalão aplicado e vendas no período." />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-[13px]">
+          <table className="w-full min-w-[880px] text-[13px]">
             <thead>
               <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-3">
                 <th className="px-5 py-3 font-medium">Nome</th>
@@ -217,6 +220,7 @@ function ChiefCalcPanel() {
                 <th className="px-3 py-3 text-right font-medium">Equipa</th>
                 <th className="px-3 py-3 text-right font-medium">Próprias</th>
                 <th className="px-3 py-3 text-right font-medium">Faixa próprias</th>
+                <th className="px-3 py-3 text-right font-medium">Chargeback</th>
                 <th className="px-5 py-3 text-right font-medium">Total</th>
               </tr>
             </thead>
@@ -234,13 +238,15 @@ function ChiefCalcPanel() {
                   <td className="num px-3 py-3 text-right">{r.ownSales}</td>
                   <td className="num px-3 py-3 text-right">{r.ownBand ? `${r.ownBand.min ?? 0}${r.ownBand.max == null ? "+" : `–${r.ownBand.max}`}` : "—"}</td>
                   <td className="num px-5 py-3 text-right font-semibold">{fmtEur(r.ownCommission)}</td>
+                  <td className="num px-3 py-3 text-right" style={{ color: r.chargeback ? "#e2622a" : undefined }}>{r.chargeback ? `−${fmtEur(r.chargeback)}` : "—"}</td>
                   <td className="num px-5 py-3 text-right font-display font-semibold">{fmtEur(r.commission)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="border-t border-line bg-surface-2/40">
-                <td className="px-5 py-3 font-display font-semibold" colSpan={10}>Total</td>
+                <td className="px-5 py-3 font-display font-semibold" colSpan={11}>Total</td>
+                <td className="num px-3 py-3 text-right" style={{ color: totalChargeback ? "#e2622a" : undefined }}>{totalChargeback ? `−${fmtEur(totalChargeback)}` : "—"}</td>
                 <td className="num px-5 py-3 text-right font-display text-[15px] font-semibold">{fmtEur(total)}</td>
               </tr>
             </tfoot>
