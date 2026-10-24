@@ -14,9 +14,9 @@ const rowInput = z.object({
   kind: z.enum(["commission", "chief", "solar", "medem", "outro"]).default("commission"),
   amount: z.number().default(0),
   salesCount: z.number().min(0).default(0),
-  paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().optional(),
+  paidOn: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida."), z.literal(""), z.null()]).optional(),
   status: z.enum(["pago", "por_pagar"]).default("por_pagar"),
-  notes: z.string().trim().nullable().optional(),
+  notes: z.string().trim().nullish(),
 });
 
 const clean = (r: z.infer<typeof rowInput>) => ({
