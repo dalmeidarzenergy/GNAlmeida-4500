@@ -486,9 +486,10 @@ export default function PaymentsPage() {
 
   const monthRows = rows.filter((r) => r.month === month);
   const totalPaid = monthRows.filter((r) => r.status === "pago").reduce((s, r) => s + r.amount, 0);
-  const totalPending = monthRows.filter((r) => r.status !== "pago").reduce((s, r) => s + r.amount, 0);
   const calc = usePaymentCalc(month);
   const totalDue = calc.data?.totals?.due ?? 0;
+  // Por pagar = calculado menos o que ja foi pago.
+  const totalPending = totalDue - totalPaid;
 
   const download = async (employeeId?: number) => {
     setPdfMsg(null);
@@ -515,8 +516,7 @@ export default function PaymentsPage() {
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="A PAGAR (CALCULADO)" value={fmtEur(totalDue)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
         <Stat label="JA PAGO" value={fmtEur(totalPaid)} accent="var(--sky)" icon={<Check size={16} />} delay={60} />
-        <Stat label="POR PAGAR (REGISTO)" value={fmtEur(totalPending)} accent="var(--amber)" icon={<Clock size={16} />} delay={120} />
-        <Stat label="DIFERENCA" value={fmtEur(totalDue - totalPaid - totalPending)} accent="var(--ink)" delay={180} />
+        <Stat label="POR PAGAR" value={fmtEur(totalPending)} accent="var(--amber)" icon={<Clock size={16} />} delay={120} />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
