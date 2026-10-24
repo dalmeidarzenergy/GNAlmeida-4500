@@ -179,13 +179,13 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       service: sales.service,
       details: sales.details,
       clientName: clients.name,
+      energy: saleStatusHistory.energy,
     })
     .from(saleStatusHistory)
     .innerJoin(sales, eq(sales.id, saleStatusHistory.saleId))
     .leftJoin(clients, eq(clients.id, sales.clientId))
     .where(
       and(
-        eq(saleStatusHistory.energy, "luz"),
         sql`${saleStatusHistory.status} in (${COUNTED_STATUS}, 'Baixa', 'Manual')`,
         sql`(
           (json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ', 'DUAL'))
@@ -194,62 +194,105 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       ),
     );
 
+  /** Energia normalizada: "luz" | "gas". */
+  const energy = (e: string | null) => (e === "gas" ? "gas" : "luz");
+  const energyLabel = (k: "luz" | "gas") => (k === "gas" ? "Gás" : "Luz");
+
   type Entry = {
     sellerId: number | null;
     service: string | null;
     details: Record<string, unknown> | null;
     clientName: string | null;
-    suppliedOn: string | null;
-    baixaOn: string[];
-    manualOn: string[];
+    /** Por energia: quando entrou em fornecimento, e todas as baixas/manuais. */
+    sup: Record<string, string | null>;
+    baixa: Record<string, string[]>;
+    manual: Record<string, string[]>;
   };
 
   const perSale = new Map<number, Entry>();
   for (const r of hist) {
     const e =
       perSale.get(r.saleId) ??
-      ({ sellerId: r.sellerId, service: r.service, details: r.details, clientName: r.clientName, suppliedOn: null, baixaOn: [], manualOn: [] } as Entry);
+      ({
+        sellerId: r.sellerId,
+        service: r.service,
+        details: r.details,
+        clientName: r.clientName,
+        sup: { luz: null, gas: null },
+        baixa: { luz: [], gas: [] },
+        manual: { luz: [], gas: [] },
+      } as Entry);
+    const k = energy(r.energy);
     if (r.status === COUNTED_STATUS) {
-      if (!e.suppliedOn || r.on < e.suppliedOn) e.suppliedOn = r.on;
+      if (!e.sup[k] || r.on < e.sup[k]!) e.sup[k] = r.on;
     } else if (r.status === "Baixa") {
-      e.baixaOn.push(r.on);
+      e.baixa[k].push(r.on);
     } else if (r.status === "Manual") {
-      e.manualOn.push(r.on);
+      e.manual[k].push(r.on);
     }
     perSale.set(r.saleId, e);
   }
 
-  type Lite = { saleId: number; number: string; service: string | null; details: Record<string, unknown> | null; clientName: string | null };
+  /** Linha de uma venda numa energia concreta (Luz ou Gás). */
+  type Lite = {
+    saleId: number;
+    number: string;
+    service: string | null;
+    details: Record<string, unknown> | null;
+    clientName: string | null;
+    /** Energia que esta linha representa. */
+    energy: "luz" | "gas";
+  };
+
+  /** As energias que a venda realmente tem (LUZ -> luz; GÁS -> gas; DUAL -> ambas). */
+  const energiesOf = (svc: string | null): ("luz" | "gas")[] => {
+    const s = (svc ?? "").toUpperCase();
+    if (s === "GÁS" || s === "GAS") return ["gas"];
+    if (s === "DUAL") return ["luz", "gas"];
+    return ["luz"];
+  };
 
   const valid = new Map<number, Lite[]>();
   const chargeback = new Map<number, Lite[]>();
-  const notPaid = new Map<number, { saleId: number; number: string; service: string | null; details: Record<string, unknown> | null; status: string }[]>();
+  const notPaid = new Map<number, { saleId: number; number: string; service: string | null; details: Record<string, unknown> | null; status: string; energy: "luz" | "gas" }[]>();
 
   for (const [saleId, e] of perSale) {
     if (e.sellerId == null) continue;
-    const lite: Lite = { saleId, number: contract(e.details), service: e.service, details: e.details, clientName: e.clientName };
-    const baixou = e.baixaOn.some((d) => d >= from && d <= to);
-    const manual = e.manualOn.some((d) => d >= from && d <= to);
+    const list = energiesOf(e.service);
 
-    if (e.suppliedOn && e.suppliedOn >= from && e.suppliedOn <= to && !baixou && !manual) {
-      const l = valid.get(e.sellerId) ?? [];
-      l.push(lite);
-      valid.set(e.sellerId, l);
-      continue;
-    }
+    for (const k of list) {
+      const lite: Lite = { saleId, number: contract(e.details), service: e.service, details: e.details, clientName: e.clientName, energy: k };
+      const suppliedOn = e.sup[k];
+      // Baixa DESTA energia, em qualquer momento (definitiva).
+      const baixas = [...new Set(e.baixa[k])].sort();
+      const firstBaixa = baixas[0] ?? null;
+      const baixouAgora = baixas.some((d) => d >= from && d <= to);
+      const manual = e.manual[k].some((d) => d >= from && d <= to);
 
-    if (baixou && (!e.suppliedOn || e.suppliedOn < from)) {
-      const l = chargeback.get(e.sellerId) ?? [];
-      l.push(lite);
-      chargeback.set(e.sellerId, l);
-      continue;
-    }
+      // Chargeback: ja tinha sido paga (em fornecimento antes deste mes) e a
+      // baixa acontece dentro deste mes. Desconta-se no auto do mes da baixa.
+      if (suppliedOn && suppliedOn < from && baixouAgora) {
+        const l = chargeback.get(e.sellerId) ?? [];
+        l.push(lite);
+        chargeback.set(e.sellerId, l);
+        continue;
+      }
 
-    if (!e.suppliedOn || e.suppliedOn < from || e.suppliedOn > to || baixou || manual) {
-      const l = notPaid.get(e.sellerId) ?? [];
-      const st = statusLabel(e.baixaOn.length ? "Baixa" : e.manualOn.length ? "Manual" : "");
-      l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st });
-      notPaid.set(e.sellerId, l);
+      // Vem a pagamento: entrou em fornecimento neste mes e ainda nao baixou.
+      if (suppliedOn && suppliedOn >= from && suppliedOn <= to && !firstBaixa && !manual) {
+        const l = valid.get(e.sellerId) ?? [];
+        l.push(lite);
+        valid.set(e.sellerId, l);
+        continue;
+      }
+
+      // Tudo o resto: nao vem a pagamento.
+      if (!suppliedOn || suppliedOn < from || suppliedOn > to || firstBaixa || manual) {
+        const l = notPaid.get(e.sellerId) ?? [];
+        const st = statusLabel(firstBaixa ? "Baixa" : e.manual[k].length ? "Manual" : "");
+        l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st, energy: k });
+        notPaid.set(e.sellerId, l);
+      }
     }
   }
 
@@ -286,7 +329,6 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
 
   const split = (e: Lite, band: Band | null): Resolved[] => {
     const d = e.details ?? {};
-    const svc = (e.service ?? "").toUpperCase();
     const dd = yes(d.ddc);
     const fe = yes(d.fe);
     const pel = yes(d.pel);
@@ -294,15 +336,12 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     const luzCampaign = typeof d.campaign === "string" && d.campaign.trim() !== "" ? d.campaign : null;
     const gasCampaign = typeof d.campaignGas === "string" && d.campaignGas.trim() !== "" ? d.campaignGas : null;
     const base = { saleId: e.saleId, number: contract(d), clientName: e.clientName, extras, dd, fe, pel };
-    const lines: Resolved[] = [];
-    const isGas = svc === "GÁS" || svc === "GAS";
-    if (!isGas) {
-      lines.push({ ...base, service: "Luz", campaign: luzCampaign, luz: band?.luz ?? 0, gas: 0, total: (band?.luz ?? 0) + extras });
+    // A energia vem da historia (venda+energia), nao do servico da venda:
+    // numa DUAL a Luz e o Gas sao linhas independentes.
+    if (e.energy === "gas") {
+      return [{ ...base, service: "Gás", campaign: gasCampaign ?? luzCampaign, luz: 0, gas: band?.gas ?? 0, total: (band?.gas ?? 0) + extras }];
     }
-    if (isGas || svc === "DUAL") {
-      lines.push({ ...base, service: "Gás", campaign: gasCampaign ?? luzCampaign, luz: 0, gas: band?.gas ?? 0, total: (band?.gas ?? 0) + extras });
-    }
-    return lines;
+    return [{ ...base, service: "Luz", campaign: luzCampaign, luz: band?.luz ?? 0, gas: 0, total: (band?.luz ?? 0) + extras }];
   };
 
   const toLine = (r: Resolved): DetailLine => ({
@@ -376,7 +415,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     }
 
     const bands = cRows.filter((r) => r.tableId === table.id && r.kind === "clients");
-    const bandSales = mine.filter((e) => e.service !== "GÁS").length;
+    const bandSales = mine.filter((e) => e.energy === "luz").length;
     const band =
       bands.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
       [...bands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
@@ -404,8 +443,8 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       lines: resolved.map(toLine),
       chargebackLines: cbResolved.map(toLine),
       notPaid: (notPaid.get(s.id) ?? []).map((n) => {
-        const tot = split({ saleId: n.saleId, number: n.number, service: n.service, details: n.details, clientName: null }, band).reduce((sum, l) => sum + l.total, 0);
-        return { number: n.number, service: serviceLabel(n.service), status: n.status, value: round2(tot) };
+        const tot = split({ saleId: n.saleId, number: n.number, service: n.service, details: n.details, clientName: null, energy: n.energy }, band).reduce((sum, l) => sum + l.total, 0);
+        return { number: n.number, service: energyLabel(n.energy), status: n.status, value: round2(tot) };
       }),
     });
   }
@@ -428,16 +467,16 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       if (member) {
         teamMembers.push({
           name: id === s.id ? `${member.name} (chefe)` : member.name,
-          luz: list.filter((e) => e.service !== "GÁS").length,
-          gas: list.filter((e) => e.service === "GÁS").length,
+          luz: list.filter((e) => e.energy === "luz").length,
+          gas: list.filter((e) => e.energy === "gas").length,
         });
       }
     }
     teamMembers.sort((x, y) => y.luz + y.gas - (x.luz + x.gas));
 
-    const bandSales = teamSales.filter((e) => e.service !== "GÁS").length;
+    const bandSales = teamSales.filter((e) => e.energy === "luz").length;
     const own = valid.get(s.id) ?? [];
-    const ownSales = own.filter((e) => e.service !== "GÁS").length;
+    const ownSales = own.filter((e) => e.energy === "luz").length;
     if (!bandSales && !ownSales) continue;
 
     const bands = kRows.filter((r) => r.tableId === table.id && r.kind === "team");
@@ -485,8 +524,8 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       lines: resolved.map(toLine),
       chargebackLines: cbResolved.map(toLine),
       notPaid: (notPaid.get(s.id) ?? []).map((n) => {
-        const tot = split({ saleId: n.saleId, number: n.number, service: n.service, details: n.details, clientName: null }, ownBand ?? band).reduce((sum, l) => sum + l.total, 0);
-        return { number: n.number, service: serviceLabel(n.service), status: n.status, value: round2(tot) };
+        const tot = split({ saleId: n.saleId, number: n.number, service: n.service, details: n.details, clientName: null, energy: n.energy }, ownBand ?? band).reduce((sum, l) => sum + l.total, 0);
+        return { number: n.number, service: energyLabel(n.energy), status: n.status, value: round2(tot) };
       }),
       team: teamMembers,
     });
