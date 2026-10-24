@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
-import { useCommissionCalc, useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
+import { useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
 import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill, Tabs } from "../components/ui/kit";
 import { COMMISSION_GROUP_OPTIONS, type CommissionGroup } from "../../api/shared/commission-groups";
-import { errMsg, fmtEur, today } from "../lib/format";
+import { errMsg } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useCommissionTables>["data"]>[number];
 
@@ -331,77 +331,6 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
   );
 }
 
-/** Cálculo de comissões de um mês, por vendedor. */
-function CalcPanel() {
-  const [month, setMonth] = useState(today().slice(0, 7));
-  const [open, setOpen] = useState(false);
-  const calc = useCommissionCalc(month, open);
-  const rows = calc.data?.sellers ?? [];
-  const total = rows.reduce((s, r) => s + r.commission, 0);
-
-  return (
-    <div className="card mt-8 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
-        <div>
-          <div className="font-display text-[15px] font-semibold">Cálculo de comissões</div>
-          <div className="text-[11.5px] text-ink-3">Escalão pelas vendas LUZ/Dual BTN em fornecimento no mês (o GÁS não conta para o escalão, mas é pago pelo valor GÁS do escalão atingido). O bloqueio da tabela reduz o nº de vendas pagas.</div>
-        </div>
-        <div className="flex items-center gap-2">
-          {open && <input aria-label="Mês" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />}
-          <button type="button" className="btn btn-ghost shrink-0" onClick={() => setOpen((v) => !v)}>{open ? "Fechar" : "Calcular"}</button>
-        </div>
-      </div>
-      {!open ? null : calc.isLoading ? (
-        <div className="p-5"><div className="skeleton h-24 rounded-[12px]" /></div>
-      ) : !rows.length ? (
-        <Empty title="Sem vendas neste mês" text="Nenhum vendedor tem vendas LUZ/Dual BTN em fornecimento neste mês." />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-[13px]">
-            <thead>
-              <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-3">
-                <th className="px-5 py-3 font-medium">Vendedor</th>
-                <th className="px-3 py-3 font-medium">Tabela</th>
-                <th className="px-3 py-3 text-right font-medium">Vendas</th>
-                <th className="px-3 py-3 text-right font-medium">Escalão</th>
-                <th className="px-3 py-3 text-right font-medium">Bloqueio</th>
-                <th className="px-3 py-3 text-right font-medium">Pagas</th>
-                <th className="px-3 py-3 text-right font-medium">€/venda</th>
-                <th className="px-3 py-3 text-right font-medium">Bruto</th>
-                <th className="px-3 py-3 text-right font-medium">Chargeback</th>
-                <th className="px-5 py-3 text-right font-medium">A pagar</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.sellerId} className="border-b border-line last:border-0">
-                  <td className="px-5 py-3 font-medium">{r.sellerName}</td>
-                  <td className="px-3 py-3 text-ink-2">{r.tableName ?? <span className="text-danger">sem tabela</span>}</td>
-                  <td className="num px-3 py-3 text-right">{r.sales}</td>
-                  <td className="num px-3 py-3 text-right">{r.band ? `${r.band.min ?? 0}${r.band.max == null ? "+" : `–${r.band.max}`}` : "—"}</td>
-                  <td className="num px-3 py-3 text-right text-ink-2">−{r.blocked}</td>
-                  <td className="num px-3 py-3 text-right">{r.paidSales}</td>
-                  <td className="num px-3 py-3 text-right">{fmtEur(r.unit ?? 0)}</td>
-                  <td className="num px-3 py-3 text-right">{fmtEur(r.gross ?? 0)}</td>
-                  <td className="num px-3 py-3 text-right text-danger">{r.chargebackValue ? `−${fmtEur(r.chargebackValue)}` : "—"}</td>
-                  <td className="num px-5 py-3 text-right font-semibold">{fmtEur(r.commission)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-line bg-surface-2/40">
-                <td className="px-5 py-3 font-display font-semibold" colSpan={7}>Total</td>
-                <td className="num px-3 py-3 text-right font-semibold">{fmtEur(calc.data?.totals.gross ?? 0)}</td>
-                <td className="num px-3 py-3 text-right font-semibold text-danger">{calc.data?.totals.chargeback ? `−${fmtEur(calc.data.totals.chargeback)}` : "—"}</td>
-                <td className="num px-5 py-3 text-right font-display text-[15px] font-semibold">{fmtEur(total)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function CommissionTablesPage() {
   const tables = useCommissionTables();
@@ -473,8 +402,6 @@ export default function CommissionTablesPage() {
           ))}
         </div>
       )}
-
-      <CalcPanel />
 
       <Modal open={pick} onClose={() => setPick(false)} title="Nova tabela comisional">
         <p className="mb-4 text-[12.5px] text-ink-2">Que tipo de tabela é?</p>
