@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye } from "lucide-react";
+import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth } from "../queries/iberdrola";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur, fmtEur2, monthLabel, thisMonth } from "../lib/format";
 import { authClient } from "../lib/auth";
@@ -52,6 +52,7 @@ function Historico({ canEdit }: { canEdit: boolean }) {
   const imports = useIberdrolaImports();
   const save = useSaveIberdrola();
   const remove = useRemoveIberdrola();
+  const moveMonth = useSetIberdrolaMonth();
   const input = useRef<HTMLInputElement>(null);
   const [month, setMonth] = useState(thisMonth());
   const [viewing, setViewing] = useState<number | null>(null);
@@ -66,7 +67,11 @@ function Historico({ canEdit }: { canEdit: boolean }) {
     }
   }
 
-  async function onDownload(id: number, filename: string) {
+  async function onDownload(id: number, filename: string, downloadable: boolean) {
+    if (!downloadable) {
+      window.alert("Este ficheiro foi carregado antes de a app guardar o original, por isso já não é possível descarregá-lo. Carrega-o de novo para ficar guardado.");
+      return;
+    }
     setDownloading(id);
     try {
       await downloadImport(id, filename);
@@ -127,7 +132,7 @@ function Historico({ canEdit }: { canEdit: boolean }) {
               </thead>
               <tbody>
                 {list.map((r) => (
-                  <Row key={r.id} id={r.id} onOpen={setViewing} onDownload={() => onDownload(r.id, r.filename)} downloading={downloading === r.id} filename={r.filename} month={r.month} auto={r.auto} chargback={r.chargback} uploadedBy={r.uploadedBy} createdAt={r.createdAt} canEdit={canEdit} onDelete={() => remove.mutateAsync({ id: r.id })} />
+                  <Row key={r.id} id={r.id} onOpen={setViewing} onDownload={() => onDownload(r.id, r.filename, r.downloadable)} downloading={downloading === r.id} filename={r.filename} month={r.month} auto={r.auto} chargback={r.chargback} uploadedBy={r.uploadedBy} createdAt={r.createdAt} canEdit={canEdit} onDelete={() => remove.mutateAsync({ id: r.id })} onSetMonth={(m) => moveMonth.mutate({ id: r.id, month: m })} />
                 ))}
               </tbody>
             </table>
@@ -142,13 +147,14 @@ function Historico({ canEdit }: { canEdit: boolean }) {
   );
 }
 
-function Row(props: { id: number; onOpen: (id: number) => void; onDownload: () => void; downloading: boolean; filename: string; month: string; auto: number; chargback: number; uploadedBy: string; createdAt: Date; canEdit: boolean; onDelete: () => void }) {
+function Row(props: { id: number; onOpen: (id: number) => void; onDownload: () => void; downloading: boolean; filename: string; month: string; auto: number; chargback: number; uploadedBy: string; createdAt: Date; canEdit: boolean; onDelete: () => void; onSetMonth: (m: string) => void }) {
   const created = props.createdAt instanceof Date ? props.createdAt : new Date(props.createdAt);
+  const [editing, setEditing] = useState(false);
   return (
     <tr className="border-b border-line last:border-0">
       <td className="px-5 py-3">
         <div className="flex items-center gap-1">
-          <button type="button" className="flex items-center gap-2 font-medium hover:text-volt" onClick={props.onDownload}>
+          <button type="button" className="flex items-center gap-2 text-left font-medium hover:text-volt" onClick={props.onDownload} title="Descarregar o Excel original">
             {props.downloading ? <Loader2 size={15} className="animate-spin text-volt" /> : <Download size={15} className="text-volt" />}
             {props.filename}
           </button>
@@ -157,7 +163,29 @@ function Row(props: { id: number; onOpen: (id: number) => void; onDownload: () =
           </button>
         </div>
       </td>
-      <td className="px-3 py-3 text-ink-2">{monthLabel(props.month)}</td>
+      <td className="px-3 py-3 text-ink-2">
+        {editing ? (
+          <input
+            type="month"
+            autoFocus
+            className="input num w-36"
+            defaultValue={props.month}
+            onBlur={(e) => { setEditing(false); if (e.target.value && e.target.value !== props.month) props.onSetMonth(e.target.value); }}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditing(false); }}
+          />
+        ) : (
+          <button
+            type="button"
+            disabled={!props.canEdit}
+            onClick={() => props.canEdit && setEditing(true)}
+            className={`inline-flex items-center gap-1.5 rounded-[7px] px-1.5 py-0.5 ${props.canEdit ? "hover:bg-volt/10 hover:text-volt" : "cursor-default"}`}
+            title={props.canEdit ? "Mudar o mês de pagamento" : undefined}
+          >
+            {monthLabel(props.month)}
+            {props.canEdit && <Pencil size={11} className="opacity-50" />}
+          </button>
+        )}
+      </td>
       <td className="num px-3 py-3 text-right">{props.auto}</td>
       <td className="num px-3 py-3 text-right text-ink-2">{props.chargback}</td>
       <td className="px-3 py-3 text-ink-2">{props.uploadedBy}</td>

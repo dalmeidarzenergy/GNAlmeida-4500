@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { Hono } from "hono";
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { auth } from "../auth";
 import { requireView, requireEdit, type Role } from "../middleware/auth";
@@ -19,6 +19,8 @@ import {
   userRoles,
 } from "../database/schema";
 import { effectivePermissions, type Permissions } from "../permissions";
+
+export const UPLOAD_DIR = join(PUBLIC_DIR, "uploads", "iberdrola");
 
 const month = z.string().regex(/^\d{4}-\d{2}$/, "Mês inválido.");
 
@@ -278,7 +280,7 @@ export const iberdrolaRoute = {
       map.set(String(c.importId), e);
     }
 
-    return imports.map((i) => ({ ...i, auto: map.get(String(i.id))?.auto ?? 0, chargback: map.get(String(i.id))?.chargback ?? 0 }));
+    return imports.map((i) => ({ ...i, auto: map.get(String(i.id))?.auto ?? 0, chargback: map.get(String(i.id))?.chargback ?? 0, downloadable: !!i.path }));
   }),
 
   /** Linhas de um ficheiro carregado. */
@@ -291,6 +293,14 @@ export const iberdrolaRoute = {
       return { found: true as const, import: imp, rows };
     }),
 
+  /** Muda o mês de pagamento a que um ficheiro pertence. */
+  setMonth: requireEdit("auto-iberdrola")
+    .input(z.object({ id: z.number().int().positive(), month }))
+    .handler(async ({ input }) => {
+      await db.update(iberdrolaImports).set({ month: input.month }).where(eq(iberdrolaImports.id, input.id));
+      return { ok: true };
+    }),
+
   /** Remove um ficheiro do histórico (e as suas linhas). */
   remove: requireEdit("auto-iberdrola")
     .input(z.object({ id: z.number().int().positive() }))
@@ -299,7 +309,7 @@ export const iberdrolaRoute = {
       await db.delete(iberdrolaImports).where(eq(iberdrolaImports.id, input.id));
       if (imp?.path) {
         try {
-          unlinkSync(join(PUBLIC_DIR, "uploads", "iberdrola", imp.path));
+          unlinkSync(join(UPLOAD_DIR, imp.path));
         } catch {
           /* ficheiro já não existe */
         }
@@ -339,84 +349,91 @@ async function resolveCtx(headers: Headers): Promise<Ctx | null> {
   };
 }
 
-const UPLOAD_DIR = join(PUBLIC_DIR, "uploads", "iberdrola");
-
 /** Normaliza texto para localizar as colunas "ID de venda" e "Estado". */
 const norm = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 const cell = (v: unknown): string => (v == null ? "" : typeof v === "number" ? String(v) : String(v).trim());
+
+/** Lê uma folha do workbook e devolve as linhas normalizadas. */
+function parseSheet(
+  wb: { Sheets: Record<string, unknown> },
+  XLSX: { utils: { sheet_to_json: (ws: unknown, opts: Record<string, unknown>) => unknown[][] } },
+  sheetName: string,
+  sheet: "auto" | "chargback",
+) {
+  const ws = wb.Sheets[sheetName];
+  if (!ws) return [];
+  const filled = (r: unknown[]) => r.filter((x) => x != null && String(x).trim() !== "").length;
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: true });
+  const hi = aoa.findIndex((r) => filled(r) >= 2);
+  if (hi < 0) return [];
+  const headers = aoa[hi] as unknown[];
+  const idIdx = headers.findIndex((h) => norm(cell(h)) === "id de venda");
+  const estIdx = headers.findIndex((h) => norm(cell(h)) === "estado");
+  const out: { sheet: "auto" | "chargback"; rowIndex: number; idVenda: string | null; estado: string | null; data: Record<string, string | null> }[] = [];
+  aoa.slice(hi + 1).forEach((r, i) => {
+    if (!filled(r)) return;
+    const data: Record<string, string | null> = {};
+    headers.forEach((h, j) => {
+      data[cell(h)] = r[j] == null ? null : cell(r[j]);
+    });
+    const idV = idIdx >= 0 ? cell(r[idIdx]) : "";
+    const est = estIdx >= 0 ? cell(r[estIdx]) : "";
+    out.push({ sheet, rowIndex: i + hi + 2, idVenda: idV || null, estado: est || null, data });
+  });
+  return out;
+}
 
 export function iberdrolaRoutes(app: Hono) {
   // Carregar um ficheiro Iberdrola (multipart: file + month).
   app.post("/api/iberdrola/upload", async (c) => {
     const ctx = await resolveCtx(c.req.raw.headers);
     if (!ctx) return c.json({ error: "Sem sessão" }, 401);
-    if (!ctx.permissions["auto-iberdrola"]?.edit) return c.json({ error: "Sem permissão" }, 403);
+    if (!ctx.permissions["auto-iberdrola"]?.edit) return c.json({ error: "Sem permissão para carregar ficheiros" }, 403);
 
     const form = await c.req.formData().catch(() => null);
     if (!form) return c.json({ error: "Corpo inválido" }, 400);
     const file = form.get("file") as File | null;
     if (!file) return c.json({ error: "Ficheiro em falta" }, 400);
     const m = (form.get("month") as string) || "";
-    if (!/^\d{4}-\d{2}$/.test(m)) return c.json({ error: "Mês inválido" }, 400);
+    if (!/^\d{4}-\d{2}$/.test(m)) return c.json({ error: "Escolhe o mês a que este auto pertence." }, 400);
 
     const buf = Buffer.from(await file.arrayBuffer());
     if (!buf.length) return c.json({ error: "Ficheiro vazio" }, 422);
 
-    // Parse do Excel (folhas `auto` e `chargback`).
-    const XLSX = await import("xlsx");
-    const wb = XLSX.read(buf, { type: "buffer", cellDates: false });
+    let wb: { SheetNames: string[]; Sheets: Record<string, unknown> };
+    let XLSX: { utils: { sheet_to_json: (ws: unknown, opts: Record<string, unknown>) => unknown[][] } };
+    try {
+      XLSX = (await import("xlsx")) as unknown as typeof XLSX;
+      wb = XLSX.read(buf, { type: "buffer", cellDates: false }) as unknown as typeof wb;
+    } catch {
+      return c.json({ error: "Não foi possível ler o ficheiro. Confirma que é um Excel (.xlsx/.xls)." }, 422);
+    }
 
-    const filled = (r: unknown[]) => r.filter((x) => x != null && String(x).trim() !== "").length;
-    const parseSheet = (name: string): { sheet: "auto" | "chargback"; rowIndex: number; idVenda: string | null; estado: string | null; data: Record<string, string | null> }[] => {
-      const ws = wb.Sheets[name];
-      if (!ws) return [];
-      const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: true, defval: null, blankrows: true });
-      const hi = aoa.findIndex((r) => filled(r) >= 2);
-      if (hi < 0) return [];
-      const headers = aoa[hi] as unknown[];
-      const idIdx = headers.findIndex((h) => norm(cell(h)) === "id de venda");
-      const estIdx = headers.findIndex((h) => norm(cell(h)) === "estado");
-      const out: { sheet: "auto" | "chargback"; rowIndex: number; idVenda: string | null; estado: string | null; data: Record<string, string | null> }[] = [];
-      aoa.slice(hi + 1).forEach((r, i) => {
-        if (!filled(r)) return;
-        const data: Record<string, string | null> = {};
-        headers.forEach((h, j) => {
-          data[cell(h)] = r[j] == null ? null : cell(r[j]);
-        });
-        const idV = idIdx >= 0 ? cell(r[idIdx]) : "";
-        const est = estIdx >= 0 ? cell(r[estIdx]) : "";
-        out.push({ sheet: name as "auto" | "chargback", rowIndex: i + hi + 2, idVenda: idV || null, estado: est || null, data });
-      });
-      return out;
-    };
-
-    // As folhas podem ter nome exato "auto"/"chargback" ou nome com sufixo.
-    const sheetName = (want: string) => wb.SheetNames.find((n) => norm(n).includes(want)) ?? wb.SheetNames.find((n) => norm(n).startsWith(want));
+    const sheetName = (want: string) => wb.SheetNames.find((n) => norm(n).includes(want));
 
     const rows: { sheet: "auto" | "chargback"; rowIndex: number; idVenda: string | null; estado: string | null; data: Record<string, string | null> }[] = [];
     for (const want of ["auto", "chargback"] as const) {
       const sn = sheetName(want);
-      if (sn) rows.push(...parseSheet(sn));
+      if (sn) rows.push(...parseSheet(wb, XLSX, sn, want));
     }
-    if (!rows.length) return c.json({ error: "Não foram encontradas as folhas `auto`/`chargback`." }, 422);
+    if (!rows.length) return c.json({ error: "Não foram encontradas as folhas 'auto'/'chargback' neste ficheiro." }, 422);
 
-    // Guarda o ficheiro original em disco.
+    // Guarda o ficheiro original em disco para poder ser descarregado mais tarde.
     if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
-    const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+    const safeName = file.name.replace(/[^\w.\-]+/g, "_").slice(-80) || "auto.xlsx";
     const storedName = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
-    const { writeFileSync } = await import("node:fs");
     writeFileSync(join(UPLOAD_DIR, storedName), buf);
 
     const [imp] = await db
       .insert(iberdrolaImports)
-      .values({ filename: file.name, month: m, path: storedName, uploadedBy: ctx.name })
+      .values({ filename: file.name || safeName, month: m, path: storedName, uploadedBy: ctx.name })
       .returning({ id: iberdrolaImports.id });
 
-    if (rows.length) {
-      await db.insert(iberdrolaRows).values(rows.map((r) => ({ importId: imp.id, sheet: r.sheet, rowIndex: r.rowIndex, idVenda: r.idVenda, estado: r.estado, data: r.data })));
-    }
+    await db.insert(iberdrolaRows).values(
+      rows.map((r) => ({ importId: imp.id, sheet: r.sheet, rowIndex: r.rowIndex, idVenda: r.idVenda, estado: r.estado, data: r.data })),
+    );
 
-    return c.json({ id: imp.id }, 201);
+    return c.json({ id: imp.id, rows: rows.length }, 201);
   });
 
   // Descarregar o ficheiro original.
@@ -428,18 +445,19 @@ export function iberdrolaRoutes(app: Hono) {
     const id = Number(decodeURIComponent(c.req.param("id")));
     if (!Number.isInteger(id) || id <= 0) return c.notFound();
     const [imp] = await db.select().from(iberdrolaImports).where(eq(iberdrolaImports.id, id));
-    if (!imp || !imp.path) return c.notFound();
+    if (!imp || !imp.path) return c.json({ error: "O ficheiro original não foi guardado para este registo." }, 404);
 
-    const filePath = join(UPLOAD_DIR, imp.path);
     let buf: Buffer;
     try {
-      buf = readFileSync(filePath);
+      buf = readFileSync(join(UPLOAD_DIR, imp.path));
     } catch {
-      return c.notFound();
+      return c.json({ error: "O ficheiro já não existe no servidor." }, 404);
     }
+    const ext = (imp.filename.split(".").pop() || "xlsx").toLowerCase();
+    const type = ext === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     return new Response(buf as unknown as BodyInit, {
       headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Type": type,
         "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(imp.filename)}`,
       },
     });

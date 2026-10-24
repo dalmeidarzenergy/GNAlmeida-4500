@@ -50,6 +50,10 @@ export function useSaveIberdrola() {
 export const useRemoveIberdrola = () =>
   useMutation(orpc.iberdrola.remove.mutationOptions({ onSuccess: useInv() }));
 
+/** Muda o mês de pagamento de um ficheiro carregado. */
+export const useSetIberdrolaMonth = () =>
+  useMutation(orpc.iberdrola.setMonth.mutationOptions({ onSuccess: useInv() }));
+
 /** "Autos Finais" do mês. */
 export const useIberdrolaCalc = (month: string) =>
   useQuery({ ...orpc.iberdrola.calc.queryOptions({ input: { month } }), enabled: /^\d{4}-\d{2}$/.test(month) });
