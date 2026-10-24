@@ -44,6 +44,7 @@ tabs = [r[0] for r in c.execute("select name from sqlite_master where type='tabl
 assert "commission_tables" in tabs and "commission_rows" in tabs, "ERRO: tabelas commission_* em falta"
 assert "chief_tables" in tabs and "chief_rows" in tabs, "ERRO: tabelas chief_* em falta"
 assert "employee_tables" in tabs, "ERRO: tabela employee_tables em falta"
+assert "payments" in tabs, "ERRO: tabela payments em falta"
 print("  OK: schema em ordem")
 PY
 

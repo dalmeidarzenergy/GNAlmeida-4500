@@ -7,6 +7,7 @@ import { hr } from "./routes/hr";
 import { recruitment } from "./routes/recruitment";
 import { commissionTablesRoute } from "./routes/commission-tables";
 import { chiefTablesRoute } from "./routes/chief-tables";
+import { paymentsRoute } from "./routes/payments";
 import { sales } from "./routes/sales";
 import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
@@ -26,6 +27,7 @@ export const router = {
   recruitment,
   commissionTables: commissionTablesRoute,
   chiefTables: chiefTablesRoute,
+  payments: paymentsRoute,
   sales,
   reports,
   campaigns,

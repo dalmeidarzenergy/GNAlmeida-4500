@@ -530,6 +530,31 @@ export const chiefRows = sqliteTable("chief_rows", {
  * `endDate` nulo = em vigor sem fim definido. O cálculo de um mês usa a linha cuja vigência
  * cobre o mês; se não houver nenhuma, recorre-se à tabela atual do funcionário.
  */
+/**
+ * Autos de pagamento: registo do que foi efetivamente pago a cada funcionario num mes.
+ * `kind` = "commission" (vendedor) | "chief" (chefe de equipa) | "solar" | "medem" | "outro".
+ * `status` = "pago" | "por_pagar".
+ */
+export const payments = sqliteTable("payments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  /** Mes de referencia no formato YYYY-MM. */
+  month: text("month").notNull(),
+  kind: text("kind").notNull().default("commission"),
+  /** Valor pago (EUR). */
+  amount: real("amount").notNull().default(0),
+  /** Numero de vendas a que o pagamento respeita. */
+  salesCount: real("sales_count").notNull().default(0),
+  /** Data em que foi pago (YYYY-MM-DD), nulo se ainda por pagar. */
+  paidOn: text("paid_on"),
+  /** "pago" | "por_pagar". */
+  status: text("status").notNull().default("por_pagar"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+});
+
 export const employeeTables = sqliteTable("employee_tables", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id")

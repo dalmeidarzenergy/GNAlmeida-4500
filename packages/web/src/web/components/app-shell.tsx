@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Zap, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table,
+  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Zap, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -37,6 +37,12 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/metas", key: "metas", label: "Metas", icon: Target },
       { to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin },
       { to: "/simulador-iberdrola", key: "simulador-iberdrola", label: "Simulador Iberdrola", icon: Calculator },
+    ],
+  },
+  {
+    group: "Pagamentos",
+    items: [
+      { to: "/pagamentos", key: "pagamentos", label: "AUTOS PAGAMENTO", icon: Wallet },
     ],
   },
   {
