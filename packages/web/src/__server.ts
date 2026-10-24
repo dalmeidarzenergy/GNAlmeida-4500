@@ -2,6 +2,7 @@ import app from "./api";
 
 const port = Number(process.env.PORT ?? 3000);
 const distDir = `${import.meta.dirname}/../dist`;
+const publicDir = `${import.meta.dirname}/../public`;
 const indexPath = `${distDir}/index.html`;
 
 const server = Bun.serve({
@@ -18,6 +19,17 @@ const server = Bun.serve({
 
     if (await file.exists()) {
       return new Response(file);
+    }
+
+    // Ficheiros gerados em runtime (ex.: autos de pagamento em PDF) vivem em
+    // public/uploads e nao sao copiados para dist pelo build: servir do repo.
+    if (url.pathname.startsWith("/uploads/")) {
+      const cleanPath = decodeURIComponent(url.pathname).replace(/^\/+/, "").replaceAll("..", "");
+      const upload = Bun.file(`${publicDir}/${cleanPath}`);
+      if (await upload.exists()) {
+        return new Response(upload);
+      }
+      return new Response("Not found", { status: 404 });
     }
 
     const index = Bun.file(indexPath);

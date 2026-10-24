@@ -45,6 +45,25 @@ assert "commission_tables" in tabs and "commission_rows" in tabs, "ERRO: tabelas
 assert "chief_tables" in tabs and "chief_rows" in tabs, "ERRO: tabelas chief_* em falta"
 assert "employee_tables" in tabs, "ERRO: tabela employee_tables em falta"
 assert "payments" in tabs, "ERRO: tabela payments em falta"
+
+pay = [r[1] for r in c.execute("PRAGMA table_info(payments)").fetchall()]
+pay_new = {
+    "pel_qty": "real NOT NULL DEFAULT 0",
+    "dd_qty": "real NOT NULL DEFAULT 0",
+    "fe_qty": "real NOT NULL DEFAULT 0",
+    "extras_amount": "real NOT NULL DEFAULT 0",
+    "gross_amount": "real NOT NULL DEFAULT 0",
+    "penalty_timing": "real NOT NULL DEFAULT 0",
+    "penalty_campaign": "real NOT NULL DEFAULT 0",
+    "km_deduction": "real NOT NULL DEFAULT 0",
+    "pdf_key": "text",
+    "pdf_name": "text",
+}
+for col, decl in pay_new.items():
+    if col not in pay:
+        c.execute(f"ALTER TABLE payments ADD COLUMN {col} {decl}")
+        c.commit()
+        print(f"  coluna payments.{col} adicionada")
 print("  OK: schema em ordem")
 PY
 

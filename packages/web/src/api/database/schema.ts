@@ -551,6 +551,23 @@ export const payments = sqliteTable("payments", {
   paidOn: text("paid_on"),
   /** "pago" | "por_pagar". */
   status: text("status").notNull().default("por_pagar"),
+  /** Extras da formula: PEL PLUS (nº), débito direto (nº) e FE (nº) — total em € em `extrasAmount`. */
+  pelQty: real("pel_qty").notNull().default(0),
+  ddQty: real("dd_qty").notNull().default(0),
+  feQty: real("fe_qty").notNull().default(0),
+  /** Total pago em extras (EUR). */
+  extrasAmount: real("extras_amount").notNull().default(0),
+  /** Base antes de descontos (EUR). */
+  grossAmount: real("gross_amount").notNull().default(0),
+  /** Penalizacao de timing / contratacao (EUR). Regras a definir — valor manual. */
+  penaltyTiming: real("penalty_timing").notNull().default(0),
+  /** Penalizacao de campanha (EUR). Regras a definir — valor manual. */
+  penaltyCampaign: real("penalty_campaign").notNull().default(0),
+  /** Desconto folha de km (EUR, valor positivo a descontar). */
+  kmDeduction: real("km_deduction").notNull().default(0),
+  /** Chave de armazenamento do PDF do auto de pagamento gerado. */
+  pdfKey: text("pdf_key"),
+  pdfName: text("pdf_name"),
   notes: text("notes"),
   createdAt: createdAt(),
 });
