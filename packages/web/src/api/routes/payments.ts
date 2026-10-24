@@ -193,7 +193,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     .leftJoin(clients, eq(clients.id, sales.clientId))
     .where(
       and(
-        sql`${saleStatusHistory.status} in (${COUNTED_STATUS}, 'Baixa', 'Manual')`,
+        sql`${saleStatusHistory.status} in (${COUNTED_STATUS}, 'Baixa', 'Manual', 'Anulado')`,
         sql`(
           (json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ', 'DUAL'))
           OR ${sales.service} = 'GÁS'
@@ -214,6 +214,8 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     sup: Record<string, string | null>;
     baixa: Record<string, string[]>;
     manual: Record<string, string[]>;
+    /** Anuladas por energia — nunca pagam nem dao chargeback. */
+    anulado: Record<string, string[]>;
   };
 
   const perSale = new Map<number, Entry>();
@@ -228,6 +230,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         sup: { luz: null, gas: null },
         baixa: { luz: [], gas: [] },
         manual: { luz: [], gas: [] },
+        anulado: { luz: [], gas: [] },
       } as Entry);
     const k = energy(r.energy);
     if (r.status === COUNTED_STATUS) {
@@ -236,6 +239,8 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       e.baixa[k].push(r.on);
     } else if (r.status === "Manual") {
       e.manual[k].push(r.on);
+    } else if (r.status === "Anulado") {
+      e.anulado[k].push(r.on);
     }
     perSale.set(r.saleId, e);
   }
@@ -270,13 +275,16 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     for (const k of list) {
       const lite: Lite = { saleId, number: contract(e.details), service: e.service, details: e.details, clientName: e.clientName, energy: k };
       const suppliedOn = e.sup[k];
-      // Baixa DESTA energia, em qualquer momento (definitiva).
+      // Baixa/Anulado DESTA energia, em qualquer momento (definitivas).
       const baixas = [...new Set(e.baixa[k])].sort();
+      const anulados = [...new Set(e.anulado[k])].sort();
       const firstBaixa = baixas[0] ?? null;
+      const firstAnulado = anulados[0] ?? null;
       const baixouAgora = baixas.some((d) => d >= from && d <= to);
+      const anulouAgora = anulados.some((d) => d >= from && d <= to);
       const manual = e.manual[k].some((d) => d >= from && d <= to);
 
-      // Mes de fornecimento — para saber se baixou ou teve Manual no proprio mes.
+      // Mes de fornecimento — para saber se baixou, anulou ou teve Manual no proprio mes.
       const sm = suppliedOn ? suppliedOn.slice(0, 7) : "";
       const smB = sm ? bounds(sm) : null;
       const baixaNoMesSup = smB ? baixas.some((d) => d >= smB.from && d <= smB.to) : false;
@@ -288,6 +296,9 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       // chargeback (ate 3 meses depois do mes de fornecimento).
       const foiPaga = suppliedOn && suppliedOn < from && !baixaNoMesSup && !manualNoMesSup;
       const dentroChargeback = sm ? deltaMonths(sm, m) <= 3 : false;
+
+      // Anulada e definitiva: nunca paga nem da chargeback.
+      if (firstAnulado) continue;
 
       if (foiPaga && baixouAgora && dentroChargeback) {
         const l = chargeback.get(e.sellerId) ?? [];
@@ -307,15 +318,17 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       }
 
       // Nao vem a pagamento: so aparece com movimento NESTE mes.
-      // - Baixa neste mes: aparece no mes da baixa e nunca mais (a baixa e definitiva).
+      // - Baixa neste mes: aparece no mes da baixa e nunca mais (definitiva).
+      // - Anulado neste mes: idem — nunca paga nem da chargeback.
       // - Manual (ou outro estado != "Em Fornecimento") neste mes: aparece agora e
       //   continua a arrastar nos meses seguintes ate dar baixa.
       // Estados que ocorreram em meses futuros nao aparecem neste mes.
       const baixouNeste = baixas.some((d) => d >= from && d <= to);
+      const anulouNeste = anulados.some((d) => d >= from && d <= to);
       const manualNeste = e.manual[k].some((d) => d >= from && d <= to);
-      if (baixouNeste || (manualNeste && !firstBaixa)) {
+      if (baixouNeste || anulouNeste || (manualNeste && !firstBaixa && !firstAnulado)) {
         const l = notPaid.get(e.sellerId) ?? [];
-        const st = statusLabel(baixouNeste ? "Baixa" : "Manual");
+        const st = statusLabel(baixouNeste ? "Baixa" : anulouNeste ? "Anulado" : "Manual");
         l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st, energy: k });
         notPaid.set(e.sellerId, l);
       }
@@ -470,7 +483,9 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       chargebackLines: cbResolved.map(toLine),
       notPaid: (notPaid.get(s.id) ?? []).map((n) => {
         const tot = split({ saleId: n.saleId, number: n.number, service: n.service, details: n.details, clientName: null, energy: n.energy }, band).reduce((sum, l) => sum + l.total, 0);
-        return { number: n.number, service: energyLabel(n.energy), status: n.status, value: round2(tot) };
+        // Baixa e Anulado sao definitivos — nao apresentam valor.
+        const noValue = n.status === "Baixa" || n.status === "Anulado";
+        return { number: n.number, service: energyLabel(n.energy), status: n.status, value: noValue ? 0 : round2(tot) };
       }),
     });
   }
@@ -551,7 +566,9 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       chargebackLines: cbResolved.map(toLine),
       notPaid: (notPaid.get(s.id) ?? []).map((n) => {
         const tot = split({ saleId: n.saleId, number: n.number, service: n.service, details: n.details, clientName: null, energy: n.energy }, ownBand ?? band).reduce((sum, l) => sum + l.total, 0);
-        return { number: n.number, service: energyLabel(n.energy), status: n.status, value: round2(tot) };
+        // Baixa e Anulado sao definitivos — nao apresentam valor.
+        const noValue = n.status === "Baixa" || n.status === "Anulado";
+        return { number: n.number, service: energyLabel(n.energy), status: n.status, value: noValue ? 0 : round2(tot) };
       }),
       team: teamMembers,
     });
