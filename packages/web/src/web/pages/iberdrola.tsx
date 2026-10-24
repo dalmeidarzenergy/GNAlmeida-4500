@@ -331,35 +331,48 @@ function PersonDetail({ employeeId, people }: { employeeId: number; people: NonN
 
   function lineTable(title: string, lines: typeof p.lines) {
     if (!lines.length) return null;
+    const sum = (f: (l: typeof lines[number]) => number) => lines.reduce((t, l) => t + f(l), 0);
     return (
       <div className="mb-5">
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">{title}</div>
-        <table className="w-full text-[12.5px]">
-          <thead>
-            <tr className="border-b border-line text-left">
-              <th className="py-2 pr-3 font-medium">ID venda</th>
-              <th className="py-2 pr-3 font-medium">Contrato</th>
-              <th className="py-2 pr-3 font-medium">Serviço</th>
-              <th className="py-2 pr-3 text-right font-medium">Luz</th>
-              <th className="py-2 pr-3 text-right font-medium">Gás</th>
-              <th className="py-2 pr-3 text-right font-medium">Extras</th>
-              <th className="py-2 text-right font-medium">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((l, i) => (
-              <tr key={i} className="border-b border-line last:border-0">
-                <td className="num py-2 pr-3 font-medium">{l.idVenda}</td>
-                <td className="py-2 pr-3 text-ink-2">{l.number}</td>
-                <td className="py-2 pr-3">{l.service}</td>
-                <td className="num py-2 pr-3 text-right">{l.luz ? fmtEur2(l.luz) : "-"}</td>
-                <td className="num py-2 pr-3 text-right">{l.gas ? fmtEur2(l.gas) : "-"}</td>
-                <td className="num py-2 pr-3 text-right text-ink-2">{l.extras ? fmtEur2(l.extras) : "-"}</td>
-                <td className="num py-2 text-right font-semibold">{fmtEur2(l.total)}</td>
+        <div className="overflow-x-auto rounded-[10px] border border-line">
+          <table className="w-full min-w-[680px] text-[12.5px]">
+            <thead className="bg-surface">
+              <tr className="border-b border-line text-left">
+                <th className="px-3 py-2 font-medium">ID venda</th>
+                <th className="px-3 py-2 font-medium">Serviço</th>
+                <th className="px-3 py-2 text-right font-medium">Base</th>
+                <th className="px-3 py-2 text-right font-medium">Déb. Direto</th>
+                <th className="px-3 py-2 text-right font-medium">Fat. Eletrónica</th>
+                <th className="px-3 py-2 text-right font-medium">PEL</th>
+                <th className="px-3 py-2 text-right font-medium">Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => (
+                <tr key={i} className="border-b border-line last:border-0">
+                  <td className="num px-3 py-2 font-medium">{l.idVenda}</td>
+                  <td className="px-3 py-2">{l.service}</td>
+                  <td className="num px-3 py-2 text-right">{l.base ? fmtEur2(l.base) : "-"}</td>
+                  <td className="num px-3 py-2 text-right text-ink-2">{l.dd ? fmtEur2(l.dd) : "-"}</td>
+                  <td className="num px-3 py-2 text-right text-ink-2">{l.fe ? fmtEur2(l.fe) : "-"}</td>
+                  <td className="num px-3 py-2 text-right text-ink-2">{l.mgi ? fmtEur2(l.mgi) : "-"}</td>
+                  <td className="num px-3 py-2 text-right font-semibold">{fmtEur2(l.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-line bg-surface text-[12px] text-ink-2">
+                <td className="px-3 py-2 font-medium" colSpan={2}>{lines.length} linha{lines.length === 1 ? "" : "s"}</td>
+                <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.base))}</td>
+                <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.dd))}</td>
+                <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.fe))}</td>
+                <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.mgi))}</td>
+                <td className="num px-3 py-2 text-right font-semibold text-ink">{fmtEur2(sum((l) => l.total))}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     );
   }
@@ -378,10 +391,13 @@ function PersonDetail({ employeeId, people }: { employeeId: number; people: NonN
         </div>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <MiniStat label="Luz" value={String(p.luzCount)} />
         <MiniStat label="Gás" value={String(p.gasCount)} />
-        <MiniStat label="Extras" value={fmtEur(p.extrasAmount)} />
+        <MiniStat label="Déb. Direto" value={`${p.ddCount} · ${fmtEur(p.ddAmount)}`} />
+        <MiniStat label="Fat. Eletrónica" value={`${p.feCount} · ${fmtEur(p.feAmount)}`} />
+        <MiniStat label="MGI" value={`${p.mgiCount} · ${fmtEur(p.mgiAmount)}`} />
+        <MiniStat label="Base" value={fmtEur(p.baseAmount)} />
         <MiniStat label="Tabela" value={p.missingTable ? "—" : (p.tableName ?? "—")} />
       </div>
 
