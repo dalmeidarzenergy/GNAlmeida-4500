@@ -42,7 +42,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "Pagamentos",
     items: [
-      { to: "/pagamentos", key: "pagamentos", label: "AUTOS PAGAMENTO", icon: Wallet },
+      { to: "/pagamentos", key: "pagamentos", label: "Auto Pagamentos", icon: Wallet },
     ],
   },
   {

@@ -187,7 +187,7 @@ export default function PaymentsPage() {
 
   return (
     <div className="p-5 lg:p-7">
-      <PageHeader eyebrow="PAGAMENTOS" title="AUTOS PAGAMENTO" subtitle="O que e devido a cada vendedor e chefe de equipa no mes, e o registo do que ja foi pago.">
+      <PageHeader eyebrow="PAGAMENTOS" title="Auto Pagamentos" subtitle="O que e devido a cada vendedor e chefe de equipa no mes, e o registo do que ja foi pago.">
         <input aria-label="Mes" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
         <button type="button" className="btn btn-volt" onClick={() => setEdit("new")}><Plus size={15} /> Novo pagamento</button>
       </PageHeader>
