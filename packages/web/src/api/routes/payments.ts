@@ -70,6 +70,13 @@ const bounds = (m: string) => {
   return { from, to };
 };
 
+/** Diferença em meses corridos entre duas strings YYYY-MM. */
+const deltaMonths = (a: string, b: string) => {
+  const [ay, am] = a.split("-").map(Number);
+  const [by, bm] = b.split("-").map(Number);
+  return (by - ay) * 12 + (bm - am);
+};
+
 const yes = (v: unknown) => (typeof v === "string" ? v.toLowerCase() === "sim" : v === true);
 /** Uma venda já resolvida para o cálculo. */
 type Resolved = {
@@ -269,25 +276,30 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       const baixouAgora = baixas.some((d) => d >= from && d <= to);
       const manual = e.manual[k].some((d) => d >= from && d <= to);
 
-      // Chargeback: ja tinha sido paga (em fornecimento antes deste mes) e a
-      // baixa acontece dentro deste mes. Desconta-se no auto do mes da baixa.
-      // So pode ser descontada se foi mesmo paga — sem Baixa nem Manual no
-      // proprio mes de fornecimento.
+      // Mes de fornecimento — para saber se baixou ou teve Manual no proprio mes.
       const sm = suppliedOn ? suppliedOn.slice(0, 7) : "";
       const smB = sm ? bounds(sm) : null;
       const baixaNoMesSup = smB ? baixas.some((d) => d >= smB.from && d <= smB.to) : false;
       const manualNoMesSup = smB ? e.manual[k].some((d) => d >= smB.from && d <= smB.to) : false;
-      const foiPaga = suppliedOn && suppliedOn < from && !baixaNoMesSup && !manualNoMesSup;
 
-      if (foiPaga && baixouAgora) {
+      // Chargeback: ja tinha sido paga (fornecimento antes deste mes, sem Baixa
+      // nem Manual no mes de fornecimento) e a baixa acontece dentro deste mes.
+      // So pode ser descontada se foi mesmo paga e dentro dos 3 meses de
+      // chargeback (ate 3 meses depois do mes de fornecimento).
+      const foiPaga = suppliedOn && suppliedOn < from && !baixaNoMesSup && !manualNoMesSup;
+      const dentroChargeback = sm ? deltaMonths(sm, m) <= 3 : false;
+
+      if (foiPaga && baixouAgora && dentroChargeback) {
         const l = chargeback.get(e.sellerId) ?? [];
         l.push(lite);
         chargeback.set(e.sellerId, l);
         continue;
       }
 
-      // Vem a pagamento: entrou em fornecimento neste mes e ainda nao baixou.
-      if (suppliedOn && suppliedOn >= from && suppliedOn <= to && !firstBaixa && !manual) {
+      // Vem a pagamento: entrou em fornecimento neste mes e nao tem Baixa nem
+      // Manual no proprio mes de fornecimento. Baixa num mes futuro nao impede
+      // o pagamento — sera tratada como chargeback nesse mes.
+      if (suppliedOn && suppliedOn >= from && suppliedOn <= to && !baixaNoMesSup && !manual) {
         const l = valid.get(e.sellerId) ?? [];
         l.push(lite);
         valid.set(e.sellerId, l);
