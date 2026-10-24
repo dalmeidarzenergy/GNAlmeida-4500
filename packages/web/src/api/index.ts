@@ -8,6 +8,7 @@ import { recruitment } from "./routes/recruitment";
 import { commissionTablesRoute } from "./routes/commission-tables";
 import { chiefTablesRoute } from "./routes/chief-tables";
 import { paymentsRoute } from "./routes/payments";
+import { iberdrolaRoute } from "./routes/iberdrola";
 import { sales } from "./routes/sales";
 import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
@@ -28,6 +29,7 @@ export const router = {
   commissionTables: commissionTablesRoute,
   chiefTables: chiefTablesRoute,
   payments: paymentsRoute,
+  iberdrola: iberdrolaRoute,
   sales,
   reports,
   campaigns,

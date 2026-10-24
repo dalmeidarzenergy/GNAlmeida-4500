@@ -585,3 +585,33 @@ export const employeeTables = sqliteTable("employee_tables", {
   notes: text("notes"),
   createdAt: createdAt(),
 });
+
+/**
+ * Autos Iberdrola: histórico dos ficheiros Excel exportados da Iberdrola
+ * (pagamento dos comerciais). Cada import = um ficheiro carregado, associado
+ * a um mês de referência.
+ */
+export const iberdrolaImports = sqliteTable("iberdrola_imports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  filename: text("filename").notNull(),
+  month: text("month").notNull(),
+  uploadedBy: text("uploaded_by").notNull(),
+  createdAt: createdAt(),
+});
+
+/**
+ * Linhas de um import Iberdrola (folhas `auto` e `chargback`).
+ * `idVenda` = "ID de venda" do Excel (número de contrato) para ligar à venda do CRM;
+ * `data` = linha completa, coluna → valor, tal como veio do ficheiro.
+ */
+export const iberdrolaRows = sqliteTable("iberdrola_rows", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  importId: integer("import_id")
+    .notNull()
+    .references(() => iberdrolaImports.id, { onDelete: "cascade" }),
+  sheet: text("sheet").notNull(),
+  rowIndex: integer("row_index").notNull(),
+  idVenda: text("id_venda"),
+  estado: text("estado"),
+  data: text("data", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+});

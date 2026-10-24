@@ -1,0 +1,342 @@
+import { useMemo, useRef, useState } from "react";
+import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check } from "lucide-react";
+import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola } from "../queries/iberdrola";
+import { readIberdrola } from "../lib/iberdrola-import";
+import { useMe } from "../queries/me";
+import { errMsg, fmtDate, fmtEur, fmtEur2, monthLabel, thisMonth } from "../lib/format";
+
+type Tab = "historico" | "finais";
+
+export default function IberdrolaPage() {
+  const me = useMe();
+  const [tab, setTab] = useState<Tab>("historico");
+  const canEdit = me.data?.permissions?.["auto-iberdrola"]?.edit ?? false;
+
+  return (
+    <div className="p-5 lg:p-7">
+      <PageHeader eyebrow="Pagamentos" title="Auto Iberdrola" subtitle="Excel exportado da Iberdrola com as vendas dos comerciais. Guarda o ficheiro no histórico e calcula os valores por comercial a partir das tabelas comissionais do CRM.">
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          items={[
+            { key: "historico" as const, label: "Histórico de Autos" },
+            { key: "finais" as const, label: "Autos Finais" },
+          ]}
+        />
+      </PageHeader>
+      {tab === "historico" ? <Historico canEdit={canEdit} /> : <Finais />}
+    </div>
+  );
+}
+
+function Historico({ canEdit }: { canEdit: boolean }) {
+  const imports = useIberdrolaImports();
+  const save = useSaveIberdrola();
+  const remove = useRemoveIberdrola();
+  const input = useRef<HTMLInputElement>(null);
+  const [month, setMonth] = useState(thisMonth());
+  const [viewing, setViewing] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onFile(f: File | undefined) {
+    if (!f) return;
+    setError(null);
+    try {
+      const { filename, rows } = await readIberdrola(f);
+      await save.save.mutateAsync({ filename, month, rows });
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      if (input.current) input.current.value = "";
+    }
+  }
+
+  const list = imports.data ?? [];
+
+  return (
+    <div>
+      {!canEdit ? (
+        <div className="card"><Empty title="Sem acesso" text="Só pode carregar ficheiros quem tem permissão de edição." /></div>
+      ) : (
+        <div className="card mb-6 overflow-hidden">
+          <div className="flex flex-wrap items-end gap-4 px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <div className="font-display text-[15px] font-semibold">Carregar Excel da Iberdrola</div>
+              <div className="text-[11.5px] text-ink-3">O ficheiro tem as folhas <span className="text-ink">auto</span> (vendas) e <span className="text-ink">chargback</span> (baixas).</div>
+            </div>
+            <Field label="Mês de referência">
+              <input type="month" className="input num w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
+            </Field>
+            <button type="button" className="btn btn-volt" disabled={save.isPending} onClick={() => input.current?.click()}>
+              {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Carregar ficheiro
+            </button>
+            <input ref={input} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+          </div>
+          {error && <div className="border-t border-line px-5 py-3 text-[12.5px] text-danger">{error}</div>}
+        </div>
+      )}
+
+      {imports.isLoading ? (
+        <div className="card p-5"><div className="skeleton h-32 rounded-[12px]" /></div>
+      ) : !list.length ? (
+        <div className="card"><Empty title="Sem ficheiros carregados" text="Carrega o Excel exportado da Iberdrola para começar." /></div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="border-b border-line px-5 py-4">
+            <div className="font-display text-[15px] font-semibold">Histórico</div>
+            <div className="text-[11.5px] text-ink-3">{list.length} ficheiro{list.length === 1 ? "" : "s"}</div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-[13px]">
+              <thead>
+                <tr className="border-b border-line text-left">
+                  <th className="px-5 py-3 font-medium">FICHEIRO</th>
+                  <th className="px-3 py-3 font-medium">MÊS</th>
+                  <th className="px-3 py-3 text-right font-medium">AUTO</th>
+                  <th className="px-3 py-3 text-right font-medium">CHARGBACK</th>
+                  <th className="px-3 py-3 font-medium">CARREGADO POR</th>
+                  <th className="px-3 py-3 font-medium">DATA</th>
+                  <th className="px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((r) => (
+                  <Row key={r.id} id={r.id} onOpen={setViewing} filename={r.filename} month={r.month} auto={r.auto} chargback={r.chargback} uploadedBy={r.uploadedBy} createdAt={r.createdAt} canEdit={canEdit} onDelete={() => remove.mutateAsync({ id: r.id })} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <Modal open={viewing != null} onClose={() => setViewing(null)} title="Linhas do ficheiro" wide>
+        {viewing != null && <ImportLines id={viewing} />}
+      </Modal>
+    </div>
+  );
+}
+
+function Row(props: { id: number; onOpen: (id: number) => void; filename: string; month: string; auto: number; chargback: number; uploadedBy: string; createdAt: Date; canEdit: boolean; onDelete: () => void }) {
+  const created = props.createdAt instanceof Date ? props.createdAt : new Date(props.createdAt);
+  return (
+    <tr className="border-b border-line last:border-0">
+      <td className="px-5 py-3">
+        <button type="button" className="flex items-center gap-2 font-medium hover:text-volt" onClick={() => props.onOpen(props.id)}>
+          <FileSpreadsheet size={15} className="text-volt" /> {props.filename}
+        </button>
+      </td>
+      <td className="px-3 py-3 text-ink-2">{monthLabel(props.month)}</td>
+      <td className="num px-3 py-3 text-right">{props.auto}</td>
+      <td className="num px-3 py-3 text-right text-ink-2">{props.chargback}</td>
+      <td className="px-3 py-3 text-ink-2">{props.uploadedBy}</td>
+      <td className="px-3 py-3 text-ink-2">{fmtDate(created)}</td>
+      <td className="px-5 py-3 text-right">
+        {props.canEdit && <button type="button" className="btn-icon" aria-label="Apagar" onClick={props.onDelete}><Trash2 size={14} /></button>}
+      </td>
+    </tr>
+  );
+}
+
+function ImportLines({ id }: { id: number }) {
+  const data = useIberdrolaImport(id);
+  if (data.isLoading) return <div className="skeleton h-40 rounded-[12px]" />;
+  if (!data.data?.found) return <Empty title="Não encontrado" text="O ficheiro já não existe." />;
+  const rows = data.data.rows;
+  const auto = rows.filter((r) => r.sheet === "auto");
+  const cb = rows.filter((r) => r.sheet === "chargback");
+  const cols = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of rows) for (const k of Object.keys(r.data)) seen.add(k);
+    return [...seen];
+  }, [rows]);
+
+  function group(label: string, groupRows: typeof rows) {
+    if (!groupRows.length) return null;
+    return (
+      <div className="mb-5">
+        <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">
+          {label} <span className="num text-[11px] text-ink-3">{groupRows.length}</span>
+        </div>
+        <div className="max-h-[50vh] overflow-auto rounded-[10px] border border-line">
+          <table className="w-full min-w-[900px] text-[12px]">
+            <thead className="sticky top-0 bg-surface">
+              <tr className="border-b border-line text-left">
+                <th className="px-3 py-2 font-medium">ID venda</th>
+                <th className="px-3 py-2 font-medium">Estado</th>
+                {cols.slice(0, 18).map((c) => <th key={c} className="px-3 py-2 font-medium">{c}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {groupRows.map((r) => (
+                <tr key={r.id} className="border-b border-line last:border-0">
+                  <td className="num px-3 py-2 font-medium">{r.idVenda ?? "-"}</td>
+                  <td className="px-3 py-2">{r.estado ?? "-"}</td>
+                  {cols.slice(0, 18).map((c) => <td key={c} className="px-3 py-2 text-ink-2">{r.data[c] ?? ""}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {group("Folha auto", auto)}
+      {group("Folha chargback", cb)}
+    </div>
+  );
+}
+
+function Finais() {
+  const [month, setMonth] = useState(thisMonth());
+  const calc = useIberdrolaCalc(month);
+  const [selected, setSelected] = useState<number | null>(null);
+
+  const data = calc.data;
+  const people = data?.people ?? [];
+
+  return (
+    <div>
+      <div className="flex items-center gap-3">
+        <Field label="Mês">
+          <input type="month" className="input num w-44" value={month} onChange={(e) => { setMonth(e.target.value); setSelected(null); }} />
+        </Field>
+      </div>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Stat label="A RECEBER" value={fmtEur(data?.totals.gross ?? 0)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
+        <Stat label="CHARGBACK" value={fmtEur(data?.totals.chargeback ?? 0)} accent="var(--danger)" icon={<Undo2 size={16} />} delay={60} />
+        <Stat label="TOTAL" value={fmtEur(data?.totals.due ?? 0)} accent="var(--sky)" icon={<Check size={16} />} delay={120} />
+      </div>
+
+      {(data?.unmatchedAuto.length || data?.unmatchedChargeback.length) ? (
+        <div className="mt-4 rounded-[12px] border border-danger/30 bg-danger/5 px-4 py-3 text-[12.5px] text-danger">
+          {data.unmatchedAuto.length > 0 && <div>{data.unmatchedAuto.length} vendas do Excel não ligam a nenhuma venda do CRM (ID de venda: {data.unmatchedAuto.join(", ")}).</div>}
+          {data.unmatchedChargeback.length > 0 && <div>{data.unmatchedChargeback.length} baixas do chargback não ligam a nenhuma venda do CRM (ID de venda: {data.unmatchedChargeback.join(", ")}).</div>}
+        </div>
+      ) : null}
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="card overflow-hidden">
+          <div className="border-b border-line px-4 py-3">
+            <div className="font-display text-[13px] font-semibold">Comerciais</div>
+            <div className="text-[11px] text-ink-3">{people.length} com vendas em {monthLabel(month)}</div>
+          </div>
+          {calc.isLoading ? (
+            <div className="p-4"><div className="skeleton h-24 rounded-[12px]" /></div>
+          ) : !people.length ? (
+            <Empty title="Sem autos neste mês" text="Carrega um ficheiro Iberdrola neste mês para ver os cálculos." />
+          ) : (
+            <ul className="divide-y divide-line">
+              {people.map((p) => (
+                <li key={p.employeeId}>
+                  <button type="button" onClick={() => setSelected(selected === p.employeeId ? null : p.employeeId)} className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-volt/5 ${selected === p.employeeId ? "bg-volt/10" : ""}`}>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-medium">{p.employeeName}</span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-3">
+                        {p.missingTable ? <span className="text-danger">sem tabela</span> : <span>{p.tableName}</span>}
+                        <span>·</span>
+                        <span>{p.salesCount} vendas</span>
+                      </span>
+                    </span>
+                    <span className="num text-[12.5px] font-semibold">{fmtEur(p.due)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="card overflow-hidden">
+          <div className="border-b border-line px-5 py-4">
+            <div className="font-display text-[15px] font-semibold">Detalhe</div>
+            <div className="text-[11.5px] text-ink-3">Vendas de cada comercial e respetivos valores.</div>
+          </div>
+          {selected != null ? (
+            <PersonDetail employeeId={selected} people={people} />
+          ) : (
+            <div className="p-6">{calc.isLoading ? <div className="skeleton h-40 rounded-[12px]" /> : <Empty title="Escolhe um comercial" text="Seleciona um comercial na lista para ver as vendas." />}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PersonDetail({ employeeId, people }: { employeeId: number; people: NonNullable<ReturnType<typeof useIberdrolaCalc>["data"]>["people"] }) {
+  const p = people.find((x) => x.employeeId === employeeId);
+  if (!p) return <div className="p-6"><Empty title="Sem dados" text="Não foi possível encontrar este comercial." /></div>;
+
+  function lineTable(title: string, lines: typeof p.lines) {
+    if (!lines.length) return null;
+    return (
+      <div className="mb-5">
+        <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">{title}</div>
+        <table className="w-full text-[12.5px]">
+          <thead>
+            <tr className="border-b border-line text-left">
+              <th className="py-2 pr-3 font-medium">ID venda</th>
+              <th className="py-2 pr-3 font-medium">Contrato</th>
+              <th className="py-2 pr-3 font-medium">Serviço</th>
+              <th className="py-2 pr-3 text-right font-medium">Luz</th>
+              <th className="py-2 pr-3 text-right font-medium">Gás</th>
+              <th className="py-2 pr-3 text-right font-medium">Extras</th>
+              <th className="py-2 text-right font-medium">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={i} className="border-b border-line last:border-0">
+                <td className="num py-2 pr-3 font-medium">{l.idVenda}</td>
+                <td className="py-2 pr-3 text-ink-2">{l.number}</td>
+                <td className="py-2 pr-3">{l.service}</td>
+                <td className="num py-2 pr-3 text-right">{l.luz ? fmtEur2(l.luz) : "-"}</td>
+                <td className="num py-2 pr-3 text-right">{l.gas ? fmtEur2(l.gas) : "-"}</td>
+                <td className="num py-2 pr-3 text-right text-ink-2">{l.extras ? fmtEur2(l.extras) : "-"}</td>
+                <td className="num py-2 text-right font-semibold">{fmtEur2(l.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="font-display text-[15px] font-semibold">{p.employeeName}</div>
+          <div className="text-[11.5px] text-ink-3">{p.tableName ?? "Sem tabela comisional"}</div>
+        </div>
+        <div className="flex gap-2">
+          <Stat label="Escalão" value={String(p.bandSales)} accent="var(--amber)" />
+          <Stat label="Vendas" value={String(p.salesCount)} accent="var(--sky)" />
+          <Stat label="Devido" value={fmtEur(p.due)} accent="var(--volt)" />
+        </div>
+      </div>
+
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MiniStat label="Luz" value={String(p.luzCount)} />
+        <MiniStat label="Gás" value={String(p.gasCount)} />
+        <MiniStat label="Extras" value={fmtEur(p.extrasAmount)} />
+        <MiniStat label="Tabela" value={p.missingTable ? "—" : (p.tableName ?? "—")} />
+      </div>
+
+      {lineTable("Vendas", p.lines)}
+      {lineTable("Chargback", p.chargebackLines)}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[10px] border border-line bg-surface px-3 py-2">
+      <div className="text-[10.5px] uppercase tracking-wide text-ink-3">{label}</div>
+      <div className="num text-[13px] font-semibold">{value}</div>
+    </div>
+  );
+}
