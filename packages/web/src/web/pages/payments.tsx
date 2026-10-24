@@ -15,7 +15,6 @@ import { errMsg, fmtDate, fmtEur, today } from "../lib/format";
 
 const KINDS = [
   { key: "commission", label: "Comissao (vendedor)" },
-  { key: "chief", label: "Escalao de chefe de equipa" },
   { key: "solar", label: "Solar" },
   { key: "medem", label: "MEDEM" },
   { key: "outro", label: "Outro" },
@@ -23,7 +22,7 @@ const KINDS = [
 
 const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? k;
 
-type PayKind = "commission" | "chief" | "solar" | "medem" | "outro";
+type PayKind = "commission" | "solar" | "medem" | "outro";
 
 type PayRow = {
   id: number | null;
@@ -64,7 +63,7 @@ type AutoPerson = {
   employeeId: number;
   employeeName: string;
   role: string;
-  roleKey: "vendedor" | "chefe";
+  roleKey: "vendedor";
   tableName: string | null;
   unit: number;
   bandSales: number;
@@ -356,7 +355,7 @@ function AutoPanel({
 
           {person.team.length > 0 && (
             <div>
-              <div className="mb-2 rounded-t-[12px] bg-ink px-4 py-2 text-[11px] font-semibold tracking-wide text-white">Equipa (comissao de chefe)</div>
+              <div className="mb-2 rounded-t-[12px] bg-ink px-4 py-2 text-[11px] font-semibold tracking-wide text-white">Equipa (tabela base)</div>
               <div className="overflow-x-auto rounded-b-[12px] border border-t-0 border-line">
                 <table className="w-full min-w-[480px] text-[12.5px]">
                   <thead>
@@ -541,7 +540,7 @@ export default function PaymentsPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[12.5px] font-medium">{p.employeeName}</span>
                       <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-3">
-                        {p.roleKey === "chefe" ? <Pill tone="warn">Chefe</Pill> : <Pill tone="info">Comercial</Pill>}
+                        <Pill tone="info">Comercial</Pill>
                         {p.missingTable ? <span className="text-danger">sem tabela</span> : <span>{p.totalSales} vendas</span>}
                       </span>
                     </span>
@@ -558,7 +557,7 @@ export default function PaymentsPage() {
           employeeId: p.employeeId,
           employeeName: p.employeeName,
           month,
-          kind: p.roleKey === "chefe" ? "chief" : "commission",
+          kind: "commission",
           amount: Number(p.due.toFixed(2)),
           salesCount: p.totalSales,
           paidOn: today(),

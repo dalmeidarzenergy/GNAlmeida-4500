@@ -49,6 +49,10 @@ if "regime" not in cols:
     c.execute("ALTER TABLE commission_tables ADD COLUMN regime text NOT NULL DEFAULT 'RES+BTN NEG'")
     c.commit()
     print("  coluna commission_tables.regime adicionada")
+if "is_base" not in cols:
+    c.execute("ALTER TABLE commission_tables ADD COLUMN is_base integer NOT NULL DEFAULT 0")
+    c.commit()
+    print("  coluna commission_tables.is_base adicionada")
 
 emp = [r[1] for r in c.execute("PRAGMA table_info(employees)").fetchall()]
 assert "commission_table_id" in emp, "ERRO: employees.commission_table_id em falta"

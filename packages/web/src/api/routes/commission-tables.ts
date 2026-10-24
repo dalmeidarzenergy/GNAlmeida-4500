@@ -27,6 +27,7 @@ const tableInput = z.object({
   group: z.enum(["gestor-comercial", "team-leader", "coordenador", "gestor-parcerias", "parceiro", "freelancer"]).default("gestor-comercial"),
   regime: z.enum(["RES+BTN NEG", "MEDEM", "SOLAR"]).default("RES+BTN NEG"),
   blockedSales: z.number().min(0).default(0),
+  isBase: z.boolean().default(false),
   clientRows: z.array(rowInput).default([]),
   medemRows: z.array(rowInput).default([]),
   solarRows: z.array(rowInput).default([]),

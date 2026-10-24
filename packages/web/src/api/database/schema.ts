@@ -454,6 +454,8 @@ export const commissionTables = sqliteTable("commission_tables", {
   group: text("group").notNull().default("gestor-comercial"),
   /** Tipo de tabela: RES+BTN NEG | MEDEM | SOLAR. */
   regime: text("regime").notNull().default("RES+BTN NEG"),
+  /** Se esta tabela serve de Tabela Base para chefes de equipa (grupo Parceiro). */
+  isBase: integer("is_base", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
 });
 

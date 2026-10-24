@@ -8,8 +8,6 @@ import {
   clients,
   commissionRows,
   commissionTables,
-  chiefRows,
-  chiefTables,
   employeeTables,
   employees,
   payments,
@@ -365,12 +363,10 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   }
 
   const staff = await db
-    .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId, chiefTableId: employees.chiefTableId })
+    .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId })
     .from(employees);
   const cTables = await db.select().from(commissionTables);
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
-  const kTables = await db.select().from(chiefTables);
-  const kRows = await db.select().from(chiefRows).orderBy(asc(chiefRows.position));
   const assignments = await db.select().from(employeeTables);
   const memberships = await db.select().from(teamMemberships);
   const allTeams = await db.select({ id: teams.id, leaderId: teams.leaderId }).from(teams);
@@ -442,11 +438,33 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   for (const s of staff) {
     const mine = valid.get(s.id) ?? [];
     const cb = chargeback.get(s.id) ?? [];
-    if (!mine.length && !cb.length) continue;
 
     const a = pick(assignments.filter((x) => x.employeeId === s.id && x.kind === "commission" && x.commissionTableId != null));
     const tableId = a?.commissionTableId ?? s.commissionTableId;
     const table = cTables.find((t) => t.id === tableId) ?? null;
+
+    // Tabela Base (chefe de equipa): as vendas dos membros da equipa somam-se às dele
+    // e são comissionadas ao chefe. Com o pisco desligado, as vendas da equipa não contam.
+    const teamMembers: { name: string; luz: number; gas: number }[] = [];
+    if (table?.isBase) {
+      const memberIds = [...teamOfChief(s.id)].filter((id) => id !== s.id);
+      for (const id of memberIds) {
+        const list = valid.get(id) ?? [];
+        const listChb = chargeback.get(id) ?? [];
+        if (!list.length && !listChb.length) continue;
+        mine.push(...list);
+        cb.push(...listChb);
+        const member = staff.find((x) => x.id === id);
+        teamMembers.push({
+          name: member ? member.name : `#${id}`,
+          luz: list.filter((e) => e.energy === "luz").length,
+          gas: list.filter((e) => e.energy === "gas").length,
+        });
+      }
+      teamMembers.sort((x, y) => y.luz + y.gas - (x.luz + x.gas));
+    }
+
+    if (!mine.length && !cb.length) continue;
 
     const base: PersonBlock = {
       employeeId: s.id,
@@ -474,7 +492,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       chargebackLines: [],
       notPaid: (notPaid.get(s.id) ?? []).map((n) => ({ number: n.number, service: serviceLabel(n.service), status: n.status, value: 0 })),
       transit: [],
-      team: [],
+      team: teamMembers,
     };
 
     if (!table) {
@@ -520,94 +538,6 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         const tot = split({ saleId: t.saleId, number: t.number, service: t.service, details: t.details, clientName: null, energy: t.energy }, band).reduce((sum, l) => sum + l.total, 0);
         return { number: t.number, service: energyLabel(t.energy), status: t.status, signedOn: t.signedOn, value: round2(tot) };
       }),
-    });
-  }
-
-  // ---- Chefes de equipa ----
-  for (const s of staff) {
-    const a = pick(assignments.filter((x) => x.employeeId === s.id && x.kind === "chief" && x.chiefTableId != null));
-    const tableId = a?.chiefTableId ?? s.chiefTableId;
-    if (tableId == null) continue;
-    const table = kTables.find((t) => t.id === tableId) ?? null;
-    if (!table) continue;
-
-    const ids = teamOfChief(s.id);
-    const teamSales: Lite[] = [];
-    const teamMembers: { name: string; luz: number; gas: number }[] = [];
-    for (const id of ids) {
-      const list = valid.get(id) ?? [];
-      teamSales.push(...list);
-      const member = staff.find((x) => x.id === id);
-      if (member) {
-        teamMembers.push({
-          name: id === s.id ? `${member.name} (chefe)` : member.name,
-          luz: list.filter((e) => e.energy === "luz").length,
-          gas: list.filter((e) => e.energy === "gas").length,
-        });
-      }
-    }
-    teamMembers.sort((x, y) => y.luz + y.gas - (x.luz + x.gas));
-
-    const bandSales = teamSales.filter((e) => e.energy === "luz").length;
-    const own = valid.get(s.id) ?? [];
-    const ownSales = own.filter((e) => e.energy === "luz").length;
-    if (!bandSales && !ownSales) continue;
-
-    const bands = kRows.filter((r) => r.tableId === table.id && r.kind === "team");
-    const band =
-      bands.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
-      [...bands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
-      null;
-
-    const ownBands = kRows.filter((r) => r.tableId === table.id && r.kind === "own");
-    const ownBand =
-      ownBands.find((b) => ownSales >= (b.min ?? 0) && (b.max == null || ownSales <= b.max)) ??
-      [...ownBands.filter((b) => b.max == null && ownSales >= (b.min ?? 0))].pop() ??
-      null;
-
-    const blocked = table.blockedSales ?? 0;
-    const teamPaid = teamSales.slice(Math.min(blocked, teamSales.length));
-    const resolved = teamPaid.flatMap((e) => split(e, band)).concat(own.flatMap((e) => split(e, ownBand)));
-
-    let cbValue = 0;
-    const cbResolved: Resolved[] = [];
-    for (const id of ids) for (const e of chargeback.get(id) ?? []) cbResolved.push(...split(e, band));
-    for (const e of chargeback.get(s.id) ?? []) cbResolved.push(...split(e, ownBand));
-    cbValue = round2(cbResolved.reduce((sum, e) => sum + e.total, 0));
-
-    const gross = round2(resolved.reduce((sum, e) => sum + e.total, 0));
-    const sum = summarize(resolved, teamPaid.concat(own));
-
-    people.push({
-      employeeId: s.id,
-      employeeName: s.name,
-      role: "Chefe de Equipa",
-      roleKey: "chefe",
-      tableName: table.name,
-      unit: band?.luz ?? 0,
-      bandSales,
-      totalSales: teamPaid.length + own.length,
-      ...sum,
-      gross,
-      chargeback: cbValue,
-      penaltyTiming: 0,
-      penaltyCampaign: 0,
-      kmDeduction: 0,
-      due: round2(gross - cbValue),
-      missingTable: false,
-      lines: resolved.map(toLine),
-      chargebackLines: cbResolved.map(toLine),
-      notPaid: (notPaid.get(s.id) ?? []).map((n) => {
-        const tot = split({ saleId: n.saleId, number: n.number, service: n.service, details: n.details, clientName: null, energy: n.energy }, ownBand ?? band).reduce((sum, l) => sum + l.total, 0);
-        // Baixa e Anulado sao definitivos — nao apresentam valor.
-        const noValue = n.status === "Baixa" || n.status === "Anulado";
-        return { number: n.number, service: energyLabel(n.energy), status: n.status, value: noValue ? 0 : round2(tot) };
-      }),
-      transit: (inTransit.get(s.id) ?? []).map((t) => {
-        const tot = split({ saleId: t.saleId, number: t.number, service: t.service, details: t.details, clientName: null, energy: t.energy }, ownBand ?? band).reduce((sum, l) => sum + l.total, 0);
-        return { number: t.number, service: energyLabel(t.energy), status: t.status, signedOn: t.signedOn, value: round2(tot) };
-      }),
-      team: teamMembers,
     });
   }
 

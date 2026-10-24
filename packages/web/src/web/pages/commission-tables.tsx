@@ -223,6 +223,7 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
   const [description, setDescription] = useState(initial?.description ?? "");
   const [color, setColor] = useState(initial?.color ?? COLORS[0]);
   const [active, setActive] = useState(initial?.active ?? true);
+  const [isBase, setIsBase] = useState(initial?.isBase ?? false);
   const [blockedSales, setBlockedSales] = useState(str(initial?.blockedSales));
   const [kind, setKind] = useState(initial?.regime ?? regime);
   const [medemTab, setMedemTab] = useState<"comercial" | "pontos">("pontos");
@@ -248,6 +249,7 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
           group,
           regime: kind,
           blockedSales: num(blockedSales) ?? 0,
+          isBase,
           clientRows: clientRows.map((r) => ({ kind: "clients" as const, min: num(r.min), max: num(r.max), luz: num(r.luz), gas: num(r.gas), dd: num(r.dd), fe: num(r.fe), pel: num(r.pel) })),
           medemRows: medemRows.map((r) => ({ kind: "medem" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
           solarRows: solarRows.map((r) => ({ kind: "solar" as const, min: num(r.min), max: null, commission: num(r.commission) })),
@@ -288,6 +290,15 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
             Tabela ativa
           </label>
         </Field>
+        {group === "parceiro" && (
+          <Field label="Tabela Base">
+            <label className="flex h-10 items-center gap-2.5 text-[13px]">
+              <input type="checkbox" checked={isBase} onChange={(e) => setIsBase(e.target.checked)} />
+              Tabela Base
+            </label>
+            <p className="mt-1 text-[11.5px] text-ink-3">As vendas dos membros da equipa somam-se às do chefe e são comissionadas com esta tabela.</p>
+          </Field>
+        )}
         <Field label="Bloqueio de vendas (nº)" className="sm:col-span-2">
           <input aria-label="Bloqueio de vendas" className="input num" placeholder="0" value={blockedSales} onChange={(e) => setBlockedSales(e.target.value)} />
           <p className="mt-1.5 text-[11.5px] text-ink-3">
