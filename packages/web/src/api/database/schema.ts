@@ -595,6 +595,8 @@ export const iberdrolaImports = sqliteTable("iberdrola_imports", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   filename: text("filename").notNull(),
   month: text("month").notNull(),
+  /** Caminho relativo do ficheiro original guardado em disco (public/uploads/iberdrola/). */
+  path: text("path"),
   uploadedBy: text("uploaded_by").notNull(),
   createdAt: createdAt(),
 });

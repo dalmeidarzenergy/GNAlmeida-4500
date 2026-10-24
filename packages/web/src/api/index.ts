@@ -8,7 +8,7 @@ import { recruitment } from "./routes/recruitment";
 import { commissionTablesRoute } from "./routes/commission-tables";
 import { chiefTablesRoute } from "./routes/chief-tables";
 import { paymentsRoute } from "./routes/payments";
-import { iberdrolaRoute } from "./routes/iberdrola";
+import { iberdrolaRoute, iberdrolaRoutes } from "./routes/iberdrola";
 import { sales } from "./routes/sales";
 import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
@@ -43,6 +43,7 @@ export type AppRouterClient = RouterClient<AppRouter>;
 const app = createApp(router);
 d2d(app);
 simulador(app);
+iberdrolaRoutes(app);
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 // Simulador Iberdrola — backend routes

@@ -1,10 +1,28 @@
 import { useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check } from "lucide-react";
+import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
 import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola } from "../queries/iberdrola";
-import { readIberdrola } from "../lib/iberdrola-import";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur, fmtEur2, monthLabel, thisMonth } from "../lib/format";
+import { authClient } from "../lib/auth";
+
+/** Descarrega o ficheiro original (com auth via bearer token). */
+async function downloadImport(id: number, filename: string) {
+  const token = authClient.managedAuth.getToken();
+  const res = await fetch(`${window.location.origin}/api/iberdrola/file/${id}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`Erro ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = window.document.createElement("a");
+  a.href = url;
+  a.download = filename || `iberdrola-${id}.xlsx`;
+  window.document.body.appendChild(a);
+  a.click();
+  window.document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 type Tab = "historico" | "finais";
 
@@ -37,18 +55,25 @@ function Historico({ canEdit }: { canEdit: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   const [month, setMonth] = useState(thisMonth());
   const [viewing, setViewing] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<number | null>(null);
 
   async function onFile(f: File | undefined) {
     if (!f) return;
-    setError(null);
     try {
-      const { filename, rows } = await readIberdrola(f);
-      await save.save.mutateAsync({ filename, month, rows });
-    } catch (e) {
-      setError(errMsg(e));
+      await save.save.mutateAsync({ file: f, month });
     } finally {
       if (input.current) input.current.value = "";
+    }
+  }
+
+  async function onDownload(id: number, filename: string) {
+    setDownloading(id);
+    try {
+      await downloadImport(id, filename);
+    } catch (e) {
+      window.alert(`Não foi possível descarregar: ${errMsg(e)}`);
+    } finally {
+      setDownloading(null);
     }
   }
 
@@ -73,7 +98,7 @@ function Historico({ canEdit }: { canEdit: boolean }) {
             </button>
             <input ref={input} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
           </div>
-          {error && <div className="border-t border-line px-5 py-3 text-[12.5px] text-danger">{error}</div>}
+          {save.error && <div className="border-t border-line px-5 py-3 text-[12.5px] text-danger">{save.error}</div>}
         </div>
       )}
 
@@ -102,7 +127,7 @@ function Historico({ canEdit }: { canEdit: boolean }) {
               </thead>
               <tbody>
                 {list.map((r) => (
-                  <Row key={r.id} id={r.id} onOpen={setViewing} filename={r.filename} month={r.month} auto={r.auto} chargback={r.chargback} uploadedBy={r.uploadedBy} createdAt={r.createdAt} canEdit={canEdit} onDelete={() => remove.mutateAsync({ id: r.id })} />
+                  <Row key={r.id} id={r.id} onOpen={setViewing} onDownload={() => onDownload(r.id, r.filename)} downloading={downloading === r.id} filename={r.filename} month={r.month} auto={r.auto} chargback={r.chargback} uploadedBy={r.uploadedBy} createdAt={r.createdAt} canEdit={canEdit} onDelete={() => remove.mutateAsync({ id: r.id })} />
                 ))}
               </tbody>
             </table>
@@ -117,14 +142,20 @@ function Historico({ canEdit }: { canEdit: boolean }) {
   );
 }
 
-function Row(props: { id: number; onOpen: (id: number) => void; filename: string; month: string; auto: number; chargback: number; uploadedBy: string; createdAt: Date; canEdit: boolean; onDelete: () => void }) {
+function Row(props: { id: number; onOpen: (id: number) => void; onDownload: () => void; downloading: boolean; filename: string; month: string; auto: number; chargback: number; uploadedBy: string; createdAt: Date; canEdit: boolean; onDelete: () => void }) {
   const created = props.createdAt instanceof Date ? props.createdAt : new Date(props.createdAt);
   return (
     <tr className="border-b border-line last:border-0">
       <td className="px-5 py-3">
-        <button type="button" className="flex items-center gap-2 font-medium hover:text-volt" onClick={() => props.onOpen(props.id)}>
-          <FileSpreadsheet size={15} className="text-volt" /> {props.filename}
-        </button>
+        <div className="flex items-center gap-1">
+          <button type="button" className="flex items-center gap-2 font-medium hover:text-volt" onClick={props.onDownload}>
+            {props.downloading ? <Loader2 size={15} className="animate-spin text-volt" /> : <Download size={15} className="text-volt" />}
+            {props.filename}
+          </button>
+          <button type="button" className="btn-icon" aria-label="Ver linhas" title="Ver linhas" onClick={() => props.onOpen(props.id)}>
+            <Eye size={14} />
+          </button>
+        </div>
       </td>
       <td className="px-3 py-3 text-ink-2">{monthLabel(props.month)}</td>
       <td className="num px-3 py-3 text-right">{props.auto}</td>
