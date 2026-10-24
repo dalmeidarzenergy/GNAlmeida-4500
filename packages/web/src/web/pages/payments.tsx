@@ -16,7 +16,7 @@ const KINDS = [
 const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? k;
 
 type PayRow = {
-  id: number;
+  id: number | null;
   employeeId: number;
   employeeName: string;
   month: string;
@@ -74,7 +74,8 @@ function PaymentForm({ initial, onClose, defaultMonth }: { initial: PayRow | nul
           notes: notes || null,
         };
         try {
-          await save.save.mutateAsync(initial ? { ...p, id: initial.id } : p);
+          const payload = initial && initial.id ? { ...p, id: initial.id } : p;
+          await save.save.mutateAsync(payload);
           onClose();
         } catch (err) { setError(errMsg(err)); }
       }}
@@ -102,7 +103,7 @@ function PaymentForm({ initial, onClose, defaultMonth }: { initial: PayRow | nul
         pending={save.isPending}
         onCancel={onClose}
         error={error}
-        extra={initial && (<ConfirmDelete pending={remove.isPending} onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onClose(); }} />)}
+        extra={initial && initial.id && (<ConfirmDelete pending={remove.isPending} onConfirm={async () => { if (initial.id) await remove.mutateAsync({ id: initial.id }); onClose(); }} />)}
       />
     </form>
   );
@@ -183,7 +184,7 @@ export default function PaymentsPage() {
   const calc = usePaymentCalc(month);
   const totalDue = calc.data?.totals?.due ?? 0;
 
-  const register = (r: CalcRow) => setEdit({ id: 0, employeeId: r.employeeId, employeeName: r.employeeName, month, kind: r.role === "chefe" ? "chief" : "commission", amount: Number(r.due.toFixed(2)), salesCount: r.sales, paidOn: today(), status: "pago", notes: r.tableName ? `Tabela: ${r.tableName}` : null });
+  const register = (r: CalcRow) => setEdit({ id: null, employeeId: r.employeeId, employeeName: r.employeeName, month, kind: r.role === "chefe" ? "chief" : "commission", amount: Number(r.due.toFixed(2)), salesCount: r.sales, paidOn: today(), status: "pago", notes: r.tableName ? `Tabela: ${r.tableName}` : null });
 
   return (
     <div className="p-5 lg:p-7">
