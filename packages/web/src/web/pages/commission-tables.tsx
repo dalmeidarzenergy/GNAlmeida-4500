@@ -114,6 +114,37 @@ function BandEditor({ title, hint, unit, rows, onChange }: { title: string; hint
   );
 }
 
+/** Tabela Solar: cada quantidade exata de painéis tem o seu preço (não é de X a Y). */
+function SolarEditor({ rows, onChange }: { rows: BandDraft[]; onChange: (r: BandDraft[]) => void }) {
+  const setRow = (i: number, patch: Partial<BandDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = () => onChange([...rows, emptyBand()]);
+  const del = (i: number) => onChange(rows.length === 1 ? [emptyBand()] : rows.filter((_, j) => j !== i));
+  return (
+    <div className="mt-6">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-display text-[14px] font-semibold">Tabela Solar</div>
+          <div className="text-[11.5px] text-ink-3">Preço por quantidade exata de painéis solares (ex.: 2 painéis = 95€, 3 painéis = 125€).</div>
+        </div>
+        <button type="button" className="btn btn-ghost shrink-0" onClick={add}><Plus size={14} /> Escalão</button>
+      </div>
+      <div className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={i} className="grid gap-2 rounded-[10px] border border-line p-3 sm:grid-cols-12">
+            <div className="sm:col-span-5">
+              <input aria-label={`Solar painéis ${i + 1}`} className="input num" placeholder="Nº de painéis" value={r.min} onChange={(e) => setRow(i, { min: e.target.value })} />
+            </div>
+            <div className="sm:col-span-6">
+              <input aria-label={`Solar comissão ${i + 1}`} className="input num" placeholder="Comissão €" value={r.commission} onChange={(e) => setRow(i, { commission: e.target.value })} />
+            </div>
+            <button type="button" aria-label={`Remover escalão solar ${i + 1}`} className="btn-icon sm:col-span-1" onClick={() => del(i)}><Trash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TableForm({ initial, onClose }: { initial: Table | null; onClose: () => void }) {
   const save = useSaveCommissionTable();
   const remove = useRemoveCommissionTable();
@@ -144,7 +175,7 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
           blockedSales: num(blockedSales) ?? 0,
           clientRows: clientRows.map((r) => ({ kind: "clients" as const, min: num(r.min), max: num(r.max), luz: num(r.luz), gas: num(r.gas), dd: num(r.dd), fe: num(r.fe), pel: num(r.pel) })),
           medemRows: medemRows.map((r) => ({ kind: "medem" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
-          solarRows: solarRows.map((r) => ({ kind: "solar" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
+          solarRows: solarRows.map((r) => ({ kind: "solar" as const, min: num(r.min), max: null, commission: num(r.commission) })),
         };
         try {
           if (initial) await save.update.mutateAsync({ ...p, id: initial.id });
@@ -185,7 +216,7 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
 
       <ClientsEditor rows={clientRows} onChange={setClientRows} />
       <BandEditor title="Escalões MEDEM" hint="Faixas por número de pontos." unit="pontos" rows={medemRows} onChange={setMedemRows} />
-      <BandEditor title="Tabela Solar" hint="Faixas por quantidade de painéis solares." unit="painéis" rows={solarRows} onChange={setSolarRows} />
+      <SolarEditor rows={solarRows} onChange={setSolarRows} />
 
       <SubmitRow pending={save.isPending} onCancel={onClose} error={error} extra={initial && <ConfirmDelete pending={remove.isPending} onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onClose(); }} />} />
     </form>
@@ -298,7 +329,7 @@ export default function CommissionTablesPage() {
                 </div>
                 <div>
                   <div className="text-[10.5px] uppercase tracking-wide text-ink-3">Solar</div>
-                  <div className="num text-[13px] font-semibold">{t.solarRows.length} faixas</div>
+                  <div className="num text-[13px] font-semibold">{t.solarRows.length} preços</div>
                 </div>
               </div>
               <div className="mt-3 space-y-1 border-t border-line pt-3 text-[11.5px]">
