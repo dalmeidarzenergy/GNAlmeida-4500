@@ -1,31 +1,34 @@
+import { Suspense, lazy } from "react";
 import { Route, Switch } from "wouter";
 import { Provider } from "./components/provider";
 import { Protected } from "./components/protected";
 import SignInPage from "./pages/sign-in";
 import Dashboard from "./pages/index";
-import EmployeesPage from "./pages/employees";
-import DepartmentsPage from "./pages/departments";
-import TeamsPage from "./pages/teams";
-import AbsencesPage from "./pages/absences";
-import RecruitmentPage from "./pages/recruitment";
-import ClientsPage from "./pages/clients";
-import SalesPage from "./pages/sales";
-import SalesImportPage from "./pages/sales-import";
-import TargetsPage from "./pages/targets";
-import CampaignsPage from "./pages/campaigns";
-import ReportsPage from "./pages/reports";
-import EvolutionPage from "./pages/evolution";
-import ComparisonPage from "./pages/comparison";
-import MedemPage from "./pages/medem";
-import CommissionTablesPage from "./pages/commission-tables";
-import PaymentsPage from "./pages/payments";
-import IberdrolaPage from "./pages/iberdrola";
-import RegrasPage from "./pages/regras";
-import IncentivosPage from "./pages/incentivos";
-import UsersPage from "./pages/users";
-import AgendaPage from "./pages/agenda";
-import D2DPage from "./pages/d2d";
-import SimuladorPage from "./pages/simulador";
+
+/** Páginas carregadas só quando abertas (code-splitting), para o bundle inicial ficar leve. */
+const EmployeesPage = lazy(() => import("./pages/employees"));
+const DepartmentsPage = lazy(() => import("./pages/departments"));
+const TeamsPage = lazy(() => import("./pages/teams"));
+const AbsencesPage = lazy(() => import("./pages/absences"));
+const RecruitmentPage = lazy(() => import("./pages/recruitment"));
+const ClientsPage = lazy(() => import("./pages/clients"));
+const SalesPage = lazy(() => import("./pages/sales"));
+const SalesImportPage = lazy(() => import("./pages/sales-import"));
+const TargetsPage = lazy(() => import("./pages/targets"));
+const CampaignsPage = lazy(() => import("./pages/campaigns"));
+const ReportsPage = lazy(() => import("./pages/reports"));
+const EvolutionPage = lazy(() => import("./pages/evolution"));
+const ComparisonPage = lazy(() => import("./pages/comparison"));
+const MedemPage = lazy(() => import("./pages/medem"));
+const CommissionTablesPage = lazy(() => import("./pages/commission-tables"));
+const PaymentsPage = lazy(() => import("./pages/payments"));
+const IberdrolaPage = lazy(() => import("./pages/iberdrola"));
+const RegrasPage = lazy(() => import("./pages/regras"));
+const IncentivosPage = lazy(() => import("./pages/incentivos"));
+const UsersPage = lazy(() => import("./pages/users"));
+const AgendaPage = lazy(() => import("./pages/agenda"));
+const D2DPage = lazy(() => import("./pages/d2d"));
+const SimuladorPage = lazy(() => import("./pages/simulador"));
 
 const routes: [string, React.ComponentType][] = [
   ["/agenda", AgendaPage],
@@ -62,7 +65,9 @@ function App() {
         {routes.map(([path, C]) => (
           <Route key={path} path={path}>
             <Protected>
-              <C />
+              <Suspense fallback={null}>
+                <C />
+              </Suspense>
             </Protected>
           </Route>
         ))}
