@@ -110,7 +110,13 @@ for col, decl in pay_new.items():
 print("  OK: schema em ordem")
 PY
 
-echo "==> 3/4  A reiniciar o servidor"
+echo "==> 3/5  A compilar o frontend (dist)"
+cd /home/diogo_almeida/GNAlmeida-4500/packages/web
+bun run build
+cd /home/diogo_almeida/GNAlmeida-4500
+echo "  dist atualizado"
+
+echo "==> 4/5  A reiniciar o servidor"
 cd /home/diogo_almeida/GNAlmeida-4500
 if command -v pm2 >/dev/null 2>&1 && pm2 list 2>/dev/null | grep -q web-app; then
   pm2 restart web-app --update-env
@@ -119,8 +125,16 @@ else
   echo "  (sem pm2: o watchdog reinicia o codigo; reinicia o processo a mao se necessario)"
 fi
 
-echo "==> 4/4  Verificacao"
+echo "==> 5/5  Verificacao"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:${PORT:-3000}/funcionarios || echo 000)
 echo "  /funcionarios -> HTTP $CODE"
 echo ""
-echo "Feito. Confirma no CRM: Funcionarios, Tabelas Comissionais e Calculo de comissoes."
+SERVED=$(curl -s http://localhost:${PORT:-3000}/ | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1)
+BUILT=$(ls packages/web/dist/assets/ | grep -E '^index-.*\.js$' | head -1)
+if [ -n "$SERVED" ] && [ "$SERVED" != "$BUILT" ]; then
+  echo "  AVISO: o servidor serve $SERVED mas o dist tem $BUILT — reinicia o servidor a mao."
+else
+  echo "  frontend: $BUILT (servido corretamente)"
+fi
+echo ""
+echo "Feito."
