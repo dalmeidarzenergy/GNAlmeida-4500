@@ -1,13 +1,13 @@
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { authed, requireRoles } from "../middleware/auth";
 import type { Permissions } from "../permissions";
 import { db } from "../database";
 import { account, user, userRoles, employees, session, calendars, calendarEvents, calendarAssignments } from "../database/schema";
 import { ensurePersonalCalendar } from "./agenda";
 import { teamMemberships } from "../database/schema";
+import { writePublic } from "../lib/public-files";
 
 export const me = authed.handler(async ({ context }) => {
   let employee = null;
@@ -99,10 +99,8 @@ export const users = {
       if (!match) throw new ORPCError("BAD_REQUEST", { message: "Formato de imagem inválido." });
       const ext = match[1] === "jpeg" ? "jpeg" : match[1];
       const filename = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
-      const dir = "public/uploads/avatars";
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(`${dir}/${filename}`, Buffer.from(input.content.slice(match[0].length), "base64"));
-      return { url: `/uploads/avatars/${filename}` };
+      const url = writePublic("avatars", filename, Buffer.from(input.content.slice(match[0].length), "base64"));
+      return { url };
     }),
 
   /** Dados pessoais (nome, email, telefone, foto) e reset de palavra-passe. Admin/diretor/backoffice. */

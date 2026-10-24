@@ -5,10 +5,10 @@ import { authed, requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
 import { absences, calendars, chiefTables, commissionTables, departments, employeeTables, employees, positions, teamMemberships, teams, userRoles } from "../database/schema";
 import { localWithPhotos } from "../lib/s3";
-import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { ensureTeamCalendar, syncPersonalCalendarTeam } from "./agenda";
 import { canManage } from "../shared/hierarchy";
 import { BONDS, ETTS } from "../shared/bonds";
+import { writePublic } from "../lib/public-files";
 
 const departmentInput = z.object({
   name: z.string().min(1),
@@ -346,12 +346,10 @@ export const hr = {
         const match = input.content.match(/^data:image\/(jpeg|png|webp);base64,/);
         if (!match) throw new ORPCError("BAD_REQUEST", { message: "Formato de imagem inválido." });
         const ext = match[1] === "jpeg" ? "jpeg" : match[1];
-        const key = `employees/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-        const dir = "public/uploads/employees";
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+        const filename = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
         const base64 = input.content.slice(match[0].length);
-        writeFileSync(`${dir}/${key.replace("employees/", "")}`, Buffer.from(base64, "base64"));
-        return { key };
+        writePublic("employees", filename, Buffer.from(base64, "base64"));
+        return { key: `employees/${filename}` };
       }),
     /** Lista leve (id, nome) para seletores — chefe: só a sua equipa; gestor comercial: só ele próprio. */
     options: authed.handler(async ({ context }) => {

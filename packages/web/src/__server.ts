@@ -1,8 +1,8 @@
 import app from "./api";
+import { PUBLIC_DIR } from "./api/lib/public-files";
 
 const port = Number(process.env.PORT ?? 3000);
 const distDir = `${import.meta.dirname}/../dist`;
-const publicDir = `${import.meta.dirname}/../public`;
 const indexPath = `${distDir}/index.html`;
 
 const server = Bun.serve({
@@ -25,7 +25,7 @@ const server = Bun.serve({
     // public/uploads e nao sao copiados para dist pelo build: servir do repo.
     if (url.pathname.startsWith("/uploads/")) {
       const cleanPath = decodeURIComponent(url.pathname).replace(/^\/+/, "").replaceAll("..", "");
-      const upload = Bun.file(`${publicDir}/${cleanPath}`);
+      const upload = Bun.file(`${PUBLIC_DIR}/${cleanPath}`);
       if (await upload.exists()) {
         return new Response(upload);
       }

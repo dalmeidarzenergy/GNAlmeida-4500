@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
 import { renderAutoPdf } from "../lib/auto-pdf";
+import { writePublic } from "../lib/public-files";
 import {
   clients,
   commissionRows,
@@ -687,12 +687,9 @@ export const paymentsRoute = {
         ? `auto-${slug(people[0].employeeName)}-${b.month}-${stamp}${people.length > 1 ? "-todos" : ""}`
         : `auto-todos-${b.month}-${stamp}`;
       const name = `${base}.pdf`;
-      const key = `autos/${Date.now()}-${crypto.randomUUID()}.pdf`;
-      const dir = "public/uploads/autos";
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      const filename = key.replace("autos/", "");
-      writeFileSync(`${dir}/${filename}`, pdf);
+      const filename = `${Date.now()}-${crypto.randomUUID()}.pdf`;
+      const url = writePublic("autos", filename, pdf);
 
-      return { ok: true as const, url: `/uploads/autos/${encodeURIComponent(filename)}`, name, count: people.length, reason: null };
+      return { ok: true as const, url, name, count: people.length, reason: null };
     }),
 };

@@ -7,7 +7,7 @@ import { campaigns as tbl } from "../database/schema";
 import { SALE_COUNTED, SERVICE_LABELS } from "../shared/client-forms";
 import { deleteObject, localCampaignPdfUrl } from "../lib/s3";
 import { simuladorStore } from "../lib/simulador-store";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { writePublic } from "../lib/public-files";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().optional();
 const input = z.object({
@@ -99,11 +99,9 @@ export const campaigns = {
     .input(z.object({ content: z.string() }))
     .handler(async ({ input }) => {
       if (!input.content.startsWith("data:application/pdf;base64,")) throw new ORPCError("BAD_REQUEST", { message: "Formato inválido." });
-      const key = `campaigns/${Date.now()}-${crypto.randomUUID()}.pdf`;
-      const dir = "public/uploads/campaigns";
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(`${dir}/${key.replace("campaigns/", "")}`, Buffer.from(input.content.slice(28), "base64"));
-      return { key };
+      const filename = `${Date.now()}-${crypto.randomUUID()}.pdf`;
+      writePublic("campaigns", filename, Buffer.from(input.content.slice(28), "base64"));
+      return { key: `campaigns/${filename}` };
     }),
   create: requireEdit("campanhas").input(input).handler(async ({ input }) => {
     const v = clean(input);
