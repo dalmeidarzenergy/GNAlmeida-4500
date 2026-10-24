@@ -75,3 +75,8 @@ packages/mobile/scripts/*
 
 # server logs
 *.log
+
+# SQLite runtime files
+*.db-wal
+*.db-shm
+*.db-journal

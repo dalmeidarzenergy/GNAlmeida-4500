@@ -334,7 +334,8 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
 /** Cálculo de comissões de um mês, por vendedor. */
 function CalcPanel() {
   const [month, setMonth] = useState(today().slice(0, 7));
-  const calc = useCommissionCalc(month);
+  const [open, setOpen] = useState(false);
+  const calc = useCommissionCalc(month, open);
   const rows = calc.data?.sellers ?? [];
   const total = rows.reduce((s, r) => s + r.commission, 0);
 
@@ -345,9 +346,12 @@ function CalcPanel() {
           <div className="font-display text-[15px] font-semibold">Cálculo de comissões</div>
           <div className="text-[11.5px] text-ink-3">Escalão pelas vendas LUZ/Dual BTN em fornecimento no mês (o GÁS não conta para o escalão, mas é pago pelo valor GÁS do escalão atingido). O bloqueio da tabela reduz o nº de vendas pagas.</div>
         </div>
-        <input aria-label="Mês" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <div className="flex items-center gap-2">
+          {open && <input aria-label="Mês" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />}
+          <button type="button" className="btn btn-ghost shrink-0" onClick={() => setOpen((v) => !v)}>{open ? "Fechar" : "Calcular"}</button>
+        </div>
       </div>
-      {calc.isLoading ? (
+      {!open ? null : calc.isLoading ? (
         <div className="p-5"><div className="skeleton h-24 rounded-[12px]" /></div>
       ) : !rows.length ? (
         <Empty title="Sem vendas neste mês" text="Nenhum vendedor tem vendas LUZ/Dual BTN em fornecimento neste mês." />
