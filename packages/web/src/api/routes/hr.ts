@@ -426,16 +426,16 @@ export const hr = {
       .handler(async ({ input }) => {
         if (input.endDate && input.endDate < input.startDate) throw new ORPCError("BAD_REQUEST", { message: "A data de fim não pode ser anterior à data de início." });
 
-        // Todas as tabelas do funcionário têm de ser do grupo da sua categoria comercial.
         if (input.kind === "commission") {
           const [emp] = await db.select({ category: employees.category }).from(employees).where(eq(employees.id, input.employeeId));
-          const category = emp?.category ?? null;
+          const dbCat = emp?.category ?? null;
           const [table] = await db.select({ group: commissionTables.group, name: commissionTables.name }).from(commissionTables).where(eq(commissionTables.id, input.tableId));
-          if (table && category && table.group !== category) {
-            throw new ORPCError("BAD_REQUEST", { message: `A tabela "${table.name}" é do grupo ${table.group}, mas a categoria comercial deste funcionário é ${category}. Todas as tabelas têm de ser do mesmo grupo.` });
-          }
-          if (table && !category) {
-            throw new ORPCError("BAD_REQUEST", { message: "Define primeiro a categoria comercial do funcionário na ficha dele." });
+          if (!table) throw new ORPCError("BAD_REQUEST", { message: "Tabela não encontrada." });
+          // Se o funcionário ainda não tem categoria, assume a da tabela automaticamente.
+          if (!dbCat) {
+            await db.update(employees).set({ category: table.group }).where(eq(employees.id, input.employeeId));
+          } else if (table.group !== dbCat) {
+            throw new ORPCError("BAD_REQUEST", { message: `A tabela "${table.name}" é do grupo ${table.group}, mas a categoria comercial deste funcionário é ${dbCat}. Todas as tabelas têm de ser do mesmo grupo.` });
           }
         }
 

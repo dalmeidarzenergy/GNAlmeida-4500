@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useEmployeeTables, useRemoveEmployeeTable, useSaveEmployeeTable } from "../queries/employee-tables";
-import { Field, Pill } from "./ui/kit";
+import { Field } from "./ui/kit";
 import { COMMISSION_GROUP_LABEL, type CommissionGroup } from "../../api/shared/commission-groups";
 import { errMsg, fmtDate, today } from "../lib/format";
 
 type Option = { id: number; name: string };
 
-const blankRow = () => ({ id: undefined as number | undefined, kind: "commission" as "commission" | "chief", tableId: "", startDate: today(), endDate: "" });
+const blankRow = () => ({ id: undefined as number | undefined, tableId: "", startDate: today(), endDate: "" });
 
 /** Histórico de tabelas atribuídas ao funcionário, com datas de vigência. */
-export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptions, category = null }: { employeeId: number | null; commissionOptions: Option[]; chiefOptions: Option[]; category?: string | null }) {
+export function EmployeeTableHistory({ employeeId, commissionOptions, category = null }: { employeeId: number | null; commissionOptions: Option[]; category?: string | null }) {
   const list = useEmployeeTables(employeeId);
   const save = useSaveEmployeeTable(employeeId);
   const remove = useRemoveEmployeeTable(employeeId);
@@ -18,7 +18,7 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
   const [error, setError] = useState<string | null>(null);
 
   const rows = list.data ?? [];
-  const options = draft?.kind === "chief" ? chiefOptions : commissionOptions;
+  const options = commissionOptions;
 
   if (employeeId == null) {
     return (
@@ -51,7 +51,6 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
           <table className="w-full min-w-[620px] border-collapse text-[12.5px]">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3">
-                <th className="px-2 pb-2 font-medium">Tipo</th>
                 <th className="px-2 pb-2 font-medium">Tabela</th>
                 <th className="px-2 pb-2 font-medium">De</th>
                 <th className="px-2 pb-2 font-medium">Até</th>
@@ -61,7 +60,6 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-t border-line">
-                  <td className="px-2 py-2"><Pill tone={r.kind === "chief" ? "amber" : "sky"}>{r.kind === "chief" ? "Chefe" : "Vendedor"}</Pill></td>
                   <td className="px-2 py-2 font-medium">{r.tableName ?? <span className="text-danger">tabela apagada</span>}</td>
                   <td className="num px-2 py-2">{fmtDate(r.startDate)}</td>
                   <td className="num px-2 py-2">{r.endDate ? fmtDate(r.endDate) : <span className="text-ink-3">em vigor</span>}</td>
@@ -76,8 +74,7 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
                           setError(null);
                           setDraft({
                             id: r.id,
-                            kind: r.kind,
-                            tableId: String(r.kind === "chief" ? r.chiefTableId ?? "" : r.commissionTableId ?? ""),
+                            tableId: String(r.commissionTableId ?? ""),
                             startDate: r.startDate,
                             endDate: r.endDate ?? "",
                           });
@@ -105,13 +102,7 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
 
       {draft !== null && (
         <div className="mt-3 rounded-[12px] border border-line bg-bg p-3">
-          <div className="grid gap-3 sm:grid-cols-4">
-            <Field label="Tipo">
-              <select aria-label="Tipo de tabela" className="input" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as "commission" | "chief", tableId: "" })}>
-                <option value="commission">Tabela comisional (vendedor)</option>
-                <option value="chief">Escalão de chefe de equipa</option>
-              </select>
-            </Field>
+          <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Tabela">
               <select aria-label="Tabela do período" className="input" value={draft.tableId} onChange={(e) => setDraft({ ...draft, tableId: e.target.value })}>
                 <option value="">— Escolher —</option>
@@ -139,7 +130,7 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
                   await save.mutateAsync({
                     id: draft.id,
                     employeeId,
-                    kind: draft.kind,
+                    kind: "commission" as const,
                     tableId: Number(draft.tableId),
                     startDate: draft.startDate,
                     endDate: draft.endDate || null,

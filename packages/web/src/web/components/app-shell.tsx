@@ -24,7 +24,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/ausencias", key: "ausencias", label: "Férias e ausências", icon: CalendarDays },
       { to: "/recrutamento", key: "recrutamento", label: "Recrutamento", icon: UserSearch },
       { to: "/tabelas-comissionais", key: "tabelas-comissionais", label: "Tabelas Comissionais", icon: Table },
-      { to: "/chefes-equipa", key: "chefes-equipa", label: "Escalões de Chefe de Equipa", icon: UsersRound },
     ],
   },
   {

@@ -6,7 +6,6 @@ import { OrgChart } from "../components/org-chart";
 import { TeamFilter, useTeamIds } from "../components/team-filter";
 import { useDepartments, useEmployees, usePositions, useRemoveEmployee, useSaveEmployee } from "../queries/hr";
 import { useCommissionTables } from "../queries/commission-tables";
-import { useChiefTables } from "../queries/chief-tables";
 import { PageHeader, Pill, Avatar, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, ConfirmDelete } from "../components/ui/kit";
 import { EmployeeTableHistory } from "../components/employee-tables";
 import { EMP_STATUS } from "../lib/labels";
@@ -19,7 +18,7 @@ type Emp = NonNullable<ReturnType<typeof useEmployees>["data"]>[number];
 const blank = {
   name: "", email: "", phone: "", nif: "", photoKey: null as string | null, departmentId: null as number | null, positionId: null as number | null, managerId: null as number | null,
   hireDate: today(), terminationDate: "" as string, salary: 0, status: "ativo" as "ativo" | "pendente" | "suspenso" | "blacklist" | "inativo", commissionRate: 0,
-  commissionTableId: null as number | null, chiefTableId: null as number | null, category: null as string | null, ett: "" as string, bond: "" as string,
+  commissionTableId: null as number | null, category: null as string | null, ett: "" as string, bond: "" as string,
 };
 
 /** Recorta ao centro (quadrado) e reduz para 512px em JPEG, para fotos leves. */
@@ -78,7 +77,6 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
   const depts = useDepartments();
   const positions = usePositions();
   const comTables = useCommissionTables();
-  const chiefTables = useChiefTables();
   const save = useSaveEmployee();
   const remove = useRemoveEmployee();
   const [f, setF] = useState(() => (initial ? { ...blank, ...initial, ett: initial.ett ?? "", bond: initial.bond ?? "", phone: initial.phone ?? "", nif: initial.nif ?? "", terminationDate: initial.terminationDate ?? "", status: initial.status as typeof blank.status } : blank));
@@ -137,7 +135,7 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
     const payload = {
       name: f.name, email: f.email, phone: f.phone || null, nif: f.nif || null, photoKey: f.photoKey ?? null, departmentId: f.departmentId, positionId: f.positionId, managerId: f.managerId,
       hireDate: f.hireDate, terminationDate: f.status === "inativo" ? f.terminationDate : null, salary: Number(f.salary), status: f.status, commissionRate: Number(f.commissionRate),
-      commissionTableId: f.commissionTableId, chiefTableId: f.chiefTableId, ett: f.ett || null, bond: f.bond || null,
+      commissionTableId: f.commissionTableId, ett: f.ett || null, bond: f.bond || null,
     };
     try {
       if (initial) await save.update.mutateAsync({ ...payload, id: initial.id });
@@ -257,18 +255,9 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
             {f.category ? "Só aparecem tabelas do grupo " + (COMMISSION_GROUP_LABEL[f.category] ?? f.category) + "." : "Escolhe primeiro a categoria comercial para ver as tabelas do grupo."}
           </p>
         </Field>
-        <Field label="Escalão de chefe de equipa" className="sm:col-span-2">
-          <select aria-label="Escalão de chefe de equipa" className="input" value={f.chiefTableId ?? ""} onChange={(e) => set("chiefTableId", e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— Sem escalão de chefe —</option>
-            {(chiefTables.data ?? []).filter((t) => t.active).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          <p className="mt-1.5 text-[11.5px] text-ink-3">Escalão de remuneração de chefe de equipa (independente da tabela comisional de vendedor).</p>
-        </Field>
-
         <EmployeeTableHistory
           employeeId={initial?.id ?? null}
           commissionOptions={commissionOptions}
-          chiefOptions={(chiefTables.data ?? []).map((t) => ({ id: t.id, name: t.name }))}
           category={f.category ?? null}
         />
       </div>

@@ -18,7 +18,6 @@ import EvolutionPage from "./pages/evolution";
 import ComparisonPage from "./pages/comparison";
 import MedemPage from "./pages/medem";
 import CommissionTablesPage from "./pages/commission-tables";
-import ChiefTablesPage from "./pages/chief-tables";
 import PaymentsPage from "./pages/payments";
 import IberdrolaPage from "./pages/iberdrola";
 import RegrasPage from "./pages/regras";
@@ -36,7 +35,6 @@ const routes: [string, React.ComponentType][] = [
   ["/ausencias", AbsencesPage],
   ["/recrutamento", RecruitmentPage],
   ["/tabelas-comissionais", CommissionTablesPage],
-  ["/chefes-equipa", ChiefTablesPage],
   ["/pagamentos", PaymentsPage],
   ["/auto-iberdrola", IberdrolaPage],
   ["/regras", RegrasPage],
