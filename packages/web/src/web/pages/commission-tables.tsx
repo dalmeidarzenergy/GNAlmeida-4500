@@ -56,6 +56,55 @@ function SubTabs<T extends string>({ value, onChange, items }: { value: T; onCha
   );
 }
 
+/** Escalões de comissão de NEGÓCIO (MEDEM): faixa de clientes → € por ponto, sem luz/gás/dd/fe/pel. */
+function BusinessEditor({ rows, onChange }: { rows: BandDraft[]; onChange: (r: BandDraft[]) => void }) {
+  const setRow = (i: number, patch: Partial<BandDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const add = () => onChange([...rows, emptyBand()]);
+  const del = (i: number) => onChange(rows.length === 1 ? [emptyBand()] : rows.filter((_, j) => j !== i));
+  return (
+    <div className="mt-6">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <div className="font-display text-[14px] font-semibold">Escalões por nº de clientes (negócio)</div>
+          <div className="text-[11.5px] text-ink-3">Comissão de negócio por ponto, conforme os clientes angariados no mês. Sem valores de Luz, Gás, DD, FE ou PEL.</div>
+        </div>
+        <button type="button" className="btn btn-ghost shrink-0" onClick={add}><Plus size={14} /> Escalão</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[660px] border-collapse text-[12.5px]">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3">
+              <th className="px-2 pb-2 font-medium">De</th>
+              <th className="px-2 pb-2 font-medium">Até</th>
+              <th className="px-2 pb-2 font-medium">Comissão Negócio €/Ponto</th>
+              <th className="w-10 pb-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t border-line">
+                <td className="px-1 py-2 align-top">
+                  <input aria-label={`Negócio mínimo ${i + 1}`} className="input num" placeholder="0" value={r.min} onChange={(e) => setRow(i, { min: e.target.value })} />
+                </td>
+                <td className="px-1 py-2 align-top">
+                  <input aria-label={`Negócio máximo ${i + 1}`} className="input num" placeholder="sem limite" value={r.max} onChange={(e) => setRow(i, { max: e.target.value })} />
+                </td>
+                <td className="px-1 py-2 align-top">
+                  <input aria-label={`Comissão negócio ${i + 1}`} className="input num" placeholder="€/ponto" value={r.commission} onChange={(e) => setRow(i, { commission: e.target.value })} />
+                </td>
+                <td className="px-1 py-2 align-top">
+                  <button type="button" aria-label={`Remover escalão negócio ${i + 1}`} className="btn-icon" onClick={() => del(i)}><Trash2 size={14} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11.5px] text-ink-3">Deixa o "Até" vazio no último escalão.</p>
+    </div>
+  );
+}
+
 /** Escalões por nº de clientes (mensal) → LUZ / GÁS / DD / FE / PEL. */
 function ClientsEditor({ rows, onChange }: { rows: ClientDraft[]; onChange: (r: ClientDraft[]) => void }) {
   const setRow = (i: number, patch: Partial<ClientDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -262,9 +311,9 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
             <div className="font-display text-[14px] font-semibold">Escalões MEDEM</div>
             <div className="text-[11.5px] text-ink-3">Esta tabela tem duas partes. Escolhe qual queres preencher.</div>
           </div>
-          <SubTabs value={medemTab} onChange={setMedemTab} items={[{ key: "comercial", label: "Escalões de comercial (RES+BTN NEG)" }, { key: "pontos", label: "Escalões por pontos" }]} />
-          {medemTab === "comercial" ? (
-            <ClientsEditor rows={clientRows} onChange={setClientRows} />
+          <SubTabs value={medemTab} onChange={setMedemTab} items={[{ key: "negocio", label: "Escalões de negócio (€/ponto)" }, { key: "pontos", label: "Escalões por pontos" }]} />
+          {medemTab === "negocio" ? (
+            <BusinessEditor rows={medemRows} onChange={setMedemRows} />
           ) : (
             <BandEditor title="Escalões por pontos" hint="Faixas por número de pontos." unit="pontos" rows={medemRows} onChange={setMedemRows} />
           )}
