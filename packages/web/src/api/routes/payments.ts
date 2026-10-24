@@ -306,8 +306,13 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         continue;
       }
 
-      // Tudo o resto: nao vem a pagamento.
-      if (!suppliedOn || suppliedOn < from || suppliedOn > to || firstBaixa || manual) {
+      // Tudo o resto: nao vem a pagamento. Apenas vendas cujo fornecimento e
+      // ate este mes — vendas de meses anteriores ou do proprio mes. Vendas
+      // futuras (fornecimento depois deste mes) nao aparecem aqui.
+      if (
+        (!suppliedOn && !!firstBaixa) ||
+        (suppliedOn && suppliedOn <= to && (firstBaixa || manual))
+      ) {
         const l = notPaid.get(e.sellerId) ?? [];
         const st = statusLabel(firstBaixa ? "Baixa" : e.manual[k].length ? "Manual" : "");
         l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st, energy: k });
