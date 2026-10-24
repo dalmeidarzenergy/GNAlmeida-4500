@@ -8,6 +8,7 @@ import { localWithPhotos } from "../lib/s3";
 import { ensureTeamCalendar, syncPersonalCalendarTeam } from "./agenda";
 import { canManage } from "../shared/hierarchy";
 import { BONDS, ETTS } from "../shared/bonds";
+import { COMMISSION_GROUPS } from "../shared/commission-groups";
 import { writePublic } from "../lib/public-files";
 
 const departmentInput = z.object({
@@ -50,6 +51,8 @@ const employeeInput = z.object({
   commissionRate: z.number().min(0).max(100).default(0),
   commissionTableId: z.number().nullable().optional(),
   chiefTableId: z.number().nullable().optional(),
+  /** Categoria comercial; define de que grupo podem ser as tabelas atribuídas. */
+  category: z.enum(COMMISSION_GROUPS).nullable().optional(),
   vacationDays: z.number().int().min(0).default(22),
   /** ETT (empresa de trabalho temporário) e tipo de vínculo; as opções de vínculo vêm do cargo. */
   ett: z.enum(ETTS as [string, ...string[]]).nullable().optional(),
@@ -321,6 +324,7 @@ export const hr = {
           commissionRate: employees.commissionRate,
           commissionTableId: employees.commissionTableId,
           commissionTableName: sql<string | null>`(select ct.name from commission_tables ct where ct.id = ${employees.commissionTableId})`,
+          category: employees.category,
           chiefTableId: employees.chiefTableId,
           chiefTableName: sql<string | null>`(select ch.name from chief_tables ch where ch.id = ${employees.chiefTableId})`,
           vacationDays: employees.vacationDays,
@@ -427,6 +431,20 @@ export const hr = {
       )
       .handler(async ({ input }) => {
         if (input.endDate && input.endDate < input.startDate) throw new ORPCError("BAD_REQUEST", { message: "A data de fim não pode ser anterior à data de início." });
+
+        // Todas as tabelas do funcionário têm de ser do grupo da sua categoria comercial.
+        if (input.kind === "commission") {
+          const [emp] = await db.select({ category: employees.category }).from(employees).where(eq(employees.id, input.employeeId));
+          const category = emp?.category ?? null;
+          const [table] = await db.select({ group: commissionTables.group, name: commissionTables.name }).from(commissionTables).where(eq(commissionTables.id, input.tableId));
+          if (table && category && table.group !== category) {
+            throw new ORPCError("BAD_REQUEST", { message: `A tabela "${table.name}" é do grupo ${table.group}, mas a categoria comercial deste funcionário é ${category}. Todas as tabelas têm de ser do mesmo grupo.` });
+          }
+          if (table && !category) {
+            throw new ORPCError("BAD_REQUEST", { message: "Define primeiro a categoria comercial do funcionário na ficha dele." });
+          }
+        }
+
         const values = {
           employeeId: input.employeeId,
           kind: input.kind,

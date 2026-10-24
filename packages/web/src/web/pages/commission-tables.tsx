@@ -2,20 +2,13 @@ import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useCommissionCalc, useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
 import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill, Tabs } from "../components/ui/kit";
+import { COMMISSION_GROUP_OPTIONS, type CommissionGroup } from "../../api/shared/commission-groups";
 import { errMsg, fmtEur, today } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useCommissionTables>["data"]>[number];
 
-/** Grupos comerciais. Cada tabela comisional pertence a um destes grupos. */
-type GroupKey = "gestor-comercial" | "team-leader" | "coordenador" | "gestor-parcerias" | "parceiro" | "freelancer";
-const GROUPS: { key: GroupKey; label: string }[] = [
-  { key: "gestor-comercial", label: "Gestor Comercial" },
-  { key: "team-leader", label: "Team Leader" },
-  { key: "coordenador", label: "Coordenador" },
-  { key: "gestor-parcerias", label: "Gestor de Parcerias" },
-  { key: "parceiro", label: "Parceiro" },
-  { key: "freelancer", label: "Free Lancer" },
-];
+type GroupKey = CommissionGroup;
+const GROUPS = COMMISSION_GROUP_OPTIONS;
 
 type ClientDraft = { min: string; max: string; luz: string; gas: string; dd: string; fe: string; pel: string };
 type BandDraft = { min: string; max: string; commission: string };

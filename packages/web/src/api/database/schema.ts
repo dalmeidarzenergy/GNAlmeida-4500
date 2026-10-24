@@ -59,6 +59,9 @@ export const employees = sqliteTable("employees", {
   commissionRate: real("commission_rate").notNull().default(0),
   /** Tabela comisional aplicada a este funcionário. */
   commissionTableId: integer("commission_table_id").references(() => commissionTables.id, { onDelete: "set null" }),
+  /** Categoria comercial: gestor-comercial | team-leader | coordenador | gestor-parcerias | parceiro | freelancer.
+   *  As tabelas atribuídas têm de ser todas do mesmo grupo que esta categoria. */
+  category: text("category"),
   /** Escalão de chefe de equipa aplicado a este funcionário (só para chefes). */
   chiefTableId: integer("chief_table_id").references(() => chiefTables.id, { onDelete: "set null" }),
   vacationDays: integer("vacation_days").notNull().default(22),

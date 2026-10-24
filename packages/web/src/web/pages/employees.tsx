@@ -11,6 +11,7 @@ import { PageHeader, Pill, Avatar, Modal, Field, SubmitRow, SearchBox, Empty, Ta
 import { EmployeeTableHistory } from "../components/employee-tables";
 import { EMP_STATUS } from "../lib/labels";
 import { ETTS } from "../../api/shared/bonds";
+import { COMMISSION_GROUP_LABEL, COMMISSION_GROUP_OPTIONS } from "../../api/shared/commission-groups";
 import { errMsg, fmtDate, fmtEur, tenure, today } from "../lib/format";
 
 type Emp = NonNullable<ReturnType<typeof useEmployees>["data"]>[number];
@@ -18,7 +19,7 @@ type Emp = NonNullable<ReturnType<typeof useEmployees>["data"]>[number];
 const blank = {
   name: "", email: "", phone: "", nif: "", photoKey: null as string | null, departmentId: null as number | null, positionId: null as number | null, managerId: null as number | null,
   hireDate: today(), terminationDate: "" as string, salary: 0, status: "ativo" as "ativo" | "pendente" | "suspenso" | "blacklist" | "inativo", isSeller: false, commissionRate: 0, vacationDays: 22,
-  commissionTableId: null as number | null, chiefTableId: null as number | null, ett: "" as string, bond: "" as string,
+  commissionTableId: null as number | null, chiefTableId: null as number | null, category: null as string | null, ett: "" as string, bond: "" as string,
 };
 
 /** Recorta ao centro (quadrado) e reduz para 512px em JPEG, para fotos leves. */
@@ -95,6 +96,8 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
   const allowedBonds = (selectedPos?.bondTypes ?? []) as string[];
   const canBeTop = !top;
 
+  const principalOptions = (comTables.data ?? []).filter((t) => t.active && (!f.category || t.group === f.category));
+  const commissionOptions = (comTables.data ?? []).filter((t) => !f.category || t.group === f.category).map((t) => ({ id: t.id, name: t.name }));
   const pickPhoto = async (file: File) => {
     if (!file.type.startsWith("image/")) return setError("Escolha um ficheiro de imagem.");
     setError(null);
@@ -248,13 +251,24 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
           </label>
         </div>
         {f.isSeller && (
-          <Field label="Tabela comisional principal" className="sm:col-span-2">
-            <select aria-label="Tabela comisional principal" className="input" value={f.commissionTableId ?? ""} onChange={(e) => set("commissionTableId", e.target.value ? Number(e.target.value) : null)}>
-              <option value="">— Sem tabela —</option>
-              {(comTables.data ?? []).filter((t) => t.active).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-            <p className="mt-1.5 text-[11.5px] text-ink-3">Tabela de comissões usada quando não houver nenhum período registado abaixo. Podes atribuir mais do que uma tabela no histórico.</p>
-          </Field>
+          <>
+            <Field label="Categoria comercial" className="sm:col-span-2">
+              <select aria-label="Categoria comercial" className="input" value={f.category ?? ""} onChange={(e) => set("category", (e.target.value || null) as typeof f.category)}>
+                <option value="">— Escolher categoria —</option>
+                {COMMISSION_GROUP_OPTIONS.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+              </select>
+              <p className="mt-1.5 text-[11.5px] text-ink-3">Define de que grupo podem ser as tabelas atribuídas. Só pode ter tabelas deste grupo.</p>
+            </Field>
+            <Field label="Tabela comisional principal" className="sm:col-span-2">
+              <select aria-label="Tabela comisional principal" className="input" value={f.commissionTableId ?? ""} onChange={(e) => set("commissionTableId", e.target.value ? Number(e.target.value) : null)}>
+                <option value="">— Sem tabela —</option>
+                {principalOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <p className="mt-1.5 text-[11.5px] text-ink-3">
+                {f.category ? "Só aparecem tabelas do grupo " + (COMMISSION_GROUP_LABEL[f.category] ?? f.category) + "." : "Escolhe primeiro a categoria comercial para ver as tabelas do grupo."}
+              </p>
+            </Field>
+          </>
         )}
         <Field label="Escalão de chefe de equipa" className="sm:col-span-2">
           <select aria-label="Escalão de chefe de equipa" className="input" value={f.chiefTableId ?? ""} onChange={(e) => set("chiefTableId", e.target.value ? Number(e.target.value) : null)}>
@@ -266,8 +280,9 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
 
         <EmployeeTableHistory
           employeeId={initial?.id ?? null}
-          commissionOptions={(comTables.data ?? []).map((t) => ({ id: t.id, name: t.name }))}
+          commissionOptions={commissionOptions}
           chiefOptions={(chiefTables.data ?? []).map((t) => ({ id: t.id, name: t.name }))}
+          category={f.category ?? null}
         />
       </div>
       <SubmitRow

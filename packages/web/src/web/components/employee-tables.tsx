@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { useEmployeeTables, useRemoveEmployeeTable, useSaveEmployeeTable } from "../queries/employee-tables";
 import { Field, Pill } from "./ui/kit";
+import { COMMISSION_GROUP_LABEL, type CommissionGroup } from "../../api/shared/commission-groups";
 import { errMsg, fmtDate, today } from "../lib/format";
 
 type Option = { id: number; name: string };
@@ -9,7 +10,7 @@ type Option = { id: number; name: string };
 const blankRow = () => ({ kind: "commission" as "commission" | "chief", tableId: "", startDate: today(), endDate: "" });
 
 /** Histórico de tabelas atribuídas ao funcionário, com datas de vigência. */
-export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptions }: { employeeId: number | null; commissionOptions: Option[]; chiefOptions: Option[] }) {
+export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptions, category = null }: { employeeId: number | null; commissionOptions: Option[]; chiefOptions: Option[]; category?: string | null }) {
   const list = useEmployeeTables(employeeId);
   const save = useSaveEmployeeTable(employeeId);
   const remove = useRemoveEmployeeTable(employeeId);
@@ -35,10 +36,11 @@ export function EmployeeTableHistory({ employeeId, commissionOptions, chiefOptio
           <div className="font-display text-[14px] font-semibold">Histórico de tabelas (vigência por datas)</div>
           <p className="mt-1.5 text-[11.5px] text-ink-3">
             Registe que tabela estava em vigor em cada período. O cálculo de um mês usa a tabela vigente nesse mês; sem histórico, usa a tabela atual indicada acima.
+            {category ? <> Só pode acrescentar tabelas do grupo <span className="text-ink">{COMMISSION_GROUP_LABEL[category as CommissionGroup] ?? category}</span>.</> : " Define primeiro a categoria comercial na ficha para poder acrescentar tabelas."}
           </p>
         </div>
         {draft === null && (
-          <button type="button" className="btn btn-ghost shrink-0" onClick={() => { setError(null); setDraft(blankRow()); }}>
+          <button type="button" className="btn btn-ghost shrink-0" disabled={!category} title={category ? undefined : "Define primeiro a categoria comercial do funcionario"} onClick={() => { setError(null); setDraft(blankRow()); }}>
             <Plus size={14} /> Período
           </button>
         )}
