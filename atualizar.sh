@@ -11,48 +11,66 @@ git fetch origin && git reset --hard origin/main
 echo "==> 2/4  A sincronizar a base de dados"
 cd packages/web
 
-# Tabelas commission_* estao vazias: apagamos para evitar o prompt interativo do drizzle-kit.
-python3 - <<'PY'
+# CÓPIA DE SEGURANÇA antes de qualquer alteração (nunca apagar dados do utilizador).
+python3 <<'PY'
+import sqlite3, shutil, os, time
+src = "src/data.db"
+if os.path.exists(src):
+    bak = src + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
+    shutil.copy2(src, bak)
+    print("  copia de seguranca: " + bak)
+PY
+
+# Só apagamos tabelas commission_*/chief_*/employee_tables se estiverem VAZIAS.
+# Se tiverem dados, mantemo-las e o drizzle-kit só acrescenta colunas em falta (não apaga nada).
+python3 <<'PY'
 import sqlite3
 c = sqlite3.connect("src/data.db")
 for t in ("commission_rows", "commission_tables", "chief_rows", "chief_tables", "employee_tables"):
-    c.execute(f"DROP TABLE IF EXISTS {t}")
+    n = 0
+    try:
+        n = c.execute("select count(*) from " + t).fetchone()[0]
+    except Exception:
+        pass
+    if n == 0:
+        c.execute("DROP TABLE IF EXISTS " + t)
+        c.commit()
+        print("  tabela " + t + " removida (vazia)")
+    else:
+        print("  tabela " + t + " mantida (" + str(n) + " registos)")
 c.commit()
-print("  tabelas commission_* e chief_* removidas (vazias)")
+PY
 
-# Colunas antigas retiradas do schema (is_seller, vacation_days): removemos antes do push
+# Colunas antigas retiradas do schema (is_seller, vacation_days): remove-se antes do push
 # para o drizzle-kit nao pedir confirmacao interativa.
+python3 <<'PY'
+import sqlite3
+c = sqlite3.connect("src/data.db")
 empcols = [r[1] for r in c.execute("PRAGMA table_info(employees)").fetchall()]
 for col in ("is_seller", "vacation_days"):
     if col in empcols:
-        c.execute(f"ALTER TABLE employees DROP COLUMN {col}")
+        c.execute("ALTER TABLE employees DROP COLUMN " + col)
         c.commit()
-        print(f"  coluna employees.{col} removida")
+        print("  coluna employees." + col + " removida")
 PY
 
 bun --env-file=../../.env drizzle-kit push
 
 # Colunas novas adicionadas depois (idempotente).
-python3 - <<'PY'
+python3 <<'PY'
 import sqlite3
 c = sqlite3.connect("src/data.db")
 cols = [r[1] for r in c.execute("PRAGMA table_info(commission_tables)").fetchall()]
-if "blocked_sales" not in cols:
-    c.execute("ALTER TABLE commission_tables ADD COLUMN blocked_sales real NOT NULL DEFAULT 0")
-    c.commit()
-    print("  coluna blocked_sales adicionada")
-if "group" not in cols:
-    c.execute("ALTER TABLE commission_tables ADD COLUMN \"group\" text NOT NULL DEFAULT 'gestor-comercial'")
-    c.commit()
-    print("  coluna commission_tables.group adicionada")
-if "regime" not in cols:
-    c.execute("ALTER TABLE commission_tables ADD COLUMN regime text NOT NULL DEFAULT 'RES+BTN NEG'")
-    c.commit()
-    print("  coluna commission_tables.regime adicionada")
-if "is_base" not in cols:
-    c.execute("ALTER TABLE commission_tables ADD COLUMN is_base integer NOT NULL DEFAULT 0")
-    c.commit()
-    print("  coluna commission_tables.is_base adicionada")
+for col, decl in {
+    "blocked_sales": "real NOT NULL DEFAULT 0",
+    "group": "text NOT NULL DEFAULT 'gestor-comercial'",
+    "regime": "text NOT NULL DEFAULT 'RES+BTN NEG'",
+    "is_base": "integer NOT NULL DEFAULT 0",
+}.items():
+    if col not in cols:
+        c.execute("ALTER TABLE commission_tables ADD COLUMN " + col + " " + decl)
+        c.commit()
+        print("  coluna commission_tables." + col + " adicionada")
 
 emp = [r[1] for r in c.execute("PRAGMA table_info(employees)").fetchall()]
 assert "commission_table_id" in emp, "ERRO: employees.commission_table_id em falta"
@@ -86,9 +104,9 @@ pay_new = {
 }
 for col, decl in pay_new.items():
     if col not in pay:
-        c.execute(f"ALTER TABLE payments ADD COLUMN {col} {decl}")
+        c.execute("ALTER TABLE payments ADD COLUMN " + col + " " + decl)
         c.commit()
-        print(f"  coluna payments.{col} adicionada")
+        print("  coluna payments." + col + " adicionada")
 print("  OK: schema em ordem")
 PY
 
@@ -105,4 +123,4 @@ echo "==> 4/4  Verificacao"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:${PORT:-3000}/funcionarios || echo 000)
 echo "  /funcionarios -> HTTP $CODE"
 echo ""
-echo "Feito. Confirma no CRM: Funcionarios, Tabelas Comissionais, Escaloes de Chefe de Equipa e Calculo de comissoes."
+echo "Feito. Confirma no CRM: Funcionarios, Tabelas Comissionais e Calculo de comissoes."
