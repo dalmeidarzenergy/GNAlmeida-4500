@@ -22,9 +22,6 @@ import { effectivePermissions, type Permissions } from "../permissions";
 
 export const UPLOAD_DIR = join(PUBLIC_DIR, "uploads", "iberdrola");
 
-/** Valor pago por cada serviço adicional aderido na venda. */
-export const SERVICE_PRICE = { dd: 5, fe: 7.5, mgi: 8.5 } as const;
-
 const month = z.string().regex(/^\d{4}-\d{2}$/, "Mês inválido.");
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -53,7 +50,7 @@ type IberdrolaLine = {
   base: number;
   dd: number;
   fe: number;
-  mgi: number;
+  pel: number;
   total: number;
 };
 
@@ -68,11 +65,14 @@ type IberdrolaPerson = {
   gasCount: number;
   ddCount: number;
   feCount: number;
-  mgiCount: number;
+  pelCount: number;
   baseAmount: number;
   ddAmount: number;
   feAmount: number;
-  mgiAmount: number;
+  pelAmount: number;
+  svcAmount: number;
+  /** Valores unitários do escalão atingido (o que a tabela comisional paga por item). */
+  unit: { luz: number; gas: number; dd: number; fe: number; pel: number } | null;
   gross: number;
   chargeback: number;
   due: number;
@@ -89,7 +89,7 @@ type LiteSale = {
   clientName: string | null;
 };
 
-type Band = { luz: number | null; gas: number | null; dd: number | null; fe: number | null; mgi: number | null };
+type Band = { luz: number | null; gas: number | null; dd: number | null; fe: number | null; pel: number | null };
 
 /** Constrói o "Auto Final" do mês a partir dos ficheiros Iberdrola carregados nesse mês. */
 async function buildCalc(m: string) {
@@ -152,28 +152,31 @@ async function buildCalc(m: string) {
     list.filter((a) => a.startDate <= to && (a.endDate == null || a.endDate >= from)).sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
 
   /**
-   * Divide uma venda nas suas linhas de auto. Valor base = escalão da tabela comisional
-   * (luz/gás); cada serviço aderido na venda (débito direto, fatura eletrónica, PEL) paga
-   * o seu próprio valor fixo, uma vez por venda, independentemente do tipo de venda.
+   * Divide uma venda nas suas linhas de auto. Cada valor (base luz, base gás e cada serviço)
+   * vem do escalão atingido da tabela comisional; se não há escalão, nada é pago.
+   * Os serviços (débito direto, fatura eletrónica, PEL) pagam uma vez por venda.
    */
   const split = (s: LiteSale, band: Band | null): IberdrolaLine[] => {
     const d = s.details ?? {};
-    const svc = {
-      dd: yes(d.ddc) ? SERVICE_PRICE.dd : 0,
-      fe: yes(d.fe) ? SERVICE_PRICE.fe : 0,
-      mgi: yes(d.mgi ?? d.pel) ? SERVICE_PRICE.mgi : 0,
-    };
-    const svcTotal = round2(svc.dd + svc.fe + svc.mgi);
     const idVenda = contract(s.details);
-    return energiesOf(s.service).map((energy) => {
+    // Cada serviço aderido (débito direto, fatura eletrónica, PEL) paga UMA vez por venda,
+    // independentemente do número de linhas de energia (DUAL = 1 luz + 1 gás).
+    const svc = {
+      dd: yes(d.ddc) ? band?.dd ?? 0 : 0,
+      fe: yes(d.fe) ? band?.fe ?? 0 : 0,
+      pel: yes(d.pel) ? band?.pel ?? 0 : 0,
+    };
+    const svcTotal = round2(svc.dd + svc.fe + svc.pel);
+    return energiesOf(s.service).map((energy, i) => {
       const base = round2(energy === "gas" ? band?.gas ?? 0 : band?.luz ?? 0);
+      const svcLine = i === 0 ? svc : { dd: 0, fe: 0, pel: 0 };
       return {
         idVenda,
         clientName: s.clientName,
         service: energy === "gas" ? "Gás" : "Luz",
         base,
-        ...svc,
-        total: round2(base + svcTotal),
+        ...svcLine,
+        total: round2(base + (i === 0 ? svcTotal : 0)),
       };
     });
   };
@@ -223,11 +226,13 @@ async function buildCalc(m: string) {
       gasCount: 0,
       ddCount: 0,
       feCount: 0,
-      mgiCount: 0,
+      pelCount: 0,
       baseAmount: 0,
       ddAmount: 0,
       feAmount: 0,
-      mgiAmount: 0,
+      pelAmount: 0,
+      svcAmount: 0,
+      unit: null,
       gross: 0,
       chargeback: 0,
       due: 0,
@@ -256,6 +261,9 @@ async function buildCalc(m: string) {
     const chargeback = round2(cbLines.reduce((sum, l) => sum + l.total, 0));
 
     const sum = (l: IberdrolaLine[], f: (x: IberdrolaLine) => number) => round2(l.reduce((t, x) => t + f(x), 0));
+    const ddAmount = sum(lines, (l) => l.dd);
+    const feAmount = sum(lines, (l) => l.fe);
+    const pelAmount = sum(lines, (l) => l.pel);
 
     people.push({
       ...base,
@@ -264,11 +272,13 @@ async function buildCalc(m: string) {
       gasCount: lines.filter((l) => l.service === "Gás").length,
       ddCount: sum(lines, (l) => (l.dd ? 1 : 0)),
       feCount: sum(lines, (l) => (l.fe ? 1 : 0)),
-      mgiCount: sum(lines, (l) => (l.mgi ? 1 : 0)),
+      pelCount: sum(lines, (l) => (l.pel ? 1 : 0)),
       baseAmount: sum(lines, (l) => l.base),
-      ddAmount: sum(lines, (l) => l.dd),
-      feAmount: sum(lines, (l) => l.fe),
-      mgiAmount: sum(lines, (l) => l.mgi),
+      ddAmount,
+      feAmount,
+      pelAmount,
+      svcAmount: round2(ddAmount + feAmount + pelAmount),
+      unit: band ? { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } : null,
       gross,
       chargeback,
       due: round2(gross - chargeback),
@@ -294,9 +304,6 @@ async function buildCalc(m: string) {
 }
 
 export const iberdrolaRoute = {
-  /** Valores por serviço usados no cálculo. */
-  services: requireView("auto-iberdrola").handler(async () => SERVICE_PRICE),
-
   /** Lista de ficheiros carregados (histórico). */
   list: requireView("auto-iberdrola").handler(async () => {
     const imports = await db.select({ id: iberdrolaImports.id, filename: iberdrolaImports.filename, month: iberdrolaImports.month, uploadedBy: iberdrolaImports.uploadedBy, createdAt: iberdrolaImports.createdAt, path: iberdrolaImports.path }).from(iberdrolaImports).orderBy(asc(iberdrolaImports.createdAt));

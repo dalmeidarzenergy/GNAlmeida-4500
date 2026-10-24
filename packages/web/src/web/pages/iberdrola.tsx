@@ -356,7 +356,7 @@ function PersonDetail({ employeeId, people }: { employeeId: number; people: NonN
                   <td className="num px-3 py-2 text-right">{l.base ? fmtEur2(l.base) : "-"}</td>
                   <td className="num px-3 py-2 text-right text-ink-2">{l.dd ? fmtEur2(l.dd) : "-"}</td>
                   <td className="num px-3 py-2 text-right text-ink-2">{l.fe ? fmtEur2(l.fe) : "-"}</td>
-                  <td className="num px-3 py-2 text-right text-ink-2">{l.mgi ? fmtEur2(l.mgi) : "-"}</td>
+                  <td className="num px-3 py-2 text-right text-ink-2">{l.pel ? fmtEur2(l.pel) : "-"}</td>
                   <td className="num px-3 py-2 text-right font-semibold">{fmtEur2(l.total)}</td>
                 </tr>
               ))}
@@ -367,7 +367,7 @@ function PersonDetail({ employeeId, people }: { employeeId: number; people: NonN
                 <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.base))}</td>
                 <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.dd))}</td>
                 <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.fe))}</td>
-                <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.mgi))}</td>
+                <td className="num px-3 py-2 text-right">{fmtEur2(sum((l) => l.pel))}</td>
                 <td className="num px-3 py-2 text-right font-semibold text-ink">{fmtEur2(sum((l) => l.total))}</td>
               </tr>
             </tfoot>
@@ -394,11 +394,57 @@ function PersonDetail({ employeeId, people }: { employeeId: number; people: NonN
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <MiniStat label="Luz" value={String(p.luzCount)} />
         <MiniStat label="Gás" value={String(p.gasCount)} />
-        <MiniStat label="Déb. Direto" value={`${p.ddCount} · ${fmtEur(p.ddAmount)}`} />
-        <MiniStat label="Fat. Eletrónica" value={`${p.feCount} · ${fmtEur(p.feAmount)}`} />
-        <MiniStat label="MGI" value={`${p.mgiCount} · ${fmtEur(p.mgiAmount)}`} />
-        <MiniStat label="Base" value={fmtEur(p.baseAmount)} />
         <MiniStat label="Tabela" value={p.missingTable ? "—" : (p.tableName ?? "—")} />
+        <MiniStat label="Base (luz+gás)" value={fmtEur(p.baseAmount)} />
+        <MiniStat label="Serviços" value={fmtEur(p.svcAmount)} />
+      </div>
+
+      <div className="mb-5">
+        <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">Escalão atingido</div>
+        <div className="overflow-x-auto rounded-[10px] border border-line">
+          <table className="w-full min-w-[560px] text-[12.5px]">
+            <thead className="bg-surface">
+              <tr className="border-b border-line text-left">
+                <th className="px-3 py-2 font-medium">Item da tabela</th>
+                <th className="px-3 py-2 text-right font-medium">Valor do escalão</th>
+                <th className="px-3 py-2 text-right font-medium">Qtd. marcada</th>
+                <th className="px-3 py-2 text-right font-medium">Total pago</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-line">
+                <td className="px-3 py-2">Luz (base)</td>
+                <td className="num px-3 py-2 text-right">{p.unit ? fmtEur2(p.unit.luz) : "-"}</td>
+                <td className="num px-3 py-2 text-right">{p.luzCount}</td>
+                <td className="num px-3 py-2 text-right font-semibold">{fmtEur2(p.unit ? p.unit.luz * p.luzCount : 0)}</td>
+              </tr>
+              <tr className="border-b border-line">
+                <td className="px-3 py-2">Gás (base)</td>
+                <td className="num px-3 py-2 text-right">{p.unit ? fmtEur2(p.unit.gas) : "-"}</td>
+                <td className="num px-3 py-2 text-right">{p.gasCount}</td>
+                <td className="num px-3 py-2 text-right font-semibold">{fmtEur2(p.unit ? p.unit.gas * p.gasCount : 0)}</td>
+              </tr>
+              {[
+                { label: "Débito Direto", unit: p.unit?.dd ?? 0, qty: p.ddCount },
+                { label: "Fatura Eletrónica", unit: p.unit?.fe ?? 0, qty: p.feCount },
+                { label: "PEL", unit: p.unit?.pel ?? 0, qty: p.pelCount },
+              ].map((r) => (
+                <tr key={r.label} className="border-b border-line last:border-0">
+                  <td className="px-3 py-2">{r.label}</td>
+                  <td className="num px-3 py-2 text-right">{fmtEur2(r.unit)}</td>
+                  <td className="num px-3 py-2 text-right">{r.qty}</td>
+                  <td className="num px-3 py-2 text-right font-semibold">{fmtEur2(r.unit * r.qty)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-line bg-surface text-[12px] text-ink-2">
+                <td className="px-3 py-2 font-medium" colSpan={3}>Total a receber</td>
+                <td className="num px-3 py-2 text-right font-semibold text-ink">{fmtEur2(p.gross)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
 
       {lineTable("Vendas", p.lines)}
