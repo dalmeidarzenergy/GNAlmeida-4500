@@ -306,15 +306,16 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         continue;
       }
 
-      // Tudo o resto: nao vem a pagamento. Apenas vendas cujo fornecimento e
-      // ate este mes — vendas de meses anteriores ou do proprio mes. Vendas
-      // futuras (fornecimento depois deste mes) nao aparecem aqui.
-      if (
-        (!suppliedOn && !!firstBaixa) ||
-        (suppliedOn && suppliedOn <= to && (firstBaixa || manual))
-      ) {
+      // Nao vem a pagamento: so aparece com movimento NESTE mes.
+      // - Baixa neste mes: aparece no mes da baixa e nunca mais (a baixa e definitiva).
+      // - Manual (ou outro estado != "Em Fornecimento") neste mes: aparece agora e
+      //   continua a arrastar nos meses seguintes ate dar baixa.
+      // Estados que ocorreram em meses futuros nao aparecem neste mes.
+      const baixouNeste = baixas.some((d) => d >= from && d <= to);
+      const manualNeste = e.manual[k].some((d) => d >= from && d <= to);
+      if (baixouNeste || (manualNeste && !firstBaixa)) {
         const l = notPaid.get(e.sellerId) ?? [];
-        const st = statusLabel(firstBaixa ? "Baixa" : e.manual[k].length ? "Manual" : "");
+        const st = statusLabel(baixouNeste ? "Baixa" : "Manual");
         l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st, energy: k });
         notPaid.set(e.sellerId, l);
       }
