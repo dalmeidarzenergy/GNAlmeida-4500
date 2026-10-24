@@ -449,6 +449,10 @@ export const commissionTables = sqliteTable("commission_tables", {
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   /** Nº de vendas LUZ/Dual BTN em fornecimento que não são pagas (bloqueio mensal da tabela). */
   blockedSales: real("blocked_sales").notNull().default(0),
+  /** Grupo comercial a que a tabela pertence: gestor-comercial | team-leader | coordenador | gestor-parcerias | parceiro | freelancer. */
+  group: text("group").notNull().default("gestor-comercial"),
+  /** Tipo de tabela: RES+BTN NEG | MEDEM | SOLAR. */
+  regime: text("regime").notNull().default("RES+BTN NEG"),
   createdAt: createdAt(),
 });
 

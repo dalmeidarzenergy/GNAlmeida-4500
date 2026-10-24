@@ -32,6 +32,14 @@ if "blocked_sales" not in cols:
     c.execute("ALTER TABLE commission_tables ADD COLUMN blocked_sales real NOT NULL DEFAULT 0")
     c.commit()
     print("  coluna blocked_sales adicionada")
+if "group" not in cols:
+    c.execute("ALTER TABLE commission_tables ADD COLUMN \"group\" text NOT NULL DEFAULT 'gestor-comercial'")
+    c.commit()
+    print("  coluna commission_tables.group adicionada")
+if "regime" not in cols:
+    c.execute("ALTER TABLE commission_tables ADD COLUMN regime text NOT NULL DEFAULT 'RES+BTN NEG'")
+    c.commit()
+    print("  coluna commission_tables.regime adicionada")
 
 emp = [r[1] for r in c.execute("PRAGMA table_info(employees)").fetchall()]
 assert "commission_table_id" in emp, "ERRO: employees.commission_table_id em falta"

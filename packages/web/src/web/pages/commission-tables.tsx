@@ -1,10 +1,21 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useCommissionCalc, useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
-import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill } from "../components/ui/kit";
+import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill, Tabs } from "../components/ui/kit";
 import { errMsg, fmtEur, today } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useCommissionTables>["data"]>[number];
+
+/** Grupos comerciais. Cada tabela comisional pertence a um destes grupos. */
+type GroupKey = "gestor-comercial" | "team-leader" | "coordenador" | "gestor-parcerias" | "parceiro" | "freelancer";
+const GROUPS: { key: GroupKey; label: string }[] = [
+  { key: "gestor-comercial", label: "Gestor Comercial" },
+  { key: "team-leader", label: "Team Leader" },
+  { key: "coordenador", label: "Coordenador" },
+  { key: "gestor-parcerias", label: "Gestor de Parcerias" },
+  { key: "parceiro", label: "Parceiro" },
+  { key: "freelancer", label: "Free Lancer" },
+];
 
 type ClientDraft = { min: string; max: string; luz: string; gas: string; dd: string; fe: string; pel: string };
 type BandDraft = { min: string; max: string; commission: string };
@@ -145,7 +156,7 @@ function SolarEditor({ rows, onChange }: { rows: BandDraft[]; onChange: (r: Band
   );
 }
 
-function TableForm({ initial, onClose }: { initial: Table | null; onClose: () => void }) {
+function TableForm({ initial, group, regime, onClose }: { initial: Table | null; group: GroupKey; regime: string; onClose: () => void }) {
   const save = useSaveCommissionTable();
   const remove = useRemoveCommissionTable();
   const [name, setName] = useState(initial?.name ?? "");
@@ -153,6 +164,7 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
   const [color, setColor] = useState(initial?.color ?? COLORS[0]);
   const [active, setActive] = useState(initial?.active ?? true);
   const [blockedSales, setBlockedSales] = useState(str(initial?.blockedSales));
+  const [kind, setKind] = useState(initial?.regime ?? regime);
   const [clientRows, setClientRows] = useState<ClientDraft[]>(
     initial?.clientRows.length
       ? initial.clientRows.map((r) => ({ min: str(r.min), max: str(r.max), luz: str(r.luz), gas: str(r.gas), dd: str(r.dd), fe: str(r.fe), pel: str(r.pel) }))
@@ -172,6 +184,8 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
           description: description || null,
           color,
           active,
+          group,
+          regime: kind,
           blockedSales: num(blockedSales) ?? 0,
           clientRows: clientRows.map((r) => ({ kind: "clients" as const, min: num(r.min), max: num(r.max), luz: num(r.luz), gas: num(r.gas), dd: num(r.dd), fe: num(r.fe), pel: num(r.pel) })),
           medemRows: medemRows.map((r) => ({ kind: "medem" as const, min: num(r.min), max: num(r.max), commission: num(r.commission) })),
@@ -199,6 +213,13 @@ function TableForm({ initial, onClose }: { initial: Table | null; onClose: () =>
               <button type="button" aria-label={`Cor ${c}`} key={c} onClick={() => setColor(c)} className={`h-8 w-8 rounded-full transition ${color === c ? "ring-2 ring-offset-2 ring-offset-surface" : "opacity-70 hover:opacity-100"}`} style={{ background: c, ["--tw-ring-color" as string]: c }} />
             ))}
           </div>
+        </Field>
+        <Field label="Tipo de tabela">
+          <select aria-label="Tipo de tabela" className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="RES+BTN NEG">RES+BTN NEG</option>
+            <option value="MEDEM">MEDEM</option>
+            <option value="SOLAR">SOLAR</option>
+          </select>
         </Field>
         <Field label="Estado">
           <label className="flex h-10 items-center gap-2.5 text-[13px]">
@@ -293,26 +314,43 @@ function CalcPanel() {
 
 export default function CommissionTablesPage() {
   const tables = useCommissionTables();
+  const [group, setGroup] = useState<GroupKey>("gestor-comercial");
   const [edit, setEdit] = useState<Table | null | "new">(null);
+  const [pick, setPick] = useState(false);
+  const [regime, setRegime] = useState<string>("RES+BTN NEG");
   const list = tables.data ?? [];
+
+  const counts = Object.fromEntries(GROUPS.map((g) => [g.key, list.filter((t) => t.group === g.key).length])) as Record<GroupKey, number>;
+  const shown = list.filter((t) => t.group === group);
 
   return (
     <div>
-      <PageHeader eyebrow="Recursos Humanos" title="Tabelas Comissionais">
-        <button className="btn btn-primary" onClick={() => setEdit("new")}><Plus size={15} /> Nova tabela</button>
+      <PageHeader eyebrow="Recursos Humanos" title="Tabelas Comissionais" subtitle="Cada tabela comisional pertence a um grupo comercial. Escolhe o grupo para ver as suas tabelas.">
+        <button className="btn btn-primary" onClick={() => setPick(true)}><Plus size={15} /> Nova tabela</button>
       </PageHeader>
+
+      <div className="mb-5">
+        <Tabs
+          value={group}
+          onChange={setGroup}
+          items={GROUPS.map((g) => ({ key: g.key, label: g.label, count: counts[g.key] }))}
+        />
+      </div>
 
       {tables.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton h-52 rounded-[14px]" />)}</div>
-      ) : !list.length ? (
-        <div className="card"><Empty title="Sem tabelas comissionais" text="Crie a primeira tabela de comissões com escalões de clientes, MEDEM e Solar." /></div>
+      ) : !shown.length ? (
+        <div className="card"><Empty title="Sem tabelas neste grupo" text="Cria a primeira tabela deste grupo com o botão Nova tabela." /></div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {list.map((t, i) => (
+          {shown.map((t, i) => (
             <button key={t.id} onClick={() => setEdit(t)} className="card rise group relative overflow-hidden p-5 text-left transition hover:border-ink-3" style={{ animationDelay: `${i * 40}ms` }}>
               <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full opacity-20 blur-2xl transition group-hover:opacity-40" style={{ background: t.color }} />
               <div className="flex items-start justify-between gap-2">
-                <span className="h-2.5 w-8 rounded-full" style={{ background: t.color }} />
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-8 rounded-full" style={{ background: t.color }} />
+                  {t.regime && <Pill tone="muted">{t.regime}</Pill>}
+                </div>
                 <Pencil size={13} className="shrink-0 text-ink-3 opacity-0 transition group-hover:opacity-100" />
               </div>
               <div className="mt-4 font-display text-[17px] font-semibold">{t.name}</div>
@@ -347,8 +385,32 @@ export default function CommissionTablesPage() {
 
       <CalcPanel />
 
+      <Modal open={pick} onClose={() => setPick(false)} title="Nova tabela comisional">
+        <p className="mb-4 text-[12.5px] text-ink-2">Que tipo de tabela é?</p>
+        <div className="grid gap-3">
+          {[
+            { regime: "RES+BTN NEG", hint: "Residencial e BTN Negócio" },
+            { regime: "MEDEM", hint: "Por número de pontos" },
+            { regime: "SOLAR", hint: "Por quantidade de painéis" },
+          ].map((o) => (
+            <button
+              key={o.regime}
+              type="button"
+              onClick={() => { setPick(false); setEdit("new"); setRegime(o.regime); }}
+              className="flex w-full items-center justify-between gap-3 rounded-[11px] border border-line px-4 py-3 text-left transition hover:border-volt hover:bg-volt/5"
+            >
+              <span>
+                <span className="block text-[13.5px] font-semibold">{o.regime}</span>
+                <span className="block text-[11.5px] text-ink-3">{o.hint}</span>
+              </span>
+              <Plus size={15} className="shrink-0 text-volt" />
+            </button>
+          ))}
+        </div>
+      </Modal>
+
       <Modal open={edit !== null} onClose={() => setEdit(null)} title={edit === "new" ? "Nova tabela comisional" : "Editar tabela comisional"} wide>
-        {edit !== null && <TableForm key={edit === "new" ? "new" : edit.id} initial={edit === "new" ? null : edit} onClose={() => setEdit(null)} />}
+        {edit !== null && <TableForm key={edit === "new" ? "new" : edit.id} initial={edit === "new" ? null : edit} group={group} onClose={() => setEdit(null)} />}
       </Modal>
     </div>
   );
