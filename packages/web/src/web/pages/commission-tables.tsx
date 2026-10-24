@@ -428,7 +428,7 @@ export default function CommissionTablesPage() {
       </Modal>
 
       <Modal open={edit !== null} onClose={() => setEdit(null)} title={edit === "new" ? "Nova tabela comisional" : "Editar tabela comisional"} wide>
-        {edit !== null && <TableForm key={edit === "new" ? "new" : edit.id} initial={edit === "new" ? null : edit} group={group} onClose={() => setEdit(null)} />}
+        {edit !== null && <TableForm key={edit === "new" ? "new" : edit.id} initial={edit === "new" ? null : edit} group={group} regime={regime} onClose={() => setEdit(null)} />}
       </Modal>
     </div>
   );
