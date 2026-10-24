@@ -38,6 +38,7 @@ export type PdfPerson = {
   lines: PdfLine[];
   chargebackLines: PdfLine[];
   notPaid: { number: string; service: string; status: string; value: number }[];
+  transit: { number: string; service: string; status: string; signedOn: string | null; value: number }[];
   team: { name: string; luz: number; gas: number }[];
 };
 
@@ -249,6 +250,25 @@ function personBlock(doc: PDFKit.PDFDocument, p: PdfPerson, month: string) {
       doc,
       cbCols,
       p.chargebackLines.map((l) => [l.number, l.service, l.campaign ?? "-", `-${eur(l.total)}`]),
+    );
+    doc.moveDown(0.4);
+  }
+
+  // ---- Vendas em trânsito ----
+  if (p.transit.length) {
+    doc.moveDown(0.3);
+    sectionTitle(doc, "Vendas em trânsito (pré-venda a pedido de fornecimento)");
+    const trCols = [
+      { label: "Nº contrato", w: 140 },
+      { label: "Tipo", w: 80 },
+      { label: "Estado atual", w: 130 },
+      { label: "Assinatura", w: 80 },
+      { label: "Valor se passar", w: 97, align: "right" as const },
+    ];
+    salesTable(
+      doc,
+      trCols,
+      p.transit.map((n) => [n.number, n.service, n.status, n.signedOn ? n.signedOn.slice(0, 7) : "-", n.value ? eur(n.value) : "-"]),
     );
     doc.moveDown(0.4);
   }

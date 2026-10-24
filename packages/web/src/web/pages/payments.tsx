@@ -283,6 +283,7 @@ function AutoPanel({
   pdfPending: boolean;
 }) {
   const [open, setOpen] = useState(true);
+  const [openTransit, setOpenTransit] = useState(true);
   const q = usePaymentAutoDetail(month, employeeId);
   const person = q.data && q.data.found ? q.data.person : null;
 
@@ -383,6 +384,41 @@ function AutoPanel({
                   </tfoot>
                 </table>
               </div>
+            </div>
+          )}
+
+          {person.transit.length > 0 && (
+            <div>
+              <button type="button" className="flex w-full items-center gap-2 rounded-[12px] border border-line bg-[#f5f8fa] px-4 py-2 text-left text-[11px] font-semibold tracking-wide" onClick={() => setOpenTransit(!openTransit)}>
+                {openTransit ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                VENDAS EM TRANSITO (PRE-VENDA A PEDIDO DE FORNECIMENTO) - {person.transit.length}
+              </button>
+              {openTransit && (
+                <div className="mt-2 overflow-x-auto rounded-[12px] border border-line">
+                  <table className="w-full min-w-[640px] text-[12.5px]">
+                    <thead>
+                      <tr className="border-b border-line bg-[#fafbfa] text-left">
+                        <th className="px-3 py-2 font-medium">Nº contrato</th>
+                        <th className="px-3 py-2 font-medium">Tipo</th>
+                        <th className="px-3 py-2 font-medium">Estado atual</th>
+                        <th className="px-3 py-2 font-medium">Assinatura</th>
+                        <th className="px-3 py-2 text-right font-medium">Valor se passar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {person.transit.map((n) => (
+                        <tr key={`${n.number}-${n.service}`} className="border-b border-line last:border-0">
+                          <td className="px-3 py-2 text-ink-2">{n.number}</td>
+                          <td className="px-3 py-2">{n.service}</td>
+                          <td className="px-3 py-2 text-ink-2">{n.status}</td>
+                          <td className="px-3 py-2 text-ink-2">{n.signedOn ? monthLabel(n.signedOn.slice(0, 7)) : "-"}</td>
+                          <td className="num px-3 py-2 text-right">{n.value ? fmtEur(n.value) : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 

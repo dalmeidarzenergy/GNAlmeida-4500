@@ -133,6 +133,7 @@ type PersonBlock = {
   lines: DetailLine[];
   chargebackLines: DetailLine[];
   notPaid: { number: string; service: string; status: string; value: number }[];
+  transit: { number: string; service: string; status: string; signedOn: string | null; value: number }[];
   team: { name: string; luz: number; gas: number }[];
 };
 
@@ -185,6 +186,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       sellerId: sales.sellerId,
       service: sales.service,
       details: sales.details,
+      signedOn: sales.date,
       clientName: clients.name,
       energy: saleStatusHistory.energy,
     })
@@ -193,7 +195,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     .leftJoin(clients, eq(clients.id, sales.clientId))
     .where(
       and(
-        sql`${saleStatusHistory.status} in (${COUNTED_STATUS}, 'Baixa', 'Manual', 'Anulado')`,
+        sql`${saleStatusHistory.status} in (${COUNTED_STATUS}, 'Baixa', 'Manual', 'Anulado', 'Prospeção', 'Pré-Venda', 'Backoffice', 'Control', 'Pedido de Fornecimento', 'Pedido de Baixa')`,
         sql`(
           (json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ', 'DUAL'))
           OR ${sales.service} = 'GÁS'
@@ -216,6 +218,10 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     manual: Record<string, string[]>;
     /** Anuladas por energia — nunca pagam nem dao chargeback. */
     anulado: Record<string, string[]>;
+    /** Data de assinatura da venda. */
+    signedOn: string | null;
+    /** Todos os estados com a data, por energia (para vendas em transito). */
+    hist: Record<string, { status: string; on: string }[]>;
   };
 
   const perSale = new Map<number, Entry>();
@@ -231,8 +237,11 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         baixa: { luz: [], gas: [] },
         manual: { luz: [], gas: [] },
         anulado: { luz: [], gas: [] },
+        signedOn: r.signedOn,
+        hist: { luz: [], gas: [] },
       } as Entry);
     const k = energy(r.energy);
+    e.hist[k].push({ status: r.status, on: r.on });
     if (r.status === COUNTED_STATUS) {
       if (!e.sup[k] || r.on < e.sup[k]!) e.sup[k] = r.on;
     } else if (r.status === "Baixa") {
@@ -266,7 +275,12 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
 
   const valid = new Map<number, Lite[]>();
   const chargeback = new Map<number, Lite[]>();
+  type TransitLine = { saleId: number; number: string; service: string | null; details: Record<string, unknown> | null; status: string; signedOn: string | null; energy: "luz" | "gas" };
+  const inTransit = new Map<number, TransitLine[]>();
   const notPaid = new Map<number, { saleId: number; number: string; service: string | null; details: Record<string, unknown> | null; status: string; energy: "luz" | "gas" }[]>();
+
+  /** Estados que ainda nao chegaram a fornecimento — a venda transita de mes em mes. */
+  const TRANSIT = new Set(["Prospeção", "Pré-Venda", "Backoffice", "Control", "Pedido de Fornecimento", "Pedido de Baixa"]);
 
   for (const [saleId, e] of perSale) {
     if (e.sellerId == null) continue;
@@ -331,6 +345,21 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         const st = statusLabel(baixouNeste ? "Baixa" : anulouNeste ? "Anulado" : "Manual");
         l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st, energy: k });
         notPaid.set(e.sellerId, l);
+        continue;
+      }
+
+      // Vendas em transito: desde o mes da assinatura (ou do primeiro estado) ate
+      // chegarem a fornecimento. Sem pe até ao mes seguinte— a venda aparece em
+      // todos os meses enquanto o estado atual continuar a ser um estado de transito.
+      if (!suppliedOn && !firstBaixa && !firstAnulado) {
+        const evts = [...e.hist[k]].sort((a, b) => a.on.localeCompare(b.on));
+        const actual = evts.length ? evts[evts.length - 1].status : "";
+        const startMonth = (e.signedOn ?? evts[0]?.on ?? "").slice(0, 7);
+        if (startMonth && startMonth <= m && TRANSIT.has(actual)) {
+          const l = inTransit.get(e.sellerId) ?? [];
+          l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: actual, signedOn: e.signedOn, energy: k });
+          inTransit.set(e.sellerId, l);
+        }
       }
     }
   }
@@ -445,6 +474,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       lines: [],
       chargebackLines: [],
       notPaid: (notPaid.get(s.id) ?? []).map((n) => ({ number: n.number, service: serviceLabel(n.service), status: n.status, value: 0 })),
+      transit: [],
       team: [],
     };
 
@@ -486,6 +516,10 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         // Baixa e Anulado sao definitivos — nao apresentam valor.
         const noValue = n.status === "Baixa" || n.status === "Anulado";
         return { number: n.number, service: energyLabel(n.energy), status: n.status, value: noValue ? 0 : round2(tot) };
+      }),
+      transit: (inTransit.get(s.id) ?? []).map((t) => {
+        const tot = split({ saleId: t.saleId, number: t.number, service: t.service, details: t.details, clientName: null, energy: t.energy }, band).reduce((sum, l) => sum + l.total, 0);
+        return { number: t.number, service: energyLabel(t.energy), status: t.status, signedOn: t.signedOn, value: round2(tot) };
       }),
     });
   }
@@ -569,6 +603,10 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         // Baixa e Anulado sao definitivos — nao apresentam valor.
         const noValue = n.status === "Baixa" || n.status === "Anulado";
         return { number: n.number, service: energyLabel(n.energy), status: n.status, value: noValue ? 0 : round2(tot) };
+      }),
+      transit: (inTransit.get(s.id) ?? []).map((t) => {
+        const tot = split({ saleId: t.saleId, number: t.number, service: t.service, details: t.details, clientName: null, energy: t.energy }, ownBand ?? band).reduce((sum, l) => sum + l.total, 0);
+        return { number: t.number, service: energyLabel(t.energy), status: t.status, signedOn: t.signedOn, value: round2(tot) };
       }),
       team: teamMembers,
     });
