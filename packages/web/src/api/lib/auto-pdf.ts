@@ -190,9 +190,9 @@ function personBlock(doc: PDFKit.PDFDocument, p: PdfPerson, month: string) {
 
   // ---- Vendas a pagamento ----
   const cols = [
-    { label: "ID venda", w: 62 },
+    { label: "Nº contrato", w: 68 },
     { label: "Tipo", w: 40 },
-    { label: "Campanha", w: 96 },
+    { label: "Campanha", w: 90 },
     { label: "Luz", w: 56, align: "right" as const },
     { label: "Gás", w: 56, align: "right" as const },
     { label: "Extras", w: 60, align: "right" as const },
@@ -240,7 +240,7 @@ function personBlock(doc: PDFKit.PDFDocument, p: PdfPerson, month: string) {
     doc.moveDown(0.4);
     sectionTitle(doc, "Chargeback (a descontar)");
     const cbCols = [
-      { label: "ID venda", w: 120 },
+      { label: "Nº contrato", w: 120 },
       { label: "Tipo", w: 90 },
       { label: "Campanha", w: 160 },
       { label: "Valor a descontar", w: 157, align: "right" as const },
@@ -258,7 +258,7 @@ function personBlock(doc: PDFKit.PDFDocument, p: PdfPerson, month: string) {
     doc.moveDown(0.3);
     sectionTitle(doc, "Não vem a pagamento (estado diferente de EM FORNECIMENTO)");
     const npCols = [
-      { label: "ID venda", w: 190 },
+      { label: "Nº contrato", w: 190 },
       { label: "Tipo", w: 100 },
       { label: "Estado", w: 100 },
       { label: "Valor indicativo se passar", w: 137, align: "right" as const },

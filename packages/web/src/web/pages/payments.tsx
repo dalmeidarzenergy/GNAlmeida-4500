@@ -199,7 +199,7 @@ function LineTable({ lines, empty }: { lines: AutoLine[]; empty: string }) {
       <table className="w-full min-w-[820px] text-[12.5px]">
         <thead>
           <tr className="border-b border-line bg-volt/10 text-left">
-            <th className="px-3 py-2 font-medium">ID venda</th>
+            <th className="px-3 py-2 font-medium">Nº contrato</th>
             <th className="px-3 py-2 font-medium">Tipo</th>
             <th className="px-3 py-2 font-medium">Campanha</th>
             <th className="px-3 py-2 text-right font-medium">Luz</th>
@@ -332,7 +332,7 @@ function AutoPanel({
                 <table className="w-full min-w-[560px] text-[12.5px]">
                   <thead>
                     <tr className="border-b border-line bg-[#fdf3f3] text-left">
-                      <th className="px-3 py-2 font-medium">ID venda</th>
+                      <th className="px-3 py-2 font-medium">Nº contrato</th>
                       <th className="px-3 py-2 font-medium">Tipo</th>
                       <th className="px-3 py-2 font-medium">Campanha</th>
                       <th className="px-3 py-2 text-right font-medium">Valor a descontar</th>
@@ -397,7 +397,7 @@ function AutoPanel({
                   <table className="w-full min-w-[560px] text-[12.5px]">
                     <thead>
                       <tr className="border-b border-line bg-[#fafbfa] text-left">
-                        <th className="px-3 py-2 font-medium">ID venda</th>
+                        <th className="px-3 py-2 font-medium">Nº contrato</th>
                         <th className="px-3 py-2 font-medium">Tipo</th>
                         <th className="px-3 py-2 font-medium">Estado</th>
                         <th className="px-3 py-2 text-right font-medium">Valor indicativo se passar</th>

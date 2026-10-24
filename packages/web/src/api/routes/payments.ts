@@ -153,6 +153,12 @@ const slug = (s: string) =>
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+/** Numero de contrato da venda (campo details.contractNumber); "-" se faltar. */
+const contract = (details: Record<string, unknown> | null) => {
+  const v = details?.contractNumber;
+  return typeof v === "string" && v.trim() !== "" ? v.trim() : typeof v === "number" ? String(v) : "-";
+};
+
 /** Estado legível para a lista de vendas que não vêm a pagamento. */
 const statusLabel = (s: string) => {
   const t = s.trim().toLowerCase();
@@ -171,7 +177,6 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       on: saleStatusHistory.changedOn,
       sellerId: sales.sellerId,
       service: sales.service,
-      number: sales.number,
       details: sales.details,
       clientName: clients.name,
     })
@@ -192,7 +197,6 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   type Entry = {
     sellerId: number | null;
     service: string | null;
-    number: string;
     details: Record<string, unknown> | null;
     clientName: string | null;
     suppliedOn: string | null;
@@ -204,7 +208,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   for (const r of hist) {
     const e =
       perSale.get(r.saleId) ??
-      ({ sellerId: r.sellerId, service: r.service, number: r.number, details: r.details, clientName: r.clientName, suppliedOn: null, baixaOn: [], manualOn: [] } as Entry);
+      ({ sellerId: r.sellerId, service: r.service, details: r.details, clientName: r.clientName, suppliedOn: null, baixaOn: [], manualOn: [] } as Entry);
     if (r.status === COUNTED_STATUS) {
       if (!e.suppliedOn || r.on < e.suppliedOn) e.suppliedOn = r.on;
     } else if (r.status === "Baixa") {
@@ -223,7 +227,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
 
   for (const [saleId, e] of perSale) {
     if (e.sellerId == null) continue;
-    const lite: Lite = { saleId, number: e.number, service: e.service, details: e.details, clientName: e.clientName };
+    const lite: Lite = { saleId, number: contract(e.details), service: e.service, details: e.details, clientName: e.clientName };
     const baixou = e.baixaOn.some((d) => d >= from && d <= to);
     const manual = e.manualOn.some((d) => d >= from && d <= to);
 
@@ -244,7 +248,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     if (!e.suppliedOn || e.suppliedOn < from || e.suppliedOn > to || baixou || manual) {
       const l = notPaid.get(e.sellerId) ?? [];
       const st = statusLabel(e.baixaOn.length ? "Baixa" : e.manualOn.length ? "Manual" : "");
-      l.push({ saleId, number: e.number, service: e.service, details: e.details, status: st });
+      l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st });
       notPaid.set(e.sellerId, l);
     }
   }
@@ -289,7 +293,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     const extras = (dd ? band?.dd ?? 0 : 0) + (fe ? band?.fe ?? 0 : 0) + (pel ? band?.pel ?? 0 : 0);
     const luzCampaign = typeof d.campaign === "string" && d.campaign.trim() !== "" ? d.campaign : null;
     const gasCampaign = typeof d.campaignGas === "string" && d.campaignGas.trim() !== "" ? d.campaignGas : null;
-    const base = { saleId: e.saleId, number: e.number, clientName: e.clientName, extras, dd, fe, pel };
+    const base = { saleId: e.saleId, number: contract(d), clientName: e.clientName, extras, dd, fe, pel };
     const lines: Resolved[] = [];
     const isGas = svc === "GÁS" || svc === "GAS";
     if (!isGas) {
