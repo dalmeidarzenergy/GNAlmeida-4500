@@ -271,7 +271,15 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
 
       // Chargeback: ja tinha sido paga (em fornecimento antes deste mes) e a
       // baixa acontece dentro deste mes. Desconta-se no auto do mes da baixa.
-      if (suppliedOn && suppliedOn < from && baixouAgora) {
+      // So pode ser descontada se foi mesmo paga — sem Baixa nem Manual no
+      // proprio mes de fornecimento.
+      const sm = suppliedOn ? suppliedOn.slice(0, 7) : "";
+      const smB = sm ? bounds(sm) : null;
+      const baixaNoMesSup = smB ? baixas.some((d) => d >= smB.from && d <= smB.to) : false;
+      const manualNoMesSup = smB ? e.manual[k].some((d) => d >= smB.from && d <= smB.to) : false;
+      const foiPaga = suppliedOn && suppliedOn < from && !baixaNoMesSup && !manualNoMesSup;
+
+      if (foiPaga && baixouAgora) {
         const l = chargeback.get(e.sellerId) ?? [];
         l.push(lite);
         chargeback.set(e.sellerId, l);
