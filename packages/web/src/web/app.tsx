@@ -21,6 +21,8 @@ import CommissionTablesPage from "./pages/commission-tables";
 import ChiefTablesPage from "./pages/chief-tables";
 import PaymentsPage from "./pages/payments";
 import IberdrolaPage from "./pages/iberdrola";
+import RegrasPage from "./pages/regras";
+import IncentivosPage from "./pages/incentivos";
 import UsersPage from "./pages/users";
 import AgendaPage from "./pages/agenda";
 import D2DPage from "./pages/d2d";
@@ -37,6 +39,8 @@ const routes: [string, React.ComponentType][] = [
   ["/chefes-equipa", ChiefTablesPage],
   ["/pagamentos", PaymentsPage],
   ["/auto-iberdrola", IberdrolaPage],
+  ["/regras", RegrasPage],
+  ["/incentivos", IncentivosPage],
   ["/clientes", ClientsPage],
   ["/vendas/importar", SalesImportPage],
   ["/vendas", SalesPage],
