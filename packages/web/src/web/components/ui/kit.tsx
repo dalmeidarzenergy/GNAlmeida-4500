@@ -65,20 +65,29 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
     if (!open) return;
     const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    // Com o modal aberto, o fundo nao faz scroll (o scroll fica dentro do painel).
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", h);
+      document.body.style.overflow = prev;
+    };
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-[8vh] animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[8vh] animate-in fade-in duration-150">
       <button type="button" aria-label="Fechar" tabIndex={-1} className="fixed inset-0 cursor-default backdrop-blur-sm" style={{ background: "var(--overlay-bg)" }} onClick={onClose} />
-      <section aria-label={title} className={`card relative w-full ${wide ? "max-w-3xl" : "max-w-lg"} border-line bg-surface p-0 shadow-2xl animate-in zoom-in-95 duration-150`}>
-        <div className="flex items-center justify-between border-b border-line px-6 py-4">
+      <section
+        aria-label={title}
+        className={`card relative flex max-h-[85vh] w-full flex-col ${wide ? "max-w-3xl" : "max-w-lg"} border-line bg-surface p-0 shadow-2xl animate-in zoom-in-95 duration-150`}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-line px-6 py-4">
           <h3 className="text-[17px] font-semibold">{title}</h3>
           <button className="btn-icon" onClick={onClose} aria-label="Fechar">
             <X size={16} />
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
       </section>
     </div>
   );
