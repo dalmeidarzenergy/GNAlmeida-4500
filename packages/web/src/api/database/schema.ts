@@ -74,6 +74,18 @@ export const employees = sqliteTable("employees", {
   createdAt: createdAt(),
 });
 
+/** Penalidades VNC (Auto Iberdrola): multa manual subtraída ao comercial, ligada ao ID da venda. */
+export const vncPenalties = sqliteTable("vnc_penalties", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  month: text("month").notNull(),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  idVenda: text("id_venda").notNull(),
+  amount: real("amount").notNull().default(0),
+  createdAt: createdAt(),
+});
+
 export const absences = sqliteTable("absences", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id")

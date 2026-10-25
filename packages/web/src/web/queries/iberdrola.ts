@@ -65,3 +65,11 @@ export const useIberdrolaEmployee = (employeeId: number | null) =>
 /** Define o desbloqueio de comissões de um comercial (0 = objetivo; 25/50/75/100 = % do 2.º escalão). */
 export const useIberdrolaForceCommissionsSet = () =>
   useMutation(orpc.iberdrola.forceCommissionsSet.mutationOptions({ onSuccess: useInv() }));
+
+/** Adiciona uma penalidade VNC a um comercial num mês. */
+export const useIberdrolaVncAdd = () =>
+  useMutation(orpc.iberdrola.vncAdd.mutationOptions({ onSuccess: useInv() }));
+
+/** Remove uma penalidade VNC. */
+export const useIberdrolaVncRemove = () =>
+  useMutation(orpc.iberdrola.vncRemove.mutationOptions({ onSuccess: useInv() }));

@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -335,9 +335,14 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const assignments = useRuleAssignments(month, employeeIds);
   const saveAssignments = useSaveRuleAssignments();
   const setForce = useIberdrolaForceCommissionsSet();
+  const vncAdd = useIberdrolaVncAdd();
+  const vncRemove = useIberdrolaVncRemove();
   const [assigning, setAssigning] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [forceOpen, setForceOpen] = useState(false);
+  const [vncOpen, setVncOpen] = useState(false);
+  const [vncIdVenda, setVncIdVenda] = useState("");
+  const [vncAmount, setVncAmount] = useState("");
   if (!p) return <div className="p-6"><Empty title="Sem dados" text="Não foi possível encontrar este comercial." /></div>;
 
   const manualRules = (rules.data ?? []).filter((r) => r.type === "manual");
@@ -411,6 +416,16 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 title={p.forceCommissionsPct > 0 ? `Comissões desbloqueadas a ${p.forceCommissionsPct}% — clique para alterar ou voltar ao objetivo.` : "Pagar comissões sem atingir o objetivo (a partir do 2.º escalão)."}
               >
                 <Unlock size={13} /> {p.forceCommissionsPct > 0 ? `Comissões ${p.forceCommissionsPct}%` : "Desbloquear comissões"}
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                className="btn btn-ghost px-2.5 py-1 text-[12px]"
+                onClick={() => { setVncIdVenda(""); setVncAmount(""); setVncOpen(true); }}
+                title="Acrescentar uma penalidade VNC (multa ligada ao ID da venda)."
+              >
+                <Trash2 size={13} /> Acrescentar VNC
               </button>
             )}
           </div>
@@ -495,8 +510,44 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 {p.ruleEffects.map((r) => (
                   <tr key={r.id} className="border-b border-line last:border-0">
                     <td className="px-3 py-2">{r.name}</td>
-                    <td className="px-3 py-2 text-ink-2">{r.type === "auto" ? "Automática" : r.type === "unlock" ? "Desbloqueio" : "Manual"}</td>
+                    <td className="px-3 py-2 text-ink-2">{r.type === "auto" ? "Automática" : r.type === "unlock" ? "Desbloqueio" : r.type === "vnc" ? "VNC" : "Manual"}</td>
                     <td className={`num px-3 py-2 text-right font-semibold ${r.amount < 0 ? "text-rose" : ""}`}>{r.amount < 0 ? "−" : "+"}{fmtEur2(Math.abs(r.amount))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {p.vncs.length > 0 && (
+        <div className="mb-5">
+          <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">Penalidades VNC</div>
+          <div className="overflow-x-auto rounded-[10px] border border-line">
+            <table className="w-full min-w-[420px] text-[12.5px]">
+              <thead className="bg-surface">
+                <tr className="border-b border-line text-left">
+                  <th className="px-3 py-2 font-medium">ID venda</th>
+                  <th className="px-3 py-2 text-right font-medium">Penalidade</th>
+                  <th className="px-3 py-2 text-right font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.vncs.map((v) => (
+                  <tr key={v.id} className="border-b border-line last:border-0">
+                    <td className="num px-3 py-2 font-medium">{v.idVenda}</td>
+                    <td className="num px-3 py-2 text-right font-semibold text-rose">−{fmtEur2(v.amount)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        className="btn btn-ghost px-2 py-1 text-[11.5px] text-ink-2"
+                        disabled={vncRemove.isPending}
+                        onClick={() => vncRemove.mutateAsync({ id: v.id })}
+                        title="Remover penalidade"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -586,6 +637,50 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
             <Undo2 size={14} /> Voltar ao objetivo
           </button>
           <button type="button" className="btn btn-ghost" onClick={() => setForceOpen(false)}>Cancelar</button>
+        </div>
+      </Modal>
+
+      <Modal open={vncOpen} onClose={() => setVncOpen(false)} title="Acrescentar VNC">
+        <div className="text-[12.5px] text-ink-2">Regista uma penalidade VNC (multa) que será subtraída ao total do comercial. Indica o ID da venda que a originou e o valor.</div>
+        <div className="mt-4 grid gap-3">
+          <Field label="ID da venda">
+            <input
+              className="input num"
+              value={vncIdVenda}
+              onChange={(e) => setVncIdVenda(e.target.value)}
+              placeholder="Ex.: V123"
+              autoFocus
+            />
+          </Field>
+          <Field label="Valor da penalidade (€)">
+            <input
+              className="input num"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={vncAmount}
+              onChange={(e) => setVncAmount(e.target.value)}
+              placeholder="0.00"
+            />
+          </Field>
+          {vncAdd.error && <div className="text-[12px] text-danger">{errMsg(vncAdd.error)}</div>}
+        </div>
+        <div className="mt-4 flex items-center justify-end gap-2 pt-1">
+          <button type="button" className="btn btn-ghost" onClick={() => setVncOpen(false)}>Cancelar</button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={vncAdd.isPending || !vncIdVenda.trim() || !(parseFloat(vncAmount) > 0)}
+            onClick={async () => {
+              const amount = parseFloat(vncAmount);
+              if (!vncIdVenda.trim() || !(amount > 0)) return;
+              await vncAdd.mutateAsync({ month, employeeId, idVenda: vncIdVenda.trim(), amount });
+              setVncOpen(false);
+            }}
+          >
+            {vncAdd.isPending && <Loader2 size={15} className="animate-spin" />} Guardar
+          </button>
         </div>
       </Modal>
     </div>

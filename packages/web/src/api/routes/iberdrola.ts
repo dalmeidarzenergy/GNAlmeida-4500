@@ -16,6 +16,7 @@ import {
   iberdrolaRows,
   ruleAssignments,
   rules,
+  vncPenalties,
   userRoles,
 } from "../database/schema";
 import { effectivePermissions, type Permissions } from "../permissions";
@@ -68,6 +69,8 @@ type IberdrolaPerson = {
   chargebackLines: IberdrolaLine[];
   /** Regras aplicadas a este comercial no mês, com o valor de cada uma. */
   ruleEffects: { id: number; name: string; type: string; amount: number }[];
+  /** Penalidades VNC registadas manualmente neste mês. */
+  vncs: { id: number; idVenda: string; amount: number }[];
 };
 
 type IberdrolaEntry = {
@@ -159,6 +162,15 @@ async function buildCalc(m: string) {
   const cTables = await db.select().from(commissionTables);
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
   const assignments = await db.select().from(employeeTables);
+
+  // Penalidades VNC do mês, por comercial.
+  const vncs = await db.select().from(vncPenalties).where(eq(vncPenalties.month, m));
+  const vncsByEmployee = new Map<number, { id: number; idVenda: string; amount: number }[]>();
+  for (const v of vncs) {
+    const arr = vncsByEmployee.get(v.employeeId) ?? [];
+    arr.push({ id: v.id, idVenda: v.idVenda, amount: v.amount });
+    vncsByEmployee.set(v.employeeId, arr);
+  }
 
   // Regras de pagamento: automáticas (todas) e manuais atribuídas neste mês.
   const allRules = await db.select().from(rules);
@@ -284,6 +296,7 @@ async function buildCalc(m: string) {
       lines: [],
       chargebackLines: [],
       ruleEffects: [],
+      vncs: [],
     };
 
     if (!table) {
@@ -354,6 +367,12 @@ async function buildCalc(m: string) {
       }
     }
 
+    // Penalidades VNC: subtraídas ao total; ficam discriminadas nas regras.
+    const personVncs = vncsByEmployee.get(sellerId) ?? [];
+    for (const v of personVncs) {
+      if (v.amount > 0) ruleEffects.push({ id: v.id, name: `VNC ${v.idVenda}`, type: "vnc", amount: -v.amount });
+    }
+
     const rulesDelta = round2(ruleEffects.reduce((t, e) => t + e.amount, 0));
 
     people.push({
@@ -376,6 +395,7 @@ async function buildCalc(m: string) {
       lines,
       chargebackLines: cbLines,
       ruleEffects,
+      vncs: personVncs,
     });
   }
 
@@ -469,6 +489,24 @@ export const iberdrolaRoute = {
       if (!emp) return { found: false as const, forceCommissionsPct: 0 };
       await db.update(employees).set({ forceCommissionsPct: input.pct }).where(eq(employees.id, input.employeeId));
       return { found: true as const, employeeId: input.employeeId, forceCommissionsPct: input.pct };
+    }),
+
+  /** Adiciona uma penalidade VNC a um comercial num mês. */
+  vncAdd: requireEdit("auto-iberdrola")
+    .input(z.object({ month, employeeId: z.number().int().positive(), idVenda: z.string().trim().min(1), amount: z.number().positive() }))
+    .handler(async ({ input }) => {
+      const [emp] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, input.employeeId));
+      if (!emp) return { found: false as const };
+      const [row] = await db.insert(vncPenalties).values({ month: input.month, employeeId: input.employeeId, idVenda: input.idVenda, amount: input.amount }).returning();
+      return { found: true as const, vnc: { id: row.id, idVenda: row.idVenda, amount: row.amount } };
+    }),
+
+  /** Remove uma penalidade VNC. */
+  vncRemove: requireEdit("auto-iberdrola")
+    .input(z.object({ id: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      await db.delete(vncPenalties).where(eq(vncPenalties.id, input.id));
+      return { removed: true };
     }),
 
   /** Resumo dos autos de um funcionário, por mês (para a ficha do funcionário). */
