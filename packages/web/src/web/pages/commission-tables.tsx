@@ -98,8 +98,8 @@ function BusinessEditor({ rows, onChange }: { rows: BandDraft[]; onChange: (r: B
   );
 }
 
-/** Escalões por nº de clientes (mensal) → LUZ / GÁS / DD / FE / PEL. */
-function ClientsEditor({ rows, onChange, hint }: { rows: ClientDraft[]; onChange: (r: ClientDraft[]) => void; hint?: string }) {
+/** Escalões por nº de clientes (mensal) → LUZ / GÁS / DD / FE / PEL (ou só LUZ/GÁS para CE). */
+function ClientsEditor({ rows, onChange, hint, cols = CLIENT_COLS }: { rows: ClientDraft[]; onChange: (r: ClientDraft[]) => void; hint?: string; cols?: { key: keyof ClientDraft; label: string; color: string }[] }) {
   const setRow = (i: number, patch: Partial<ClientDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => onChange([...rows, emptyClient()]);
   const del = (i: number) => onChange(rows.length === 1 ? [emptyClient()] : rows.filter((_, j) => j !== i));
@@ -118,7 +118,7 @@ function ClientsEditor({ rows, onChange, hint }: { rows: ClientDraft[]; onChange
             <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3">
               <th className="px-2 pb-2 font-medium">De</th>
               <th className="px-2 pb-2 font-medium">Até</th>
-              {CLIENT_COLS.map((c) => (
+              {cols.map((c) => (
                 <th key={c.key} className="px-2 pb-2 font-medium" style={{ color: c.color }}>{c.label} (€)</th>
               ))}
               <th className="w-10 pb-2" />
@@ -133,7 +133,7 @@ function ClientsEditor({ rows, onChange, hint }: { rows: ClientDraft[]; onChange
                 <td className="px-1 py-2 align-top">
                   <input aria-label={`Clientes máximo ${i + 1}`} className="input num" placeholder="sem limite" value={r.max} onChange={(e) => setRow(i, { max: e.target.value })} />
                 </td>
-                {CLIENT_COLS.map((c) => (
+                {cols.map((c) => (
                   <td key={c.key} className="px-1 py-2 align-top">
                     <input aria-label={`${c.label} escalão ${i + 1}`} className="input num" placeholder="€" value={r[c.key]} onChange={(e) => setRow(i, { [c.key]: e.target.value } as Partial<ClientDraft>)} />
                   </td>
@@ -312,7 +312,8 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
         <ClientsEditor
           rows={clientRows}
           onChange={setClientRows}
-          hint={kind === "CE" ? "Escalão apurado pela soma das vendas BTN em fornecimento de toda a equipa do chefe (incluindo as dele). Remunera por serviço vendido (LUZ/GÁS/DD/FE/PEL) do escalão atingido." : undefined}
+          cols={kind === "CE" ? CLIENT_COLS.slice(0, 2) : undefined}
+          hint={kind === "CE" ? "Escalão apurado pela soma das vendas BTN em fornecimento de toda a equipa do chefe (incluindo as dele). Remunera por venda LUZ e GÁS do escalão atingido." : undefined}
         />
       )}
 
