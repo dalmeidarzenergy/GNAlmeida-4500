@@ -137,7 +137,7 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
     const payload = {
       name: f.name, email: f.email, phone: f.phone || null, nif: f.nif || null, photoKey: f.photoKey ?? null, departmentId: f.departmentId, positionId: f.positionId, managerId: f.managerId,
       hireDate: f.hireDate, terminationDate: f.status === "inativo" ? f.terminationDate : null, salary: Number(f.salary), status: f.status, commissionRate: Number(f.commissionRate),
-      commissionTableId: f.commissionTableId, ett: f.ett || null, bond: f.bond || null,
+      commissionTableId: f.commissionTableId, category: f.category ?? null, ett: f.ett || null, bond: f.bond || null,
     };
     try {
       if (initial) await save.update.mutateAsync({ ...payload, id: initial.id });

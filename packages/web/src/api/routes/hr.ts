@@ -363,6 +363,10 @@ export const hr = {
       const input = normalizeTermination(raw);
       await validateBond(input.positionId, input.bond);
       await validateManager(null, input.managerId, input.positionId);
+      if (input.commissionTableId != null) {
+        const [table] = await db.select({ group: commissionTables.group }).from(commissionTables).where(eq(commissionTables.id, input.commissionTableId));
+        if (table && input.category !== table.group) input.category = table.group;
+      }
       const [row] = await db.insert(employees).values(input).returning();
       return row;
     }),
@@ -370,6 +374,11 @@ export const hr = {
       const { id, ...data } = normalizeTermination(input);
       await validateBond(data.positionId, data.bond);
       await validateManager(id, data.managerId, data.positionId);
+      // Se a tabela comisional pertence a outro grupo, ajusta a categoria automaticamente.
+      if (data.commissionTableId != null) {
+        const [table] = await db.select({ group: commissionTables.group }).from(commissionTables).where(eq(commissionTables.id, data.commissionTableId));
+        if (table && data.category !== table.group) data.category = table.group;
+      }
       await db.update(employees).set(data).where(eq(employees.id, id));
       // Ao desativar, o calendário pessoal fica inativo (os eventos mantêm-se); ao reativar, volta a ficar ativo.
       const linked = await db.select({ userId: userRoles.userId }).from(userRoles).where(eq(userRoles.employeeId, id));
@@ -435,7 +444,8 @@ export const hr = {
           if (!dbCat) {
             await db.update(employees).set({ category: table.group }).where(eq(employees.id, input.employeeId));
           } else if (table.group !== dbCat) {
-            throw new ORPCError("BAD_REQUEST", { message: `A tabela "${table.name}" é do grupo ${table.group}, mas a categoria comercial deste funcionário é ${dbCat}. Todas as tabelas têm de ser do mesmo grupo.` });
+            // O funcionário mudou de categoria profissional: atualiza a categoria.
+            await db.update(employees).set({ category: table.group }).where(eq(employees.id, input.employeeId));
           }
         }
 
