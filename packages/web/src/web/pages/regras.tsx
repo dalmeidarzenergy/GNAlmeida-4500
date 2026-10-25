@@ -26,7 +26,11 @@ const OPERATORS = [
   { key: "<=", label: "menor ou igual (<=)" },
   { key: "==", label: "igual (==)" },
   { key: "!=", label: "diferente (!=)" },
+  { key: "startsWith", label: "começa por" },
+  { key: "contains", label: "contém" },
 ] as const;
+
+const operatorLabel = (op: string | null | undefined) => OPERATORS.find((o) => o.key === op)?.label ?? op ?? "";
 
 export default function RegrasPage() {
   const me = useMe();
@@ -98,7 +102,7 @@ export default function RegrasPage() {
                     </td>
                     <td className="px-3 py-3 text-ink-2">
                       {r.type === "auto" && r.sourceColumn ? (
-                        <span className="num">"{r.sourceColumn}" {r.operator} {r.compareValue}</span>
+                        <span className="num">"{r.sourceColumn}" {operatorLabel(r.operator)} {r.compareValue}</span>
                       ) : (
                         <span className="text-ink-3">—</span>
                       )}

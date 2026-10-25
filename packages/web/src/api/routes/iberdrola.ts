@@ -184,6 +184,8 @@ async function buildCalc(m: string) {
     const raw = excel[key];
     const cmp = rule.compareValue ?? "";
     const op = rule.operator;
+    if (op === "startsWith") return normText(String(raw ?? "")).startsWith(normText(cmp));
+    if (op === "contains") return normText(String(raw ?? "")).includes(normText(cmp));
     if (op === "==") return String(raw ?? "") === String(cmp);
     if (op === "!=") return String(raw ?? "") !== String(cmp);
     const a = cellNum(raw);

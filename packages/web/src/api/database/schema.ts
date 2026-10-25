@@ -606,7 +606,7 @@ export const rules = sqliteTable("rules", {
   description: text("description"),
   /** Coluna do Excel a inspecionar (só para regras auto). Ex: "Timing de contratação" */
   sourceColumn: text("source_column"),
-  /** Operador de comparação para regras auto: > | < | >= | <= | == | != */
+  /** Operador de comparação para regras auto: > | < | >= | <= | == | != | startsWith | contains */
   operator: text("operator"),
   /** Valor a comparar (texto ou número; guarda-se como texto). */
   compareValue: text("compare_value"),

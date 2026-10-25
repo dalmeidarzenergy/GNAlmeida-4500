@@ -9,7 +9,7 @@ const ruleInput = z.object({
   type: z.enum(["manual", "auto"]).default("manual"),
   description: z.string().nullable().optional(),
   sourceColumn: z.string().nullable().optional(),
-  operator: z.enum([">", "<", ">=", "<=", "==", "!="]).nullable().optional(),
+  operator: z.enum([">", "<", ">=", "<=", "==", "!=", "startsWith", "contains"]).nullable().optional(),
   compareValue: z.string().nullable().optional(),
   effectType: z.enum(["fixed_eur", "percent"]).default("fixed_eur"),
   effectValue: z.number().default(0),
