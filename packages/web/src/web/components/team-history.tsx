@@ -66,6 +66,44 @@ export function TeamHistory({ team }: { team: Team }) {
   );
 }
 
+/** Histórico de chefia de uma equipa (quem liderou, de quando a quando). */
+export function TeamLeadershipHistory({ team }: { team: Team }) {
+  const today = todayLisbon();
+  const leadership = (team as any).leadership as { leadershipId: number; startDate: string; endDate: string | null; leaderId: number; name: string }[] | undefined;
+  if (!leadership?.length) return <p className="text-[12.5px] text-ink-3">Ainda sem histórico de chefia.</p>;
+  return (
+    <div>
+      <div className="overflow-x-auto rounded-[10px] border border-line">
+        <table className="w-full text-[12.5px]">
+          <thead>
+            <tr className="border-b border-line text-left text-ink-3">
+              <th className="label-mono px-3 py-2 font-normal">Chefe</th>
+              <th className="label-mono px-3 py-2 font-normal">Desde</th>
+              <th className="label-mono px-3 py-2 font-normal">Até</th>
+            </tr>
+          </thead>
+          <tbody>
+            {leadership.map((l) => {
+              const current = l.startDate <= today && (l.endDate == null || l.endDate >= today);
+              return (
+                <tr key={l.leadershipId} className="border-b border-line last:border-b-0">
+                  <td className="px-3 py-2">
+                    <span className="font-medium">{l.name}</span>
+                    {current ? <span className="ml-2 text-[11px] text-volt">atual</span> : null}
+                  </td>
+                  <td className="px-3 py-2">{fmtDate(l.startDate)}</td>
+                  <td className="px-3 py-2">{l.endDate ? fmtDate(l.endDate) : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11.5px] text-ink-3">Períodos em que cada chefe liderou a equipa. Uma equipa pode fechar e reabrir, ou mudar de chefe — cada período fica registado.</p>
+    </div>
+  );
+}
+
 /** Muda um comercial de equipa a partir de uma data; a saída da equipa anterior fica no dia antes. */
 export function MoveMemberForm({ onClose }: { onClose: () => void }) {
   const teams = useTeams();

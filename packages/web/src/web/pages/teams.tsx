@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Plus, Pencil, Crown, Users, ArrowRightLeft } from "lucide-react";
-import { MoveMemberForm, TeamHistory, todayLisbon } from "../components/team-history";
+import { MoveMemberForm, TeamHistory, TeamLeadershipHistory, todayLisbon } from "../components/team-history";
 import { useEmployees, useRemoveTeam, useSaveTeam, useTeams } from "../queries/hr";
 import { useMe } from "../queries/me";
 import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Avatar, SearchBox } from "../components/ui/kit";
@@ -118,6 +118,13 @@ function TeamForm({ initial, teams, onClose }: { initial: Team | null; teams: Te
           {changed && <strong className="ml-1 text-amber">Há alterações aos membros.</strong>}
         </p>
       </div>
+
+      {initial && (
+        <div className="mt-5">
+          <div className="label-mono mb-2">Histórico de chefia</div>
+          <TeamLeadershipHistory team={teams.find((t) => t.id === initial.id) ?? initial} />
+        </div>
+      )}
 
       {initial && (
         <div className="mt-5">

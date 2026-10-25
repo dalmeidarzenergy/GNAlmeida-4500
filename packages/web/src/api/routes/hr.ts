@@ -528,6 +528,18 @@ export const hr = {
       const history = all
         .map(({ photoKey: _p, ...m }) => m)
         .sort((a, b) => b.startDate.localeCompare(a.startDate) || a.name.localeCompare(b.name));
+      const leadership = await db
+        .select({
+          leadershipId: teamLeadership.id,
+          teamId: teamLeadership.teamId,
+          startDate: teamLeadership.startDate,
+          endDate: teamLeadership.endDate,
+          leaderId: teamLeadership.leaderId,
+          name: employees.name,
+        })
+        .from(teamLeadership)
+        .innerJoin(employees, eq(employees.id, teamLeadership.leaderId))
+        .orderBy(desc(teamLeadership.startDate));
       const withUrls = await localWithPhotos(members);
       const leaders = localWithPhotos(rows.map((r) => ({ ...r, photoKey: r.leaderPhotoKey })));
       return leaders.map(({ photoUrl, leaderPhotoKey: _k, photoKey: _p, ...t }) => ({
@@ -535,6 +547,7 @@ export const hr = {
         leaderPhotoUrl: photoUrl,
         members: withUrls.filter((m) => m.teamId === t.id),
         history: history.filter((m) => m.teamId === t.id),
+        leadership: leadership.filter((l) => l.teamId === t.id),
       }));
     }),
     create: requireEdit("equipas").input(teamInput).handler(async ({ input }) => {
