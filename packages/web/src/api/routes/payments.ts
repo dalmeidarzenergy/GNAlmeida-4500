@@ -5,6 +5,8 @@ import { db } from "../database";
 import { renderAutoPdf } from "../lib/auto-pdf";
 import { writePublic } from "../lib/public-files";
 import {
+  chiefRows,
+  chiefTables,
   clients,
   commissionRows,
   commissionTables,
@@ -176,6 +178,10 @@ const statusLabel = (s: string) => {
 
 async function buildBreakdown(m: string): Promise<Breakdown> {
   const { from, to } = bounds(m);
+  // 6 meses antes do início do mês — janela suficiente para chargeback (3 meses)
+  // e para capturar fornecementos que ainda interessam ao cálculo.
+  const [fy, fm] = from.split("-").map(Number);
+  const cutoff = new Date(fy, fm - 7, 1).toISOString().slice(0, 10);
 
   const hist = await db
     .select({
@@ -199,6 +205,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
           (json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ', 'DUAL'))
           OR ${sales.service} = 'GÁS'
         )`,
+        sql`${saleStatusHistory.changedOn} >= ${cutoff} AND ${saleStatusHistory.changedOn} <= ${to}`,
       ),
     );
 
@@ -695,39 +702,59 @@ export const paymentsRoute = {
     .handler(async ({ input }) => {
       const b = await buildBreakdown(input.month);
 
+      // Dados de tabelas: o objetivo minimo vem SEMPRE da tabela atribuida.
       const staff = await db
         .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId })
         .from(employees);
       const cTables = await db.select().from(commissionTables);
       const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
       const assignments = await db.select().from(employeeTables);
+      const chiefTablesRows = await db.select().from(chiefTables);
+      const chiefRowsRows = await db.select().from(chiefRows).orderBy(asc(chiefRows.position));
       const allTeams = await db.select().from(teams);
       const memberships = await db.select().from(teamMemberships);
 
-      const tableOf = (employeeId: number, fallback: number | null) => {
-        const a = assignments
+      // ── Tabela COMERCIAL atribuida a um colaborador no mes (kind = commission) ──
+      const commissionAssign = (employeeId) =>
+        assignments
           .filter((x) => x.employeeId === employeeId && x.kind === "commission" && x.commissionTableId != null)
           .filter((x) => x.startDate <= b.to && (x.endDate == null || x.endDate >= b.from))
           .sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
+
+      const commissionTableOf = (employeeId, fallback) => {
+        const a = commissionAssign(employeeId);
         return cTables.find((t) => t.id === (a?.commissionTableId ?? fallback)) ?? null;
       };
 
-      /** 1.º escalão da tabela (mínimo do escalão mais baixo). */
-      const firstBandMin = (tableId: number) => {
+      // ── Tabela CE (chefe de equipa) atribuida a um colaborador no mes (kind = chief) ──
+      const chiefAssign = (employeeId) =>
+        assignments
+          .filter((x) => x.employeeId === employeeId && x.kind === "chief" && x.chiefTableId != null)
+          .filter((x) => x.startDate <= b.to && (x.endDate == null || x.endDate >= b.from))
+          .sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
+
+      const chiefTableOf = (employeeId, fallback) => {
+        const a = chiefAssign(employeeId);
+        return chiefTablesRows.find((t) => t.id === (a?.chiefTableId ?? fallback)) ?? null;
+      };
+
+      /** 1.o escalao de uma tabela comissional (minimo do escalao mais baixo, kind=clients). */
+      const firstCommissionMin = (tableId) => {
         const bands = cRows.filter((r) => r.tableId === tableId && r.kind === "clients");
         const sorted = [...bands].sort((x, y) => (x.min ?? 0) - (y.min ?? 0));
         return sorted.length ? sorted[0].min ?? 0 : 0;
       };
 
-      // ── Fornecimento (vendas BTN que entraram em fornecimento no mês) ──
+      /** 1.o escalao de uma tabela CE (kind=team = vendas da equipa). */
+      const firstChiefMin = (tableId) => {
+        const bands = chiefRowsRows.filter((r) => r.tableId === tableId && r.kind === "team");
+        const sorted = [...bands].sort((x, y) => (x.min ?? 0) - (y.min ?? 0));
+        return sorted.length ? sorted[0].min ?? 0 : 0;
+      };
+
+      // ── Fornecimento: vendas BTN (Luz/Dual) que entraram em fornecimento DENTRO do mes ──
       const suppliedHist = await db
-        .select({
-          saleId: saleStatusHistory.saleId,
-          on: saleStatusHistory.changedOn,
-          sellerId: sales.sellerId,
-          service: sales.service,
-          details: sales.details,
-        })
+        .select({ saleId: saleStatusHistory.saleId, sellerId: sales.sellerId })
         .from(saleStatusHistory)
         .innerJoin(sales, eq(sales.id, saleStatusHistory.saleId))
         .where(
@@ -738,15 +765,15 @@ export const paymentsRoute = {
           ),
         );
 
-      const suppliedBySeller = new Map<number, number>();
-      const suppliedIds = new Set<number>();
+      const suppliedBySeller = new Map();
+      const suppliedIds = new Set();
       for (const r of suppliedHist) {
         if (r.sellerId == null || suppliedIds.has(r.saleId)) continue;
         suppliedIds.add(r.saleId);
         suppliedBySeller.set(r.sellerId, (suppliedBySeller.get(r.sellerId) ?? 0) + 1);
       }
 
-      // ── Registadas (vendas com date no mês, excepto Baixa/Anulado) ──
+      // ── Registadas: vendas do mes, excepto Baixa/Anulado ──
       const registeredRows = await db
         .select({ sellerId: sales.sellerId })
         .from(sales)
@@ -757,7 +784,7 @@ export const paymentsRoute = {
           ),
         );
 
-      const registeredBySeller = new Map<number, number>();
+      const registeredBySeller = new Map();
       for (const r of registeredRows) {
         if (r.sellerId == null) continue;
         registeredBySeller.set(r.sellerId, (registeredBySeller.get(r.sellerId) ?? 0) + 1);
@@ -768,8 +795,8 @@ export const paymentsRoute = {
           const supplied = suppliedBySeller.get(s.id) ?? 0;
           const regs = registeredBySeller.get(s.id) ?? 0;
           if (!supplied && !regs) return null;
-          const table = tableOf(s.id, s.commissionTableId);
-          const min = table ? firstBandMin(table.id) : 0;
+          const table = commissionTableOf(s.id, s.commissionTableId);
+          const min = table ? firstCommissionMin(table.id) : 0;
           const isChief = allTeams.some((t) => t.leaderId === s.id);
           return {
             employeeId: s.id,
@@ -784,37 +811,39 @@ export const paymentsRoute = {
             desbloqueado: min > 0 && supplied >= min,
           };
         })
-        .filter((x): x is NonNullable<typeof x> => x != null)
+        .filter((x) => x != null)
         .sort((a, z) => z.faltamFornecimento - a.faltamFornecimento || z.registadas - a.registadas);
 
-      // Agregado por equipa: soma das vendas BTN em fornecimento de quem pertence à equipa
-      // (no mês) + do próprio chefe.
-      const teamRows = allTeams.map((t) => {
-        const ids = new Set<number>([t.leaderId]);
-        for (const m of memberships) {
-          if (m.teamId !== t.id) continue;
-          if (m.startDate > b.to || (m.endDate != null && m.endDate < b.from)) continue;
-          ids.add(m.employeeId);
-        }
-        const mine = sellerRows.filter((r) => ids.has(r.employeeId));
-        if (!mine.length) return null;
-        const table = tableOf(t.leaderId, null);
-        const min = table ? firstBandMin(table.id) : 0;
-        const fornecimento = mine.reduce((s, r) => s + r.fornecimento, 0);
-        const registadas = mine.reduce((s, r) => s + r.registadas, 0);
-        return {
-          teamId: t.id,
-          name: t.name,
-          leaderId: t.leaderId,
-          tableName: table?.name ?? null,
-          bandMin: min,
-          fornecimento,
-          faltamFornecimento: Math.max(0, min - fornecimento),
-          registadas,
-          faltamRegistadas: Math.max(0, min - registadas),
-          desbloqueado: fornecimento >= min && min > 0,
-        };
-      }).filter((x): x is NonNullable<typeof x> => x != null)
+      // ── Equipas: objetivo vem da tabela CE atribuida ao chefe da equipa ──
+      const teamRows = allTeams
+        .map((t) => {
+          const ids = new Set([t.leaderId]);
+          for (const m of memberships) {
+            if (m.teamId !== t.id) continue;
+            if (m.startDate > b.to || (m.endDate != null && m.endDate < b.from)) continue;
+            ids.add(m.employeeId);
+          }
+          const mine = sellerRows.filter((r) => ids.has(r.employeeId));
+          const table = chiefTableOf(t.leaderId, null);
+          const min = table ? firstChiefMin(table.id) : 0;
+          const fornecimento = mine.reduce((s, r) => s + r.fornecimento, 0);
+          const registadas = mine.reduce((s, r) => s + r.registadas, 0);
+          // Sem tabela CE atribuida, a equipa nao tem objetivo definido.
+          if (!table) return null;
+          return {
+            teamId: t.id,
+            name: t.name,
+            leaderId: t.leaderId,
+            tableName: table.name,
+            bandMin: min,
+            fornecimento,
+            faltamFornecimento: Math.max(0, min - fornecimento),
+            registadas,
+            faltamRegistadas: Math.max(0, min - registadas),
+            desbloqueado: min > 0 && fornecimento >= min,
+          };
+        })
+        .filter((x) => x != null)
         .sort((a, z) => z.faltamFornecimento - a.faltamFornecimento || z.registadas - a.registadas);
 
       return { month: b.month, from: b.from, to: b.to, people: b.people, totals: b.totals, unlock: { sellers: sellerRows, teams: teamRows } };
