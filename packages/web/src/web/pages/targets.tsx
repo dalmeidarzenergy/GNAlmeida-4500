@@ -45,7 +45,7 @@ export default function TargetsPage() {
   return (
     <div>
       <PageHeader eyebrow="Vendas" title="Metas">
-        {isAdmin && <TeamFilter value={team} onChange={setTeam} />}
+        {isAdmin && <TeamFilter value={team} onChange={setTeam} month={month} />}
         <div className="flex items-center gap-1 rounded-[11px] border border-line bg-surface p-1">
           <button className="btn-icon" onClick={() => setMonth(shift(month, -1))}><ChevronLeft size={16} /></button>
           <div className="min-w-[140px] text-center font-display text-[13.5px] font-semibold">{monthLabel(month)}</div>

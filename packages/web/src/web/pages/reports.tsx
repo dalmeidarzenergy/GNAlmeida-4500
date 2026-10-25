@@ -191,7 +191,7 @@ export default function ReportsPage() {
   return (
     <div>
       <PageHeader eyebrow="Análise" title="Relatórios">
-        {showSales && showFilters && <TeamFilter value={team} onChange={setTeam} />}
+        {showSales && showFilters && <TeamFilter value={team} onChange={setTeam} month={month} />}
         {showSales && showFilters && <EmployeeFilter month={month} value={seller} onChange={setSeller} onlyIds={teamIds} />}
         <MonthYearFilter value={month} onChange={setMonth} />
         {options.length > 1 && <Tabs value={tab} onChange={setTab} items={options} />}

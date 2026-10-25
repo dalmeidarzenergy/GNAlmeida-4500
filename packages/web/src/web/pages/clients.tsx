@@ -106,7 +106,7 @@ export default function ClientsPage() {
           ...(me.data?.employeeId ? [{ key: "meus" as const, label: "Os meus" }] : []),
         ]} />
         <div className="ml-auto flex flex-wrap gap-2">
-          {isAdmin && <TeamFilter value={team} onChange={setTeam} />}
+          {isAdmin && <TeamFilter value={team} onChange={setTeam} month={month || undefined} />}
           {isAdmin && <EmployeeFilter month={month} value={emp} onChange={setEmp} onlyIds={teamIds} />}
           <MonthYearFilter value={month} onChange={setMonth} allowAll />
           <SearchBox value={q} onChange={setQ} placeholder="Nome, NIF ou telemóvel…" />

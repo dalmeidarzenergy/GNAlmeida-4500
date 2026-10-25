@@ -47,7 +47,7 @@ export default function EvolutionPage() {
   return (
     <div>
       <PageHeader eyebrow="Análise" title="Evolução">
-        {isAdmin && <TeamFilter value={team} onChange={setTeam} />}
+        {isAdmin && <TeamFilter value={team} onChange={setTeam} month={month} />}
         {isAdmin && <EmployeeFilter month={month} value={seller} onChange={setSeller} onlyIds={teamIds} />}
         <MonthYearFilter value={month} onChange={setMonth} />
       </PageHeader>

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
 import { authed } from "../middleware/auth";
 import { db } from "../database";
-import { absences, candidates, clients, departments, employees, jobOpenings, sales, saleStatusHistory, salesTargets, teamMemberships, teams } from "../database/schema";
+import { absences, candidates, clients, departments, employees, jobOpenings, sales, saleStatusHistory, salesTargets, teamMemberships, teamPeriods, teams } from "../database/schema";
 import { localWithPhotos } from "../lib/s3";
 import { activeInMonth } from "../shared/hierarchy";
 import { monthWorkdays } from "../shared/workdays";
@@ -291,17 +291,33 @@ async function teamRanking(counted: { sellerId: number | null; date: string }[],
     .leftJoin(employees, eq(employees.id, teams.leaderId));
   if (!list.length) return [];
   const members = await db.select().from(teamMemberships);
+  // Períodos de atividade: uma equipa só conta nos meses em que esteve aberta.
+  // Sem isto, uma equipa criada em abril aparecia em janeiro por ter vendas de membros.
+  const allPeriods = await db.select().from(teamPeriods);
   // Conta os elementos de cada equipa no fim do período escolhido (fim do mês `end`).
   const asOf = end ? `${end}-31` : new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
   const rows = list.map((t) => {
     const mine = members.filter((m) => m.teamId === t.id);
     const memberCount = new Set(mine.filter((m) => m.startDate <= asOf && (m.endDate == null || m.endDate >= asOf)).map((m) => m.employeeId)).size;
+    // Período de vida da equipa: interseta os períodos registados com a janela analisada.
+    const teamPeriodsList = allPeriods.filter((p) => p.teamId === t.id);
+    const openFrom = teamPeriodsList.length ? teamPeriodsList.map((p) => p.startDate).sort()[0] : null;
+    const openTo = teamPeriodsList.length
+      ? teamPeriodsList.filter((p) => p.endDate == null).length
+        ? null
+        : teamPeriodsList.map((p) => p.endDate!).sort().at(-1)!
+      : null;
     const orders = counted.filter(
-      (r) => r.sellerId != null && (r.sellerId === t.leaderId || mine.some((m) => m.employeeId === r.sellerId && m.startDate <= r.date && (m.endDate == null || m.endDate >= r.date))),
+      (r) =>
+        r.sellerId != null &&
+        // A venda tem de cair dentro do período de atividade da equipa.
+        (openFrom == null || r.date >= openFrom) &&
+        (openTo == null || r.date <= openTo) &&
+        (r.sellerId === t.leaderId || mine.some((m) => m.employeeId === r.sellerId && m.startDate <= r.date && (m.endDate == null || m.endDate >= r.date))),
     ).length;
-    return { teamId: t.id, teamName: t.name, color: t.color, name: t.leaderName ?? "Sem chefe", photoKey: t.photoKey, memberCount, orders };
+    return { teamId: t.id, teamName: t.name, color: t.color, name: t.leaderName ?? "Sem chefe", photoKey: t.photoKey, memberCount, orders, openFrom, openTo };
   });
-  // Só entram equipas com vendas em fornecimento no período.
+  // Só entram equipas abertas no período e com vendas em fornecimento.
   return localWithPhotos(rows.filter((t) => t.orders > 0).sort((a, b) => b.orders - a.orders || a.teamName.localeCompare(b.teamName)));
 }
 

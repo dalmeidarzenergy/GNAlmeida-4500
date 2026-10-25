@@ -64,7 +64,7 @@ export default function MedemPage() {
   return (
     <div>
       <PageHeader eyebrow="Análise" title="MEDEM">
-        {isAdmin && <TeamFilter value={team} onChange={setTeam} />}
+        {isAdmin && <TeamFilter value={team} onChange={setTeam} month={month} />}
         {isAdmin && <EmployeeFilter month={month} value={seller} onChange={setSeller} onlyIds={teamIds} />}
         <MonthYearFilter value={month} onChange={setMonth} />
       </PageHeader>

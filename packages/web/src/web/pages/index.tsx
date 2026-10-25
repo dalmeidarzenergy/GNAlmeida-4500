@@ -58,7 +58,7 @@ export default function Dashboard() {
     <div>
       <PageHeader eyebrow={monthLabel(month)} title={`${greet}${firstName ? `, ${firstName}` : ""}`}>
         {sales && <ServiceFilter value={services} onChange={setServices} />}
-        {sales && (me.data?.role === "admin" || me.data?.role === "rh") && <TeamFilter value={team} onChange={setTeam} />}
+        {sales && (me.data?.role === "admin" || me.data?.role === "rh") && <TeamFilter value={team} onChange={setTeam} month={selMonth} />}
         {sales && (me.data?.role === "admin" || me.data?.role === "rh") && <EmployeeFilter month={selMonth} value={seller} onChange={setSeller} onlyIds={teamIds} />}
         {sales && <MonthYearFilter value={selMonth} onChange={setSelMonth} />}
         {sales && (

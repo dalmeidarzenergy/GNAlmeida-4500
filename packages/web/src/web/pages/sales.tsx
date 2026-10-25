@@ -126,7 +126,7 @@ export default function SalesPage() {
         ]} />
         <div className="ml-auto flex flex-wrap gap-2">
           <ServiceFilter value={services} onChange={setServices} />
-          {isAdmin && <TeamFilter value={team} onChange={setTeam} />}
+          {isAdmin && <TeamFilter value={team} onChange={setTeam} month={month || undefined} />}
           {isAdmin && <EmployeeFilter month={month} value={seller} onChange={setSeller} onlyIds={teamIds} />}
           <MonthYearFilter value={month} onChange={setMonth} allowAll />
           <SearchBox value={q} onChange={setQ} placeholder="Nº, cliente, NIF, vendedor…" />

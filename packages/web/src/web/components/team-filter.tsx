@@ -38,10 +38,19 @@ export function useTeamMatcher(teamId: number | null) {
   }, [teams.data, teamId]);
 }
 
+/** Verdadeiro se a equipa tem um período de atividade que toca o mês (YYYY-MM). */
+export function teamActiveInMonth(t: { periods: { startDate: string; endDate: string | null }[] }, month?: string) {
+  if (!month) return true;
+  const from = `${month}-01`;
+  const to = monthEnd(month);
+  return t.periods.some((p) => p.startDate <= to && (p.endDate == null || p.endDate >= from));
+}
+
 /** Filtro por chefe de equipa (inclui as vendas do chefe e dos membros da equipa). */
-export function TeamFilter({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+export function TeamFilter({ value, onChange, month }: { value: number | null; onChange: (v: number | null) => void; month?: string }) {
   const teams = useTeams();
-  const list = teams.data ?? [];
+  // Com `month`, só lista equipas a vigorar nesse mês (as fechadas não aparecem).
+  const list = (teams.data ?? []).filter((t) => teamActiveInMonth(t, month));
   const valid = value == null || list.some((t) => t.id === value);
   useEffect(() => {
     if (!teams.isLoading && !valid) onChange(null);
