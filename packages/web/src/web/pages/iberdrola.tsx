@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock } from "lucide-react";
+import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -343,6 +343,28 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const [vncOpen, setVncOpen] = useState(false);
   const [vncIdVenda, setVncIdVenda] = useState("");
   const [vncAmount, setVncAmount] = useState("");
+
+  // Troca de venda
+  const overrideList = useIberdrolaOverrideList(month);
+  const overrideCreate = useIberdrolaOverrideCreate();
+  const overrideRemove = useIberdrolaOverrideRemove();
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapStep, setSwapStep] = useState<1 | 2>(1);
+  const [swapIdVenda, setSwapIdVenda] = useState("");
+  const [swapSearch, setSwapSearch] = useState("");
+  const [swapToId, setSwapToId] = useState<number | null>(null);
+  const [swapDestSearch, setSwapDestSearch] = useState("");
+
+  const otherEmployees = useMemo(() => {
+    const calcData = (people as Array<{ employeeId: number; employeeName: string }>);
+    return calcData.filter((x) => x.employeeId !== employeeId).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  }, [people, employeeId]);
+
+  const currentSales = useMemo(() => {
+    if (!p) return [];
+    const ids = new Set(p.lines.map((l) => l.idVenda));
+    return [...ids].sort();
+  }, [p]);
   if (!p) return <div className="p-6"><Empty title="Sem dados" text="Não foi possível encontrar este comercial." /></div>;
 
   const manualRules = (rules.data ?? []).filter((r) => r.type === "manual");
@@ -426,6 +448,16 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 title="Acrescentar uma penalidade VNC (multa ligada ao ID da venda)."
               >
                 <Trash2 size={13} /> Acrescentar VNC
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                className="btn btn-ghost px-2.5 py-1 text-[12px]"
+                onClick={() => { setSwapStep(1); setSwapSearch(""); setSwapIdVenda(""); setSwapToId(null); setSwapDestSearch(""); setSwapOpen(true); }}
+                title="Transferir uma venda deste comercial para outro."
+              >
+                <ArrowLeftRight size={13} /> Trocar venda
               </button>
             )}
           </div>
@@ -556,6 +588,32 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
         </div>
       )}
 
+      {(p.overridesOut.length > 0 || p.overridesIn.length > 0) && (
+        <div className="mb-5">
+          <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">Trocas de venda</div>
+          <div className="rounded-[10px] border border-line divide-y divide-line">
+            {p.overridesOut.map((o) => (
+              <div key={`out-${o.idVenda}`} className="flex items-center gap-2 px-3 py-2 text-[12.5px]">
+                <ArrowLeftRight size={13} className="text-amber shrink-0" />
+                <span className="num font-medium">{o.idVenda}</span>
+                <span className="text-ink-2">→</span>
+                <span>{o.toName}</span>
+                <span className="text-[11px] text-ink-3">(cedida)</span>
+              </div>
+            ))}
+            {p.overridesIn.map((o) => (
+              <div key={`in-${o.idVenda}`} className="flex items-center gap-2 px-3 py-2 text-[12.5px]">
+                <ArrowLeftRight size={13} className="text-volt shrink-0" />
+                <span className="num font-medium">{o.idVenda}</span>
+                <span className="text-ink-2">←</span>
+                <span>{o.fromName}</span>
+                <span className="text-[11px] text-ink-3">(recebida)</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {lineTable("Vendas", p.lines)}
       {lineTable("Chargback", p.chargebackLines)}
 
@@ -682,6 +740,97 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
             {vncAdd.isPending && <Loader2 size={15} className="animate-spin" />} Guardar
           </button>
         </div>
+      </Modal>
+
+      <Modal open={swapOpen} onClose={() => setSwapOpen(false)} title="Trocar venda">
+        {swapStep === 1 ? (
+          <>
+            <div className="text-[12.5px] text-ink-2">Procura o ID da venda que queres transferir para outro comercial.</div>
+            <Field label="Pesquisar ID de venda" className="mt-3">
+              <input
+                className="input num"
+                value={swapSearch}
+                onChange={(e) => setSwapSearch(e.target.value)}
+                placeholder="Ex.: V0"
+                autoFocus
+              />
+            </Field>
+            <div className="mt-3 max-h-[280px] overflow-y-auto rounded-[10px] border border-line">
+              {currentSales.filter((id) => !swapSearch || id.toLowerCase().includes(swapSearch.toLowerCase())).length === 0 ? (
+                <div className="px-3 py-4 text-center text-[12.5px] text-ink-3">Nenhuma venda encontrada.</div>
+              ) : (
+                currentSales.filter((id) => !swapSearch || id.toLowerCase().includes(swapSearch.toLowerCase())).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12.5px] hover:bg-volt/5 ${swapIdVenda === id ? "bg-volt/10 border-l-2 border-l-volt" : "border-l-2 border-l-transparent"}`}
+                    onClick={() => setSwapIdVenda(id)}
+                  >
+                    <span className="num font-medium">{id}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <button type="button" className="btn btn-ghost" onClick={() => setSwapOpen(false)}>Cancelar</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!swapIdVenda}
+                onClick={() => { setSwapStep(2); setSwapToId(null); setSwapDestSearch(""); }}
+              >
+                Seguinte
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-[12.5px] text-ink-2">
+              Venda <span className="num font-semibold text-ink">{swapIdVenda}</span> → escolhe o comercial de destino.
+            </div>
+            <Field label="Pesquisar comercial" className="mt-3">
+              <input
+                className="input"
+                value={swapDestSearch}
+                onChange={(e) => setSwapDestSearch(e.target.value)}
+                placeholder="Escreve o nome..."
+                autoFocus
+              />
+            </Field>
+            <div className="mt-3 max-h-[300px] overflow-y-auto rounded-[10px] border border-line">
+              {otherEmployees.filter((x) => !swapDestSearch || x.employeeName.toLowerCase().includes(swapDestSearch.toLowerCase())).length === 0 ? (
+                <div className="px-3 py-4 text-center text-[12.5px] text-ink-3">Nenhum comercial encontrado.</div>
+              ) : (
+                otherEmployees.filter((x) => !swapDestSearch || x.employeeName.toLowerCase().includes(swapDestSearch.toLowerCase())).map((emp) => (
+                  <button
+                    key={emp.employeeId}
+                    type="button"
+                    className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12.5px] hover:bg-volt/5 ${swapToId === emp.employeeId ? "bg-volt/10 border-l-2 border-l-volt" : "border-l-2 border-l-transparent"}`}
+                    onClick={() => setSwapToId(emp.employeeId)}
+                  >
+                    <span className="font-medium">{emp.employeeName}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            {overrideCreate.error && <div className="mt-2 text-[12px] text-danger">{errMsg(overrideCreate.error)}</div>}
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <button type="button" className="btn btn-ghost" onClick={() => setSwapStep(1)}>← Voltar</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!swapToId || overrideCreate.isPending}
+                onClick={async () => {
+                  if (!swapToId) return;
+                  await overrideCreate.mutateAsync({ month, idVenda: swapIdVenda, fromEmployeeId: employeeId, toEmployeeId: swapToId });
+                  setSwapOpen(false);
+                }}
+              >
+                {overrideCreate.isPending && <Loader2 size={15} className="animate-spin" />} Confirmar troca
+              </button>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   );

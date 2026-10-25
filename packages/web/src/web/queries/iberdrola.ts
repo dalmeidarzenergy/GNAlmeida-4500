@@ -73,3 +73,15 @@ export const useIberdrolaVncAdd = () =>
 /** Remove uma penalidade VNC. */
 export const useIberdrolaVncRemove = () =>
   useMutation(orpc.iberdrola.vncRemove.mutationOptions({ onSuccess: useInv() }));
+
+/** Lista de trocas de venda do mês. */
+export const useIberdrolaOverrideList = (month: string) =>
+  useQuery({ ...orpc.iberdrola.overrideList.queryOptions({ input: { month } }), enabled: /^\d{4}-\d{2}$/.test(month) });
+
+/** Troca uma venda de um comercial para outro. */
+export const useIberdrolaOverrideCreate = () =>
+  useMutation(orpc.iberdrola.overrideCreate.mutationOptions({ onSuccess: useInv() }));
+
+/** Desfaz uma troca de venda. */
+export const useIberdrolaOverrideRemove = () =>
+  useMutation(orpc.iberdrola.overrideRemove.mutationOptions({ onSuccess: useInv() }));

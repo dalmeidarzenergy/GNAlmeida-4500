@@ -673,3 +673,17 @@ export const iberdrolaRows = sqliteTable("iberdrola_rows", {
   estado: text("estado"),
   data: text("data", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
 });
+
+/** Reatribuição manual de uma venda Iberdrola de um comercial para outro,
+ *  válida para um mês específico. A venda desaparece do auto do comercial
+ *  original e passa a ser paga ao comercial destino. */
+export const iberdrolaOverrides = sqliteTable("iberdrola_overrides", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  month: text("month").notNull(),
+  idVenda: text("id_venda").notNull(),
+  fromEmployeeId: integer("from_employee_id").notNull(),
+  toEmployeeId: integer("to_employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  createdAt: createdAt(),
+});

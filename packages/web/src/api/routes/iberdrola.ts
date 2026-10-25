@@ -16,6 +16,7 @@ import {
   iberdrolaRows,
   ruleAssignments,
   rules,
+  iberdrolaOverrides,
   vncPenalties,
   userRoles,
 } from "../database/schema";
@@ -71,6 +72,10 @@ type IberdrolaPerson = {
   ruleEffects: { id: number; name: string; type: string; amount: number }[];
   /** Penalidades VNC registadas manualmente neste mês. */
   vncs: { id: number; idVenda: string; amount: number }[];
+  /** Vendas que foram transferidas para outro comercial (troca de venda). */
+  overridesOut: { idVenda: string; toName: string }[];
+  /** Vendas que foram recebidas de outro comercial (troca de venda). */
+  overridesIn: { idVenda: string; fromName: string }[];
 };
 
 type IberdrolaEntry = {
@@ -170,6 +175,27 @@ async function buildCalc(m: string) {
     const arr = vncsByEmployee.get(v.employeeId) ?? [];
     arr.push({ id: v.id, idVenda: v.idVenda, amount: v.amount });
     vncsByEmployee.set(v.employeeId, arr);
+  }
+
+  // Overrides (troca de venda): reatribui vendas de um comercial para outro no mês.
+  const overrides = await db.select().from(iberdrolaOverrides).where(eq(iberdrolaOverrides.month, m));
+  const overridesOut = new Map<number, { idVenda: string; toName: string }[]>();
+  const overridesIn = new Map<number, { idVenda: string; fromName: string }[]>();
+  for (const ov of overrides) {
+    for (const e of autoEntries) {
+      if (e.idVenda === ov.idVenda && e.employeeId === ov.fromEmployeeId) e.employeeId = ov.toEmployeeId;
+    }
+    for (const e of cbEntries) {
+      if (e.idVenda === ov.idVenda && e.employeeId === ov.fromEmployeeId) e.employeeId = ov.toEmployeeId;
+    }
+    const toEmp = staffById.get(ov.toEmployeeId);
+    const fromEmp = staffById.get(ov.fromEmployeeId);
+    const outArr = overridesOut.get(ov.fromEmployeeId) ?? [];
+    outArr.push({ idVenda: ov.idVenda, toName: toEmp?.name ?? `#${ov.toEmployeeId}` });
+    overridesOut.set(ov.fromEmployeeId, outArr);
+    const inArr = overridesIn.get(ov.toEmployeeId) ?? [];
+    inArr.push({ idVenda: ov.idVenda, fromName: fromEmp?.name ?? `#${ov.fromEmployeeId}` });
+    overridesIn.set(ov.toEmployeeId, inArr);
   }
 
   // Regras de pagamento: automáticas (todas) e manuais atribuídas neste mês.
@@ -297,6 +323,8 @@ async function buildCalc(m: string) {
       chargebackLines: [],
       ruleEffects: [],
       vncs: [],
+      overridesOut: [],
+      overridesIn: [],
     };
 
     if (!table) {
@@ -396,6 +424,8 @@ async function buildCalc(m: string) {
       chargebackLines: cbLines,
       ruleEffects,
       vncs: personVncs,
+      overridesOut: overridesOut.get(sellerId) ?? [],
+      overridesIn: overridesIn.get(sellerId) ?? [],
     });
   }
 
@@ -506,6 +536,40 @@ export const iberdrolaRoute = {
     .input(z.object({ id: z.number().int().positive() }))
     .handler(async ({ input }) => {
       await db.delete(vncPenalties).where(eq(vncPenalties.id, input.id));
+      return { removed: true };
+    }),
+
+  /** Lista as trocas de venda (overrides) do mês. */
+  overrideList: requireView("auto-iberdrola")
+    .input(z.object({ month }))
+    .handler(async ({ input }) => {
+      const rows = await db.select().from(iberdrolaOverrides).where(eq(iberdrolaOverrides.month, input.month));
+      const staff = await db.select({ id: employees.id, name: employees.name }).from(employees);
+      const names = new Map(staff.map((s) => [s.id, s.name]));
+      return rows.map((r) => ({
+        id: r.id,
+        idVenda: r.idVenda,
+        fromEmployeeId: r.fromEmployeeId,
+        fromName: names.get(r.fromEmployeeId) ?? `#${r.fromEmployeeId}`,
+        toEmployeeId: r.toEmployeeId,
+        toName: names.get(r.toEmployeeId) ?? `#${r.toEmployeeId}`,
+      }));
+    }),
+
+  /** Troca uma venda de um comercial para outro no mês. */
+  overrideCreate: requireEdit("auto-iberdrola")
+    .input(z.object({ month, idVenda: z.string().trim().min(1), fromEmployeeId: z.number().int().positive(), toEmployeeId: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      if (input.fromEmployeeId === input.toEmployeeId) return { error: "Origem e destino são iguais." as const };
+      const [row] = await db.insert(iberdrolaOverrides).values(input).returning();
+      return { created: row };
+    }),
+
+  /** Remove uma troca de venda (desfaz). */
+  overrideRemove: requireEdit("auto-iberdrola")
+    .input(z.object({ id: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      await db.delete(iberdrolaOverrides).where(eq(iberdrolaOverrides.id, input.id));
       return { removed: true };
     }),
 
