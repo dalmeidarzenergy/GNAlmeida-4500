@@ -228,7 +228,9 @@ async function buildCalc(m: string) {
     const isDebitoDireto = normCol(String(colVal("metodo de pagamento") ?? "")).includes("debito direto");
     const hasDD = isDebitoDireto;
     const hasFE = yes(colVal("fe")) || yes(colVal("fatura eletronica"));
-    const hasPEL = yes(colVal("pel"));
+    // PEL: coluna "PEL PLUS" contém "PEL" (ou "SIM") → pago.
+    const pelVal = normCol(String(colVal("pel plus") ?? ""));
+    const hasPEL = pelVal === "pel" || yes(colVal("pel plus"));
 
     const svc = {
       dd: hasDD ? band?.dd ?? 0 : 0,
