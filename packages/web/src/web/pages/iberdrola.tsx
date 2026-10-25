@@ -395,10 +395,14 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const overrideRemove = useIberdrolaOverrideRemove();
   const [swapOpen, setSwapOpen] = useState(false);
   const [swapStep, setSwapStep] = useState<1 | 2>(1);
-  const [swapIdVenda, setSwapIdVenda] = useState("");
+  const [swapIds, setSwapIds] = useState<string[]>([]);
   const [swapSearch, setSwapSearch] = useState("");
   const [swapToId, setSwapToId] = useState<number | null>(null);
   const [swapDestSearch, setSwapDestSearch] = useState("");
+  const [swapBusy, setSwapBusy] = useState(false);
+
+  const toggleSwapId = (id: string) =>
+    setSwapIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const otherEmployees = useMemo(() => {
     const calcData = (people as Array<{ employeeId: number; employeeName: string }>);
@@ -804,7 +808,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
       <Modal open={swapOpen} onClose={() => setSwapOpen(false)} title="Trocar venda">
         {swapStep === 1 ? (
           <>
-            <div className="text-[12.5px] text-ink-2">Procura o ID da venda que queres transferir para outro comercial.</div>
+            <div className="text-[12.5px] text-ink-2">Seleciona a venda (ou várias) que queres transferir para outro comercial.</div>
             <Field label="Pesquisar ID de venda" className="mt-3">
               <input
                 className="input num"
@@ -814,38 +818,84 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 autoFocus
               />
             </Field>
-            <div className="mt-3 max-h-[280px] overflow-y-auto rounded-[10px] border border-line">
-              {currentSales.filter((id) => !swapSearch || id.toLowerCase().includes(swapSearch.toLowerCase())).length === 0 ? (
-                <div className="px-3 py-4 text-center text-[12.5px] text-ink-3">Nenhuma venda encontrada.</div>
-              ) : (
-                currentSales.filter((id) => !swapSearch || id.toLowerCase().includes(swapSearch.toLowerCase())).map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12.5px] hover:bg-volt/5 ${swapIdVenda === id ? "bg-volt/10 border-l-2 border-l-volt" : "border-l-2 border-l-transparent"}`}
-                    onClick={() => setSwapIdVenda(id)}
-                  >
-                    <span className="num font-medium">{id}</span>
-                  </button>
-                ))
-              )}
-            </div>
+            {(() => {
+              const filtered = currentSales.filter((id) => !swapSearch || id.toLowerCase().includes(swapSearch.toLowerCase()));
+              const allSelected = filtered.length > 0 && filtered.every((id) => swapIds.includes(id));
+              return (
+                <>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      className="text-[11.5px] font-medium text-volt hover:underline"
+                      onClick={() =>
+                        setSwapIds((prev) => {
+                          const set = new Set(prev);
+                          if (allSelected) for (const id of filtered) set.delete(id);
+                          else for (const id of filtered) set.add(id);
+                          return [...set];
+                        })
+                      }
+                    >
+                      {allSelected ? "Desmarcar todos" : "Selecionar todos"}
+                    </button>
+                    <span className="text-[11.5px] text-ink-3">{swapIds.length} selecionada(s)</span>
+                  </div>
+                  <div className="mt-2 max-h-[280px] overflow-y-auto rounded-[10px] border border-line">
+                    {filtered.length === 0 ? (
+                      <div className="px-3 py-4 text-center text-[12.5px] text-ink-3">Nenhuma venda encontrada.</div>
+                    ) : (
+                      filtered.map((id) => {
+                        const on = swapIds.includes(id);
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-[12.5px] hover:bg-volt/5 ${on ? "bg-volt/10 border-l-2 border-l-volt" : "border-l-2 border-l-transparent"}`}
+                            onClick={() => toggleSwapId(id)}
+                          >
+                            <span
+                              className={`flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-[4px] border ${on ? "border-volt bg-volt text-black" : "border-line"}`}
+                            >
+                              {on && <Check size={11} strokeWidth={3} />}
+                            </span>
+                            <span className="num font-medium">{id}</span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              );
+            })()}
             <div className="mt-4 flex items-center justify-between gap-2">
               <button type="button" className="btn btn-ghost" onClick={() => setSwapOpen(false)}>Cancelar</button>
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!swapIdVenda}
+                disabled={swapIds.length === 0}
                 onClick={() => { setSwapStep(2); setSwapToId(null); setSwapDestSearch(""); }}
               >
-                Seguinte
+                Seguinte{swapIds.length > 1 ? ` (${swapIds.length})` : ""}
               </button>
             </div>
           </>
         ) : (
           <>
             <div className="text-[12.5px] text-ink-2">
-              Venda <span className="num font-semibold text-ink">{swapIdVenda}</span> → escolhe o comercial de destino.
+              {swapIds.length === 1 ? (
+                <>
+                  Venda <span className="num font-semibold text-ink">{swapIds[0]}</span> → escolhe o comercial de destino.
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold text-ink">{swapIds.length} vendas</span> → escolhe o comercial de destino.
+                </>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {swapIds.map((id) => (
+                <span key={id} className="num rounded-[6px] border border-line bg-surface px-2 py-0.5 text-[11px]">{id}</span>
+              ))}
             </div>
             <Field label="Pesquisar comercial" className="mt-3">
               <input
@@ -878,14 +928,22 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!swapToId || overrideCreate.isPending}
+                disabled={!swapToId || swapBusy}
                 onClick={async () => {
                   if (!swapToId) return;
-                  await overrideCreate.mutateAsync({ month, idVenda: swapIdVenda, fromEmployeeId: employeeId, toEmployeeId: swapToId });
-                  setSwapOpen(false);
+                  setSwapBusy(true);
+                  try {
+                    for (const id of swapIds) {
+                      await overrideCreate.mutateAsync({ month, idVenda: id, fromEmployeeId: employeeId, toEmployeeId: swapToId });
+                    }
+                    setSwapIds([]);
+                    setSwapOpen(false);
+                  } finally {
+                    setSwapBusy(false);
+                  }
                 }}
               >
-                {overrideCreate.isPending && <Loader2 size={15} className="animate-spin" />} Confirmar troca
+                {swapBusy && <Loader2 size={15} className="animate-spin" />} Confirmar {swapIds.length > 1 ? `troca (${swapIds.length})` : "troca"}
               </button>
             </div>
           </>
