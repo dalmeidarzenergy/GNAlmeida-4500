@@ -20,6 +20,8 @@ import {
   iberdrolaOverrides,
   vncPenalties,
   userRoles,
+  teams,
+  teamMemberships,
 } from "../database/schema";
 import { effectivePermissions, type Permissions } from "../permissions";
 
@@ -717,6 +719,35 @@ export const iberdrolaRoute = {
     .handler(async ({ input }) => {
       await db.delete(vncPenalties).where(eq(vncPenalties.id, input.id));
       return { removed: true };
+    }),
+
+  /** Equipas com líder e membros ativos no mês. */
+  teamList: requireView("auto-iberdrola")
+    .input(z.object({ month }))
+    .handler(async ({ input }) => {
+      const monthStart = `${input.month}-01`;
+      const monthEnd = `${input.month}-31`;
+      const allTeams = await db.select().from(teams);
+      const memberships = await db.select().from(teamMemberships)
+        .where(sql`${teamMemberships.startDate} <= ${monthEnd} AND (${teamMemberships.endDate} IS NULL OR ${teamMemberships.endDate} >= ${monthStart})`);
+      const staff = await db.select({ id: employees.id, name: employees.name }).from(employees);
+      const names = new Map(staff.map((s) => [s.id, s.name]));
+      return allTeams
+        .filter((t) => t.leaderId != null)
+        .map((t) => {
+          const members = memberships
+            .filter((m) => m.teamId === t.id)
+            .map((m) => ({ employeeId: m.employeeId, employeeName: names.get(m.employeeId) ?? `#${m.employeeId}` }))
+            .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+          return {
+            id: t.id,
+            name: t.name,
+            leaderId: t.leaderId!,
+            leaderName: names.get(t.leaderId!) ?? `#${t.leaderId}`,
+            members,
+          };
+        })
+        .filter((t) => t.members.length > 0);
     }),
 
   /** Lista todos os colaboradores, para escolher o destino de uma troca de venda. */

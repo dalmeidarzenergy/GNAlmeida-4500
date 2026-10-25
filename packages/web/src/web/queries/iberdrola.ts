@@ -58,6 +58,10 @@ export const useSetIberdrolaMonth = () =>
 export const useIberdrolaCalc = (month: string) =>
   useQuery({ ...orpc.iberdrola.calc.queryOptions({ input: { month } }), enabled: /^\d{4}-\d{2}$/.test(month) });
 
+/** Equipas com líderes e membros ativos no mês. */
+export const useIberdrolaTeams = (month: string) =>
+  useQuery({ ...orpc.iberdrola.teamList.queryOptions({ input: { month } }) });
+
 /** Todos os colaboradores (para escolher o destino de uma troca de venda). */
 export const useIberdrolaStaffList = (month: string) =>
   useQuery({ ...orpc.iberdrola.staffList.queryOptions({ input: { month } }) });

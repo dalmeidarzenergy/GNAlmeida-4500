@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -299,16 +299,37 @@ function ImportLines({ id }: { id: number }) {
 function Finais() {
   const [month, setMonth] = useState(thisMonth());
   const calc = useIberdrolaCalc(month);
+  const teams = useIberdrolaTeams(month);
   const [selected, setSelected] = useState<number | null>(null);
+  const [teamLeader, setTeamLeader] = useState<string>(""); // empty = todos
 
   const data = calc.data;
-  const people = data?.people ?? [];
+  const allPeople = data?.people ?? [];
+
+  // Filtra por equipa se um líder estiver selecionado.
+  const selectedTeam = teamLeader ? teams.data?.find((t) => String(t.leaderId) === teamLeader) : null;
+  const memberIds = selectedTeam ? new Set(selectedTeam.members.map((m) => m.employeeId)) : null;
+  const people = memberIds ? allPeople.filter((p) => memberIds.has(p.employeeId)) : allPeople;
+  const totals = {
+    gross: Math.round(people.reduce((s, p) => s + p.gross, 0) * 100) / 100,
+    chargeback: Math.round(people.reduce((s, p) => s + p.chargeback, 0) * 100) / 100,
+    medemTotal: Math.round(people.reduce((s, p) => s + p.medemTotal, 0) * 100) / 100,
+    due: Math.round(people.reduce((s, p) => s + p.due, 0) * 100) / 100,
+  };
 
   return (
     <div>
       <div className="flex items-center gap-3">
         <Field label="Mês">
-          <input type="month" className="input num w-44" value={month} onChange={(e) => { setMonth(e.target.value); setSelected(null); }} />
+          <input type="month" className="input num w-44" value={month} onChange={(e) => { setMonth(e.target.value); setSelected(null); setTeamLeader(""); }} />
+        </Field>
+        <Field label="Chefe de equipa">
+          <select className="input w-56" value={teamLeader} onChange={(e) => { setTeamLeader(e.target.value); setSelected(null); }}>
+            <option value="">Todas as equipas</option>
+            {(teams.data ?? []).map((t) => (
+              <option key={t.leaderId} value={String(t.leaderId)}>{t.leaderName} — {t.name}</option>
+            ))}
+          </select>
         </Field>
         <button type="button" className="btn btn-ghost" onClick={() => downloadExcel(month).catch((e) => window.alert(errMsg(e)))} title="Exportar Excel geral (uma folha por comercial).">
           <Download size={15} /> Exportar Excel
@@ -316,10 +337,10 @@ function Finais() {
       </div>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Stat label="A RECEBER" value={fmtEur2(data?.totals.gross ?? 0)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
-        <Stat label="CHARGEBACK" value={fmtEur2(data?.totals.chargeback ?? 0)} accent="var(--danger)" icon={<Undo2 size={16} />} delay={60} />
-        <Stat label="MEDEM" value={fmtEur2(data?.totals.medemTotal ?? 0)} accent="var(--amber)" icon={<Wallet size={16} />} delay={90} />
-        <Stat label="TOTAL" value={fmtEur2(data?.totals.due ?? 0)} accent="var(--sky)" icon={<Check size={16} />} delay={120} />
+        <Stat label="A RECEBER" value={fmtEur2(totals.gross)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
+        <Stat label="CHARGEBACK" value={fmtEur2(totals.chargeback)} accent="var(--danger)" icon={<Undo2 size={16} />} delay={60} />
+        <Stat label="MEDEM" value={fmtEur2(totals.medemTotal)} accent="var(--amber)" icon={<Wallet size={16} />} delay={90} />
+        <Stat label="TOTAL" value={fmtEur2(totals.due)} accent="var(--sky)" icon={<Check size={16} />} delay={120} />
       </div>
 
       {(data?.unmatchedAuto.length || data?.unmatchedChargeback.length || (data as any)?.unmatchedMedem?.length) ? (
@@ -334,7 +355,7 @@ function Finais() {
         <div className="card overflow-hidden">
           <div className="border-b border-line px-4 py-3">
             <div className="font-display text-[13px] font-semibold">Comerciais</div>
-            <div className="text-[11px] text-ink-3">{people.length} com vendas em {monthLabel(month)}</div>
+            <div className="text-[11px] text-ink-3">{people.length} com vendas{teamLeader && selectedTeam ? ` (equipa ${selectedTeam.name})` : ""} em {monthLabel(month)}</div>
           </div>
           {calc.isLoading ? (
             <div className="p-4"><div className="skeleton h-24 rounded-[12px]" /></div>
