@@ -460,16 +460,16 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     );
     const cbLines = [...(prevCbBySeller.get(sellerId) ?? []), ...cbFallback.flatMap((e) => split(e, band))];
 
-    // Medem: soma pontos de todas as linhas, encontra o escalão de medem
-    // e paga Total Pontos × comissão do escalão por cada linha.
+    // Medem: usa o escalão que o comercial atingiu na Res+BTN Neg (bandSales)
+    // e procura a linha Medem na mesma posição (mesmo índice no escalonamento).
+    // Cada linha Medem paga Total Pontos × comissão desse escalão Medem.
     const personMedem = medemLines.filter((e) => e.employeeId === sellerId);
     const medemPontos = personMedem.reduce((t, e) => t + e.pontos, 0);
     const medemBands = cRows.filter((r) => r.tableId === table.id && r.kind === "medem");
-    const sortedMedemBands = [...medemBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
-    const medemBand =
-      sortedMedemBands.find((b) => medemPontos >= (b.min ?? 0) && (b.max == null || medemPontos <= b.max)) ??
-      [...sortedMedemBands.filter((b) => b.max == null && medemPontos >= (b.min ?? 0))].pop() ??
-      null;
+    const sortedMedemBands = [...medemBands].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    // Índice do escalão de clientes atingido → mesma posição no Medem.
+    const bandIdx = band ? sortedBands.indexOf(band) : -1;
+    const medemBand = (bandIdx >= 0 && bandIdx < sortedMedemBands.length) ? sortedMedemBands[bandIdx] : null;
     const medemCommission = medemBand?.commission ?? 0;
     const medemResult: IberdrolaMedemLine[] = personMedem.map((e) => ({
       idVenda: e.idVenda,
