@@ -26,6 +26,10 @@ export const usePaymentCalc = (month: string) =>
 export const usePaymentBreakdown = (month: string) =>
   useQuery({ ...orpc.payments.breakdown.queryOptions({ input: { month } }), enabled: /^\d{4}-\d{2}$/.test(month) });
 
+/** Previsao do mes a partir das vendas do CRM + quadro de desbloqueio de comissoes. */
+export const usePaymentForecast = (month: string) =>
+  useQuery({ ...orpc.payments.previsao.queryOptions({ input: { month } }), enabled: /^\d{4}-\d{2}$/.test(month) });
+
 /** Detalhe de um funcionario no mes. */
 export const usePaymentAutoDetail = (month: string, employeeId: number | null) =>
   useQuery({

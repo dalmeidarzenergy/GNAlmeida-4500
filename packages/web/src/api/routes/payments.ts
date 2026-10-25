@@ -683,6 +683,151 @@ export const paymentsRoute = {
     }),
 
   /**
+   * Previsão de Pagamentos: valores calculados a partir das vendas do CRM
+   * (mesma fórmula do Auto Iberdrola) + quadro de desbloqueio de comissões.
+   *
+   * Desbloqueio (igual para todos, ignora o pagamento forçado):
+   * - escalão apurado pelas vendas BTN (Luz/Dual) que entraram em fornecimento no mês;
+   * - "registadas" = todas as vendas do mês menos as que estão em Baixa ou Anuladas.
+   */
+  previsao: requireView("pagamentos")
+    .input(z.object({ month }))
+    .handler(async ({ input }) => {
+      const b = await buildBreakdown(input.month);
+
+      const staff = await db
+        .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId })
+        .from(employees);
+      const cTables = await db.select().from(commissionTables);
+      const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
+      const assignments = await db.select().from(employeeTables);
+      const allTeams = await db.select().from(teams);
+      const memberships = await db.select().from(teamMemberships);
+
+      const tableOf = (employeeId: number, fallback: number | null) => {
+        const a = assignments
+          .filter((x) => x.employeeId === employeeId && x.kind === "commission" && x.commissionTableId != null)
+          .filter((x) => x.startDate <= b.to && (x.endDate == null || x.endDate >= b.from))
+          .sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
+        return cTables.find((t) => t.id === (a?.commissionTableId ?? fallback)) ?? null;
+      };
+
+      /** 1.º escalão da tabela (mínimo do escalão mais baixo). */
+      const firstBandMin = (tableId: number) => {
+        const bands = cRows.filter((r) => r.tableId === tableId && r.kind === "clients");
+        const sorted = [...bands].sort((x, y) => (x.min ?? 0) - (y.min ?? 0));
+        return sorted.length ? sorted[0].min ?? 0 : 0;
+      };
+
+      // Contagens de desbloqueio, lidas directamente do CRM (independentes do cálculo de valores).
+      const hist = await db
+        .select({
+          saleId: saleStatusHistory.saleId,
+          status: saleStatusHistory.status,
+          on: saleStatusHistory.changedOn,
+          energy: saleStatusHistory.energy,
+          sellerId: sales.sellerId,
+          service: sales.service,
+          details: sales.details,
+        })
+        .from(saleStatusHistory)
+        .innerJoin(sales, eq(sales.id, saleStatusHistory.saleId))
+        .where(
+          and(
+            sql`${saleStatusHistory.status} in ('Em Fornecimento', 'Baixa', 'Anulado')`,
+            sql`((json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ','DUAL')) OR ${sales.service} = 'GÁS')`,
+          ),
+        );
+
+      const btnLevel = (d: Record<string, unknown> | null) => String(d?.voltageLevel ?? "").toUpperCase() === "BTN";
+      const isBtn = (r: { service: string | null; details: Record<string, unknown> | null }) =>
+        (r.service === "LUZ" || r.service === "DUAL") && btnLevel(r.details);
+
+      // Por comercial: vendas BTN que entraram em fornecimento no mês, e todas as vendas do mês
+      // (excepto as que estão em Baixa ou Anuladas).
+      const suppliedBySeller = new Map<number, number>();
+      const registeredBySeller = new Map<number, number>();
+      const suppliedSales = new Set<string>();
+      const registeredSales = new Map<number, Set<number>>();
+      const dropSales = new Set<string>();
+
+      for (const r of hist) {
+        if (r.sellerId == null) continue;
+        const key = `${r.saleId}|${r.energy === "gas" ? "gas" : "luz"}`;
+        if (r.status === "Em Fornecimento" && r.on >= b.from && r.on <= b.to && isBtn(r)) {
+          if (!suppliedSales.has(key)) {
+            suppliedSales.add(key);
+            suppliedBySeller.set(r.sellerId, (suppliedBySeller.get(r.sellerId) ?? 0) + 1);
+          }
+        }
+        if (r.status === "Baixa" || r.status === "Anulado") dropSales.add(key);
+        const set = registeredSales.get(r.sellerId) ?? new Set<string>();
+        set.add(key);
+        registeredSales.set(r.sellerId, set);
+      }
+      for (const [sellerId, set] of registeredSales) {
+        const counted = [...set].filter((k) => !dropSales.has(k)).length;
+        registeredBySeller.set(sellerId, counted);
+      }
+
+      const sellerRows = staff
+        .map((s) => {
+          const supplied = suppliedBySeller.get(s.id) ?? 0;
+          const regs = registeredBySeller.get(s.id) ?? 0;
+          if (!supplied && !regs) return null;
+          const table = tableOf(s.id, s.commissionTableId);
+          const min = table ? firstBandMin(table.id) : 0;
+          const isChief = allTeams.some((t) => t.leaderId === s.id);
+          return {
+            employeeId: s.id,
+            name: s.name,
+            tableName: table?.name ?? null,
+            isChief,
+            bandMin: min,
+            fornecimento: supplied,
+            faltamFornecimento: Math.max(0, min - supplied),
+            registadas: regs,
+            faltamRegistadas: Math.max(0, min - regs),
+            desbloqueado: min > 0 && supplied >= min,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x != null)
+        .sort((a, z) => z.faltamFornecimento - a.faltamFornecimento || z.registadas - a.registadas);
+
+      // Agregado por equipa: soma das vendas BTN em fornecimento de quem pertence à equipa
+      // (no mês) + do próprio chefe.
+      const teamRows = allTeams.map((t) => {
+        const ids = new Set<number>([t.leaderId]);
+        for (const m of memberships) {
+          if (m.teamId !== t.id) continue;
+          if (m.startDate > b.to || (m.endDate != null && m.endDate < b.from)) continue;
+          ids.add(m.employeeId);
+        }
+        const mine = sellerRows.filter((r) => ids.has(r.employeeId));
+        if (!mine.length) return null;
+        const table = tableOf(t.leaderId, null);
+        const min = table ? firstBandMin(table.id) : 0;
+        const fornecimento = mine.reduce((s, r) => s + r.fornecimento, 0);
+        const registadas = mine.reduce((s, r) => s + r.registadas, 0);
+        return {
+          teamId: t.id,
+          name: t.name,
+          leaderId: t.leaderId,
+          tableName: table?.name ?? null,
+          bandMin: min,
+          fornecimento,
+          faltamFornecimento: Math.max(0, min - fornecimento),
+          registadas,
+          faltamRegistadas: Math.max(0, min - registadas),
+          desbloqueado: fornecimento >= min && min > 0,
+        };
+      }).filter((x): x is NonNullable<typeof x> => x != null)
+        .sort((a, z) => z.faltamFornecimento - a.faltamFornecimento || z.registadas - a.registadas);
+
+      return { month: b.month, from: b.from, to: b.to, people: b.people, totals: b.totals, unlock: { sellers: sellerRows, teams: teamRows } };
+    }),
+
+  /**
    * Detalhe de uma pessoa, calculado a partir do breakdown (com overrides aplicados).
    */
   autoDetail: requireView("pagamentos")

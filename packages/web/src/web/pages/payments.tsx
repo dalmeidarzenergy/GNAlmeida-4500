@@ -12,6 +12,7 @@ import {
 } from "../queries/payments";
 import { useEmployeeOptions } from "../queries/hr";
 import { PageHeader, Modal, Field, Empty, Pill, Stat, ConfirmDelete, SubmitRow } from "../components/ui/kit";
+import UnlockBoard from "../components/unlock-board";
 import { errMsg, fmtDate, fmtEur, today } from "../lib/format";
 
 const KINDS = [
@@ -526,6 +527,9 @@ export default function PaymentsPage() {
 
       {pdfMsg && <div className="mt-4 rounded-[12px] border border-line bg-volt/5 px-4 py-2 text-[12px] text-ink-2">{pdfMsg}</div>}
 
+      <div className="mt-4">
+        <UnlockBoard month={month} />
+      </div>
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="A PAGAR (CALCULADO)" value={fmtEur(totalDue)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
         <Stat label="JA PAGO" value={fmtEur(totalPaid)} accent="var(--sky)" icon={<Check size={16} />} delay={60} />
