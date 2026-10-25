@@ -25,7 +25,7 @@ const tableInput = z.object({
   color: z.string().default("#c6f432"),
   active: z.boolean().default(true),
   group: z.enum(["gestor-comercial", "team-leader", "coordenador", "gestor-parcerias", "parceiro", "freelancer"]).default("gestor-comercial"),
-  regime: z.enum(["RES+BTN NEG", "MEDEM", "SOLAR"]).default("RES+BTN NEG"),
+  regime: z.enum(["RES+BTN NEG", "MEDEM", "SOLAR", "CE"]).default("RES+BTN NEG"),
   blockedSales: z.number().min(0).default(0),
   isBase: z.boolean().default(false),
   clientRows: z.array(rowInput).default([]),

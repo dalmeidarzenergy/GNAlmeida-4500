@@ -196,6 +196,23 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
   const assignments = await db.select().from(employeeTables);
 
+  // Equipas e pertenças: para apurar o escalão de chefe de equipa (CE) pela soma
+  // das vendas BTN em fornecimento dos membros da equipa liderada pelo chefe.
+  const allTeams = await db.select().from(teams);
+  const allMemberships = await db.select().from(teamMemberships);
+  const monthStart = `${m}-01`;
+  const monthEnd = `${m}-31`;
+  const teamOfChief = (chiefId: number): Set<number> => {
+    const ledTeamIds = allTeams.filter((t) => t.leaderId === chiefId).map((t) => t.id);
+    const ids = new Set<number>([chiefId]);
+    for (const mem of allMemberships) {
+      if (!ledTeamIds.includes(mem.teamId)) continue;
+      if (mem.startDate > monthEnd || (mem.endDate != null && mem.endDate < monthStart)) continue;
+      ids.add(mem.employeeId);
+    }
+    return ids;
+  };
+
   // Penalidades VNC do mês, por comercial.
   const vncs = await db.select().from(vncPenalties).where(eq(vncPenalties.month, m));
   const vncsByEmployee = new Map<number, { id: number; idVenda: string; amount: number }[]>();
@@ -371,6 +388,19 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     if (!bySeller.has(pid)) bySeller.set(pid, []);
   }
 
+  // Chefes de equipa com tabela CE: aparecem no auto mesmo sem vendas próprias,
+  // porque recebem a comissão da equipa.
+  for (const empSt of staff) {
+    const ceIds = new Set<number>();
+    if (empSt.commissionTableId) ceIds.add(empSt.commissionTableId);
+    for (const x of assignments) {
+      if (x.employeeId !== empSt.id || x.kind !== "commission" || !x.commissionTableId) continue;
+      if (x.startDate <= monthEnd && (x.endDate == null || x.endDate >= monthStart)) ceIds.add(x.commissionTableId);
+    }
+    const hasCe = cTables.some((t) => ceIds.has(t.id) && t.regime === "CE");
+    if (hasCe && !bySeller.has(empSt.id)) bySeller.set(empSt.id, []);
+  }
+
   const people: IberdrolaPerson[] = [];
 
   for (const [sellerId, mine] of bySeller) {
@@ -390,6 +420,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const resTable = empTables.find((t) => t.regime === "RES+BTN NEG") ?? null;
     const medemTable = empTables.find((t) => t.regime === "MEDEM") ?? null;
     const solarTable = empTables.find((t) => t.regime === "SOLAR") ?? null;
+    const ceTable = empTables.find((t) => t.regime === "CE") ?? null;
 
     const tableNames = empTables.map((t) => t.name).filter(Boolean);
     const base: IberdrolaPerson = {
@@ -481,6 +512,29 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
           .map((energy) => ({ ...e, energies: [energy] as ("luz" | "gas")[] })),
       );
       cbLines = [...(prevCbBySeller.get(sellerId) ?? []), ...cbFallback.flatMap((e) => split(e, band))];
+    }
+
+    // ── CE (chefe de equipa) ──
+    // Escalão pela soma das vendas BTN em fornecimento da equipa liderada pelo chefe
+    // (incluindo as do próprio chefe). Remunera cada venda da equipa (LUZ/GÁS/DD/FE/PEL)
+    // pelo valor do escalão atingido — igual à tabela de vendedor, mas a nível de equipa.
+    let ceBandSales = 0;
+    if (ceTable) {
+      const teamIds = teamOfChief(sellerId);
+      const teamEntries = autoEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
+      const ceBands = cRows.filter((r) => r.tableId === ceTable.id && r.kind === "clients");
+      const ceSBands = [...ceBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+      ceBandSales = teamEntries.filter((e) => e.hasBTN).length;
+      const ceBand =
+        ceSBands.find((b) => ceBandSales >= (b.min ?? 0) && (b.max == null || ceBandSales <= b.max)) ??
+        [...ceSBands.filter((b) => b.max == null && ceBandSales >= (b.min ?? 0))].pop() ??
+        null;
+      band = ceBand;
+      const ceBlocked = ceTable.blockedSales ?? 0;
+      const cePaid = teamEntries.slice(Math.min(ceBlocked, teamEntries.length));
+      lines = cePaid.flatMap((e) => split(e, ceBand));
+      const teamCb = cbEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
+      cbLines = teamCb.flatMap((e) => split(e, ceBand));
     }
 
     // ── MEDEM ──
@@ -580,7 +634,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     people.push({
       ...base,
-      bandSales: resTable ? mine.filter((e) => e.hasBTN).length : 0,
+      bandSales: ceTable ? ceBandSales : (resTable ? mine.filter((e) => e.hasBTN).length : 0),
       luzCount: lines.filter((l) => l.service === "Luz").length,
       gasCount: lines.filter((l) => l.service === "Gás").length,
       ddCount: sum(lines, (l) => (l.dd ? 1 : 0)),

@@ -99,7 +99,7 @@ function BusinessEditor({ rows, onChange }: { rows: BandDraft[]; onChange: (r: B
 }
 
 /** Escalões por nº de clientes (mensal) → LUZ / GÁS / DD / FE / PEL. */
-function ClientsEditor({ rows, onChange }: { rows: ClientDraft[]; onChange: (r: ClientDraft[]) => void }) {
+function ClientsEditor({ rows, onChange, hint }: { rows: ClientDraft[]; onChange: (r: ClientDraft[]) => void; hint?: string }) {
   const setRow = (i: number, patch: Partial<ClientDraft>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const add = () => onChange([...rows, emptyClient()]);
   const del = (i: number) => onChange(rows.length === 1 ? [emptyClient()] : rows.filter((_, j) => j !== i));
@@ -108,7 +108,7 @@ function ClientsEditor({ rows, onChange }: { rows: ClientDraft[]; onChange: (r: 
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <div className="font-display text-[14px] font-semibold">Escalões por nº de clientes (mensal)</div>
-          <div className="text-[11.5px] text-ink-3">Valor de remuneração por serviço vendido, conforme os clientes angariados no mês. Deixa em branco o que não se aplica.</div>
+          <div className="text-[11.5px] text-ink-3">{hint ?? "Valor de remuneração por serviço vendido, conforme os clientes angariados no mês. Deixa em branco o que não se aplica."}</div>
         </div>
         <button type="button" className="btn btn-ghost shrink-0" onClick={add}><Plus size={14} /> Escalão</button>
       </div>
@@ -282,6 +282,7 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
             <option value="RES+BTN NEG">RES+BTN NEG</option>
             <option value="MEDEM">MEDEM</option>
             <option value="SOLAR">SOLAR</option>
+            <option value="CE">CE</option>
           </select>
         </Field>
         <Field label="Estado">
@@ -307,7 +308,13 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
         </Field>
       </div>
 
-      {kind === "RES+BTN NEG" && <ClientsEditor rows={clientRows} onChange={setClientRows} />}
+      {(kind === "RES+BTN NEG" || kind === "CE") && (
+        <ClientsEditor
+          rows={clientRows}
+          onChange={setClientRows}
+          hint={kind === "CE" ? "Escalão apurado pela soma das vendas BTN em fornecimento de toda a equipa do chefe (incluindo as dele). Remunera por serviço vendido (LUZ/GÁS/DD/FE/PEL) do escalão atingido." : undefined}
+        />
+      )}
 
       {kind === "MEDEM" && (
         <>
@@ -410,6 +417,7 @@ export default function CommissionTablesPage() {
             { regime: "RES+BTN NEG", hint: "Residencial e BTN Negócio" },
             { regime: "MEDEM", hint: "Por número de pontos" },
             { regime: "SOLAR", hint: "Por quantidade de painéis" },
+            { regime: "CE", hint: "Chefe de equipa — escalão pela equipa" },
           ].map((o) => (
             <button
               key={o.regime}
