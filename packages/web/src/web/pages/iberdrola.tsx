@@ -590,7 +590,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
 
       {(p.overridesOut.length > 0 || p.overridesIn.length > 0) && (
         <div className="mb-5">
-          <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">Trocas de venda</div>
+          <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">Trocas de venda {canEdit && <span className="text-[11px] font-normal normal-case tracking-normal text-ink-3">(clica no ✕ para anular)</span>}</div>
           <div className="rounded-[10px] border border-line divide-y divide-line">
             {p.overridesOut.map((o) => (
               <div key={`out-${o.idVenda}`} className="flex items-center gap-2 px-3 py-2 text-[12.5px]">
@@ -599,6 +599,9 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 <span className="text-ink-2">→</span>
                 <span>{o.toName}</span>
                 <span className="text-[11px] text-ink-3">(cedida)</span>
+                {canEdit && (
+                  <button type="button" className="ml-auto shrink-0 rounded-[6px] p-1 text-ink-2 hover:bg-rose/10 hover:text-rose" disabled={overrideRemove.isPending} onClick={() => { const ov = (overrideList.data ?? []).find((x: { idVenda: string }) => x.idVenda === o.idVenda); if (ov) overrideRemove.mutateAsync({ id: ov.id }); }} title="Anular troca"><Trash2 size={12} /></button>
+                )}
               </div>
             ))}
             {p.overridesIn.map((o) => (
@@ -608,6 +611,9 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 <span className="text-ink-2">←</span>
                 <span>{o.fromName}</span>
                 <span className="text-[11px] text-ink-3">(recebida)</span>
+                {canEdit && (
+                  <button type="button" className="ml-auto shrink-0 rounded-[6px] p-1 text-ink-2 hover:bg-rose/10 hover:text-rose" disabled={overrideRemove.isPending} onClick={() => { const ov = (overrideList.data ?? []).find((x: { idVenda: string }) => x.idVenda === o.idVenda); if (ov) overrideRemove.mutateAsync({ id: ov.id }); }} title="Anular troca"><Trash2 size={12} /></button>
+                )}
               </div>
             ))}
           </div>
