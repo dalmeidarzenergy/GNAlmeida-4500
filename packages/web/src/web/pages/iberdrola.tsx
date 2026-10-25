@@ -4,7 +4,7 @@ import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/ki
 import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
-import { errMsg, fmtDate, fmtEur, fmtEur2, monthLabel, thisMonth } from "../lib/format";
+import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
 import { authClient } from "../lib/auth";
 
 /** Descarrega o ficheiro original (com auth via bearer token). */
@@ -267,9 +267,9 @@ function Finais() {
       </div>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Stat label="A RECEBER" value={fmtEur(data?.totals.gross ?? 0)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
-        <Stat label="CHARGBACK" value={fmtEur(data?.totals.chargeback ?? 0)} accent="var(--danger)" icon={<Undo2 size={16} />} delay={60} />
-        <Stat label="TOTAL" value={fmtEur(data?.totals.due ?? 0)} accent="var(--sky)" icon={<Check size={16} />} delay={120} />
+        <Stat label="A RECEBER" value={fmtEur2(data?.totals.gross ?? 0)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
+        <Stat label="CHARGBACK" value={fmtEur2(data?.totals.chargeback ?? 0)} accent="var(--danger)" icon={<Undo2 size={16} />} delay={60} />
+        <Stat label="TOTAL" value={fmtEur2(data?.totals.due ?? 0)} accent="var(--sky)" icon={<Check size={16} />} delay={120} />
       </div>
 
       {(data?.unmatchedAuto.length || data?.unmatchedChargeback.length) ? (
@@ -406,7 +406,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
         <div className="flex gap-2">
           <Stat label="Escalão" value={String(p.bandSales)} accent="var(--amber)" />
           <Stat label="Vendas" value={String(p.salesCount)} accent="var(--sky)" />
-          <Stat label="Devido" value={fmtEur(p.due)} accent="var(--volt)" />
+          <Stat label="Devido" value={fmtEur2(p.due)} accent="var(--volt)" />
         </div>
       </div>
 
@@ -414,8 +414,8 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
         <MiniStat label="Luz" value={String(p.luzCount)} />
         <MiniStat label="Gás" value={String(p.gasCount)} />
         <MiniStat label="Tabela" value={p.missingTable ? "—" : (p.tableName ?? "—")} />
-        <MiniStat label="Base (luz+gás)" value={fmtEur(p.baseAmount)} />
-        <MiniStat label="Serviços" value={fmtEur(p.svcAmount)} />
+        <MiniStat label="Base (luz+gás)" value={fmtEur2(p.baseAmount)} />
+        <MiniStat label="Serviços" value={fmtEur2(p.svcAmount)} />
       </div>
 
       <div className="mb-5">

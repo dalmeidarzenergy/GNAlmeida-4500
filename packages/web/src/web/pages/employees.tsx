@@ -303,8 +303,8 @@ function EmployeeAutos({ employeeId }: { employeeId: number }) {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3">
               <div className="font-display text-[14px] font-semibold">{monthLabel(month)}</div>
               <div className="flex flex-wrap gap-4 text-[11px] text-ink-2">
-                <span>Bruto <span className="num ml-1 text-[12px] font-semibold text-ink">{fmtEur(person.gross)}</span></span>
-                <span>Chargback <span className="num ml-1 text-[12px] font-semibold text-rose">{fmtEur(person.chargeback)}</span></span>
+                <span>Bruto <span className="num ml-1 text-[12px] font-semibold text-ink">{fmtEur2(person.gross)}</span></span>
+                <span>Chargback <span className="num ml-1 text-[12px] font-semibold text-rose">{fmtEur2(person.chargeback)}</span></span>
                 <span>Devido <span className="num ml-1 text-[12px] font-semibold text-volt">{fmtEur2(person.due)}</span></span>
               </div>
             </div>
