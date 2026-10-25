@@ -336,10 +336,11 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         continue;
       }
 
-      // Vem a pagamento: entrou em fornecimento neste mes e nao tem Baixa nem
-      // Manual no proprio mes de fornecimento. Baixa num mes futuro nao impede
-      // o pagamento — sera tratada como chargeback nesse mes.
-      if (suppliedOn && suppliedOn >= from && suppliedOn <= to && !baixaNoMesSup && !manual) {
+      // Vem a pagamento: entrou em fornecimento neste mes, foi assinada neste
+      // mes, e nao tem Baixa nem Manual no proprio mes de fornecimento.
+      // Baixa num mes futuro nao impede o pagamento — sera tratada como
+      // chargeback nesse mes.
+      if (suppliedOn && suppliedOn >= from && suppliedOn <= to && e.signedOn && e.signedOn >= from && e.signedOn <= to && !baixaNoMesSup && !manual) {
         const l = valid.get(e.sellerId) ?? [];
         l.push(lite);
         valid.set(e.sellerId, l);
