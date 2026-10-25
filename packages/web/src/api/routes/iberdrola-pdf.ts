@@ -151,14 +151,28 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
   const pdfPath = join(tmpDir, `iberdrola-pdf-${ts}.pdf`);
   writeFileSync(htmlPath, html, "utf-8");
 
-  try {
-    execSync(
-      `xvfb-run -a google-chrome --headless --disable-gpu --no-sandbox --hide-scrollbars --print-to-pdf="${pdfPath}" --no-pdf-header-footer --virtual-time-budget=10000 "file://${htmlPath}"`,
-      { timeout: 30_000, encoding: "utf-8" },
-    );
-  } catch {
+  // Chrome headless "novo" não precisa de X server. Tenta primeiro sem xvfb-run;
+  // se o binário não existir, testa chrome/chromium. Nunca exige xvfb (não instalado no WSL).
+  const candidates = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"];
+  let lastErr: unknown = null;
+  let ok = false;
+
+  for (const bin of candidates) {
+    const cmd = `${bin} --headless --disable-gpu --no-sandbox --hide-scrollbars --run-all-compositor-stages-before-draw --print-to-pdf="${pdfPath}" --no-pdf-header-footer --virtual-time-budget=10000 "file://${htmlPath}"`;
+    try {
+      execSync(cmd, { timeout: 30_000, encoding: "utf-8", stdio: "pipe" });
+      if (existsSync(pdfPath) && readFileSync(pdfPath).length > 0) {
+        ok = true;
+        break;
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  if (!ok) {
     try { unlinkSync(htmlPath); } catch { /* ignore */ }
-    throw new Error("Erro ao converter para PDF.");
+    throw new Error(`Erro ao converter para PDF (Chrome indisponível). ${lastErr instanceof Error ? lastErr.message : ""}`);
   }
 
   try { unlinkSync(htmlPath); } catch { /* ignore */ }
