@@ -5,10 +5,10 @@
 set -e
 cd /home/diogo_almeida/GNAlmeida-4500
 
-echo "==> 1/4  A atualizar codigo a partir do GitHub"
+echo "==> 1/5  A atualizar codigo a partir do GitHub"
 git fetch origin && git reset --hard origin/main
 
-echo "==> 2/4  A sincronizar a base de dados"
+echo "==> 2/5  A sincronizar a base de dados"
 cd packages/web
 
 # CÓPIA DE SEGURANÇA antes de qualquer alteração (nunca apagar dados do utilizador).
@@ -73,7 +73,7 @@ for col, decl in before.items():
 c.close()
 PY
 
-bun --env-file=../../.env drizzle-kit push
+bun --env-file=../../.env drizzle-kit push --force
 
 # Períodos de atividade da equipa: cria a tabela (se o push ainda não o fez) e
 # preenche um período aberto para as equipas já existentes (a partir da data de criação).
@@ -87,6 +87,13 @@ c.execute("""CREATE TABLE IF NOT EXISTS team_periods (
     end_date TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
 )""")
+# O drizzle-kit push pode ter criado a tabela SEM default em created_at; garante que existe
+# (inserções sem created_at falhavam com NOT NULL constraint failed).
+cols = [r[1] for r in c.execute("PRAGMA table_info(team_periods)").fetchall()]
+if "created_at" not in cols:
+    c.execute("ALTER TABLE team_periods ADD COLUMN created_at INTEGER NOT NULL DEFAULT (unixepoch())")
+    c.commit()
+    print("  coluna team_periods.created_at adicionada")
 n = 0
 for t in c.execute("SELECT id, leader_id, created_at FROM teams WHERE leader_id IS NOT NULL").fetchall():
     tid, lid, created = t
@@ -95,7 +102,7 @@ for t in c.execute("SELECT id, leader_id, created_at FROM teams WHERE leader_id 
         continue
     ts = created if isinstance(created, int) else int(float(created))
     d = datetime.date.fromtimestamp(ts).isoformat()
-    c.execute("INSERT INTO team_periods (team_id, start_date, end_date) VALUES (?, ?, NULL)", (tid, d))
+    c.execute("INSERT INTO team_periods (team_id, start_date, end_date, created_at) VALUES (?, ?, NULL, unixepoch())", (tid, d))
     n += 1
 c.commit()
 if n:
