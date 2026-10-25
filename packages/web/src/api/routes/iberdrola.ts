@@ -294,10 +294,14 @@ async function buildCalc(m: string) {
     const bands = cRows.filter((r) => r.tableId === table.id && r.kind === "clients");
     // Escalão: só conta BTN (luz) em fornecimento; BP (gás) é comissionado mas não sobe o escalão.
     const bandSales = mine.filter((e) => e.hasBTN).length;
+    // Comissões forçadas: o primeiro escalão deixa de existir — o colaborador
+    // passa a receber a partir do segundo escalão da tabela.
+    const sortedBands = [...bands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+    const pool = emp.forceCommissions ? sortedBands.slice(1) : bands;
     const band =
-      bands.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
-      [...bands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
-      null;
+      pool.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
+      [...pool.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
+      (emp.forceCommissions ? (pool[0] ?? null) : null);
 
     // Bloqueio de vendas (objetivo): as primeiras N vendas não são pagas, salvo
     // se o pagamento de comissões estiver forçado para este comercial.
