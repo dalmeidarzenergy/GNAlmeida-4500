@@ -117,9 +117,6 @@ type IberdrolaEntry = {
   /** True quando a "Nivel de tensão" é BTN (conta para o escalão). */
   hasBTN: boolean;
   excel: Record<string, unknown>;
-  /** Data da venda extraída do Excel (se disponível). Usada na CE para
-   *  filtrar vendas do chefe anteriores à criação da equipa. */
-  saleDate: string | null;
 };
 
 type Band = { luz: number | null; gas: number | null; dd: number | null; fe: number | null; pel: number | null };
@@ -186,16 +183,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const clientName =
       strOf(colVal(data, "cliente")) ?? strOf(colVal(data, "titular")) ?? strOf(colVal(data, "nome do cliente"));
 
-    // Data da venda: procura colunas comuns no Excel ("Data", "Data ativação", "Data início").
-    const rawDate =
-      strOf(colVal(data, "data")) ??
-      strOf(colVal(data, "data contratacao")) ??
-      strOf(colVal(data, "data ativacao")) ??
-      strOf(colVal(data, "data inicio")) ??
-      strOf(colVal(data, "data contrato"));
-    const saleDate = rawDate ? rawDate.slice(0, 10) : null; // normaliza YYYY-MM-DD
-
-    const entry: IberdrolaEntry = { idVenda, employeeId, clientName, energies, hasBTN, excel: data, saleDate };
+    const entry: IberdrolaEntry = { idVenda, employeeId, clientName, energies, hasBTN, excel: data };
 
     if (r.sheet === "auto") {
       if (r.estado === "Em Fornecimento") {
@@ -230,34 +218,25 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
   const monthStart = `${m}-01`;
   const monthEnd = `${m}-31`;
 
-  // Períodos de atividade que sobrepõem o mês, por equipa.
-  const periodsByTeam = new Map<number, { start: string; end: string }[]>();
+  // Equipas abertas neste mês (com um período de atividade a sobrepor o mês).
+  const openTeamIds = new Set<number>();
   for (const p of allPeriods) {
     const start = p.startDate;
     const end = p.endDate ?? monthEnd;
     if (start > monthEnd || end < monthStart) continue; // equipa fechada neste mês
-    const arr = periodsByTeam.get(p.teamId) ?? [];
-    arr.push({ start, end });
-    periodsByTeam.set(p.teamId, arr);
+    openTeamIds.add(p.teamId);
   }
 
-  /** Equipas lideradas pelo chefe que estão abertas em algum momento do mês. */
-  const activeTeamsOfChief = (chiefId: number): number[] =>
-    allTeams.filter((t) => t.leaderId === chiefId && (periodsByTeam.get(t.id)?.length ?? 0) > 0).map((t) => t.id);
-
-  /** Membros da equipa liderada pelo chefe (no mês) e os períodos em que a equipa estava aberta. */
-  const teamOfChief = (chiefId: number): { memberIds: Set<number>; activeRanges: { start: string; end: string }[] } => {
-    const teamIds = activeTeamsOfChief(chiefId);
+  /** Membros da equipa liderada pelo chefe (no mês), desde que a equipa esteja aberta. */
+  const teamOfChief = (chiefId: number): Set<number> => {
+    const teamIds = allTeams.filter((t) => t.leaderId === chiefId && openTeamIds.has(t.id)).map((t) => t.id);
     const ids = new Set<number>([chiefId]);
     for (const mem of allMemberships) {
       if (!teamIds.includes(mem.teamId)) continue;
       if (mem.startDate > monthEnd || (mem.endDate != null && mem.endDate < monthStart)) continue;
       ids.add(mem.employeeId);
     }
-    const activeRanges = teamIds
-      .flatMap((tid) => periodsByTeam.get(tid) ?? [])
-      .map((r) => ({ start: r.start < monthStart ? monthStart : r.start, end: r.end > monthEnd ? monthEnd : r.end }));
-    return { memberIds: ids, activeRanges };
+    return ids;
   };
 
   // Penalidades VNC do mês, por comercial.
@@ -578,18 +557,9 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     let ceCbLines: IberdrolaLine[] = [];
     let ceUnit: { luz: number; gas: number } | null = null;
     if (ceTable) {
-      const { memberIds: teamIds, activeRanges } = teamOfChief(sellerId);
-      let teamEntries = autoEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
+      const teamIds = teamOfChief(sellerId);
+      const teamEntries = autoEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
 
-      // As vendas próprias do chefe só contam para a CE nas datas em que a
-      // equipa estava aberta. Só filtra quando a entry tem data do Excel; sem
-      // data, assume-se que a venda é do período válido (evita sub-pagamento).
-      if (activeRanges.length) {
-        const inRange = (d: string) => activeRanges.some((r) => d >= r.start && d <= r.end);
-        teamEntries = teamEntries.filter((e) =>
-          e.employeeId !== sellerId || e.saleDate == null || inRange(e.saleDate),
-        );
-      }
       const ceBands = cRows.filter((r) => r.tableId === ceTable.id && r.kind === "clients");
       const ceSBands = [...ceBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
       ceBandSales = teamEntries.filter((e) => e.hasBTN).length;
