@@ -719,13 +719,11 @@ export const paymentsRoute = {
         return sorted.length ? sorted[0].min ?? 0 : 0;
       };
 
-      // Contagens de desbloqueio, lidas directamente do CRM (independentes do cálculo de valores).
-      const hist = await db
+      // ── Fornecimento (vendas BTN que entraram em fornecimento no mês) ──
+      const suppliedHist = await db
         .select({
           saleId: saleStatusHistory.saleId,
-          status: saleStatusHistory.status,
           on: saleStatusHistory.changedOn,
-          energy: saleStatusHistory.energy,
           sellerId: sales.sellerId,
           service: sales.service,
           details: sales.details,
@@ -734,40 +732,35 @@ export const paymentsRoute = {
         .innerJoin(sales, eq(sales.id, saleStatusHistory.saleId))
         .where(
           and(
-            sql`${saleStatusHistory.status} in ('Em Fornecimento', 'Baixa', 'Anulado')`,
-            sql`((json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ','DUAL')) OR ${sales.service} = 'GÁS')`,
+            eq(saleStatusHistory.status, "Em Fornecimento"),
+            sql`${saleStatusHistory.changedOn} >= ${b.from} AND ${saleStatusHistory.changedOn} <= ${b.to}`,
+            sql`json_extract(${sales.details}, '$.voltageLevel') = 'BTN' AND ${sales.service} in ('LUZ','DUAL')`,
           ),
         );
 
-      const btnLevel = (d: Record<string, unknown> | null) => String(d?.voltageLevel ?? "").toUpperCase() === "BTN";
-      const isBtn = (r: { service: string | null; details: Record<string, unknown> | null }) =>
-        (r.service === "LUZ" || r.service === "DUAL") && btnLevel(r.details);
-
-      // Por comercial: vendas BTN que entraram em fornecimento no mês, e todas as vendas do mês
-      // (excepto as que estão em Baixa ou Anuladas).
       const suppliedBySeller = new Map<number, number>();
-      const registeredBySeller = new Map<number, number>();
-      const suppliedSales = new Set<string>();
-      const registeredSales = new Map<number, Set<number>>();
-      const dropSales = new Set<string>();
-
-      for (const r of hist) {
-        if (r.sellerId == null) continue;
-        const key = `${r.saleId}|${r.energy === "gas" ? "gas" : "luz"}`;
-        if (r.status === "Em Fornecimento" && r.on >= b.from && r.on <= b.to && isBtn(r)) {
-          if (!suppliedSales.has(key)) {
-            suppliedSales.add(key);
-            suppliedBySeller.set(r.sellerId, (suppliedBySeller.get(r.sellerId) ?? 0) + 1);
-          }
-        }
-        if (r.status === "Baixa" || r.status === "Anulado") dropSales.add(key);
-        const set = registeredSales.get(r.sellerId) ?? new Set<string>();
-        set.add(key);
-        registeredSales.set(r.sellerId, set);
+      const suppliedIds = new Set<number>();
+      for (const r of suppliedHist) {
+        if (r.sellerId == null || suppliedIds.has(r.saleId)) continue;
+        suppliedIds.add(r.saleId);
+        suppliedBySeller.set(r.sellerId, (suppliedBySeller.get(r.sellerId) ?? 0) + 1);
       }
-      for (const [sellerId, set] of registeredSales) {
-        const counted = [...set].filter((k) => !dropSales.has(k)).length;
-        registeredBySeller.set(sellerId, counted);
+
+      // ── Registadas (vendas com date no mês, excepto Baixa/Anulado) ──
+      const registeredRows = await db
+        .select({ sellerId: sales.sellerId })
+        .from(sales)
+        .where(
+          and(
+            sql`${sales.date} >= ${b.from} AND ${sales.date} <= ${b.to}`,
+            sql`${sales.status} not in ('Baixa','Anulado')`,
+          ),
+        );
+
+      const registeredBySeller = new Map<number, number>();
+      for (const r of registeredRows) {
+        if (r.sellerId == null) continue;
+        registeredBySeller.set(r.sellerId, (registeredBySeller.get(r.sellerId) ?? 0) + 1);
       }
 
       const sellerRows = staff
