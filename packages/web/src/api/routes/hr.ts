@@ -3,7 +3,7 @@ import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { authed, requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { absences, calendars, chiefTables, commissionTables, departments, employeeTables, employees, positions, teamMemberships, teams, userRoles } from "../database/schema";
+import { absences, calendars, chiefTables, commissionTables, departments, employeeTables, employees, positions, teamLeadership, teamMemberships, teams, userRoles } from "../database/schema";
 import { localWithPhotos } from "../lib/s3";
 import { ensureTeamCalendar, syncPersonalCalendarTeam } from "./agenda";
 import { canManage } from "../shared/hierarchy";
@@ -129,6 +129,22 @@ async function closeMemberships(employeeId: number, date: string, teamId?: numbe
 async function moveMember(employeeId: number, teamId: number | null, date: string) {
   await closeMemberships(employeeId, date);
   if (teamId != null) await db.insert(teamMemberships).values({ teamId, employeeId, startDate: date });
+}
+
+/** Garante que a chefia da equipa está registada no histórico a partir de `date`.
+ *  Se o chefe mudou, fecha o período em aberto e abre outro; senão não faz nada. */
+async function syncTeamLeader(teamId: number, leaderId: number, date: string) {
+  const [open] = await db
+    .select({ leaderId: teamLeadership.leaderId })
+    .from(teamLeadership)
+    .where(and(eq(teamLeadership.teamId, teamId), sql`${teamLeadership.endDate} is null`))
+    .limit(1);
+  if (open && open.leaderId === leaderId) return;
+  await db
+    .update(teamLeadership)
+    .set({ endDate: dayBefore(date) })
+    .where(and(eq(teamLeadership.teamId, teamId), sql`${teamLeadership.endDate} is null`));
+  await db.insert(teamLeadership).values({ teamId, leaderId, startDate: date });
 }
 
 /** Ids que um chefe de equipa pode ver/gerir: ele próprio e os membros das equipas que chefia. */
@@ -526,6 +542,7 @@ export const hr = {
       const { memberIds: _m, effectiveDate, ...data } = input;
       const [row] = await db.insert(teams).values({ ...data, coordinatorId: data.coordinatorId ?? null }).returning();
       await setTeamMembers(row.id, memberIds, effectiveDate);
+      await syncTeamLeader(row.id, data.leaderId, effectiveDate ?? todayLisbon());
       // Nasce o calendário da equipa; os calendários pessoais dos membros passam para esta equipa.
       await ensureTeamCalendar(row.id);
       for (const m of memberIds) await syncPersonalCalendarTeam(m, row.id);
@@ -536,6 +553,7 @@ export const hr = {
       const { id, memberIds: _m, effectiveDate, ...data } = input;
       await db.update(teams).set(data).where(eq(teams.id, id));
       await setTeamMembers(id, memberIds, effectiveDate);
+      await syncTeamLeader(id, data.leaderId, effectiveDate ?? todayLisbon());
       return { ok: true };
     }),
     /** Muda um comercial de equipa a partir de uma data (a pertença anterior termina no dia antes). */

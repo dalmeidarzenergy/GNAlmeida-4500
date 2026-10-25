@@ -307,7 +307,7 @@ function Finais() {
   const allPeople = data?.people ?? [];
 
   // Filtra por equipa se um líder estiver selecionado.
-  const selectedTeam = teamLeader ? teams.data?.find((t) => String(t.leaderId) === teamLeader) : null;
+  const selectedTeam = teamLeader ? teams.data?.find((t) => String(t.id) === teamLeader) : null;
   const memberIds = selectedTeam ? new Set(selectedTeam.members.map((m) => m.employeeId)) : null;
   const people = memberIds ? allPeople.filter((p) => memberIds.has(p.employeeId)) : allPeople;
   const totals = {
@@ -327,7 +327,7 @@ function Finais() {
           <select className="input w-56" value={teamLeader} onChange={(e) => { setTeamLeader(e.target.value); setSelected(null); }}>
             <option value="">Todas as equipas</option>
             {(teams.data ?? []).map((t) => (
-              <option key={t.leaderId} value={String(t.leaderId)}>{t.leaderName} — {t.name}</option>
+              <option key={t.id} value={String(t.id)}>{t.leaderName} — {t.name}</option>
             ))}
           </select>
         </Field>
