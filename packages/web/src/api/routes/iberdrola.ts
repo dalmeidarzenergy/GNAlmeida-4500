@@ -106,13 +106,29 @@ async function buildCalc(m: string) {
 
   const rows = await db.select().from(iberdrolaRows).where(inArray(iberdrolaRows.importId, importIds));
 
-  // Só as vendas "Em Fornecimento" da folha `auto` entram no auto; a folha `chargback` é deduzida.
-  const autoIds = new Set<string>();
+  // Normalizador para nomes de colunas do Excel (ignora maiúsculas/acentos).
+  const normCol = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+
+  // Só as vendas "Em Fornecimento" da folha `auto` entram no auto.
+  //  - BTN (Nivel de tensão) conta para o escalão.
+  //  - BP  (Nivel de pressão) é comissionado mas NÃO conta para o escalão.
+  const autoBTN = new Set<string>();
+  const autoCommission = new Set<string>();
+  const autoDataByContract = new Map<string, Record<string, unknown>>();
   const cbIds = new Set<string>();
   for (const r of rows) {
     if (!r.idVenda) continue;
-    if (r.sheet === "auto" && r.estado === "Em Fornecimento") autoIds.add(r.idVenda);
-    else if (r.sheet === "chargback") cbIds.add(r.idVenda);
+    if (r.sheet === "auto" && r.estado === "Em Fornecimento") {
+      autoCommission.add(r.idVenda);
+      const data = (r.data ?? {}) as Record<string, unknown>;
+      autoDataByContract.set(r.idVenda, data);
+      const nivelKey = Object.keys(data).find((k) => normCol(k) === "nivel de tensao");
+      if (nivelKey && String(data[nivelKey] ?? "").toUpperCase() === "BTN") {
+        autoBTN.add(r.idVenda);
+      }
+    } else if (r.sheet === "chargback") {
+      cbIds.add(r.idVenda);
+    }
   }
 
   // Liga ao comercial pelo ID de venda (número de contrato), não por nome/NIF.
@@ -145,7 +161,7 @@ async function buildCalc(m: string) {
     return { found, missing };
   };
 
-  const auto = match(autoIds);
+  const auto = match(autoCommission);
   const cb = match(cbIds);
 
   const cTables = await db.select().from(commissionTables);
@@ -166,14 +182,12 @@ async function buildCalc(m: string) {
   }
 
   // Mapa do id de venda -> linha do Excel (para avaliar condições das regras automáticas).
-  const excelByContract = new Map<string, Record<string, unknown>>();
-  for (const r of rows) if (r.idVenda) excelByContract.set(r.idVenda, r.data ?? {});
+  const excelByContract = new Map(autoDataByContract);
 
   const cellNum = (v: unknown): number | null => {
     const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
     return Number.isFinite(n) ? n : null;
   };
-  const normCol = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
   /** Avalia a condição de uma regra automática sobre uma venda (linha do Excel). */
   const matchesCondition = (rule: (typeof allRules)[number], excel: Record<string, unknown>): boolean => {
     if (!rule.sourceColumn || !rule.operator) return false;
@@ -294,14 +308,22 @@ async function buildCalc(m: string) {
     }
 
     const bands = cRows.filter((r) => r.tableId === table.id && r.kind === "clients");
-    const luzLines = mine.flatMap((s) => energiesOf(s.service).filter((e) => e === "luz"));
-    const bandSales = luzLines.length;
+    // Escalão: só conta BTN (luz) em fornecimento; BP (gás) é comissionado mas não sobe o escalão.
+    const bandSales = mine.filter((s) => autoBTN.has(contract(s.details))).flatMap((s) => energiesOf(s.service).filter((e) => e === "luz")).length;
     const band =
       bands.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
       [...bands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
       null;
 
-    const lines = mine.flatMap((s) => split(s, band));
+    // Linhas comissionadas: só as que estão "Em Fornecimento" (autoCommission).
+    // Se o contrato não tem BTN, só gera a linha de gás (BP).
+    const lines = mine.flatMap((s) => {
+      const c = contract(s.details);
+      if (!autoCommission.has(c)) return [];
+      const hasBTN = autoBTN.has(c);
+      const all = split(s, band);
+      return hasBTN ? all : all.filter((l) => l.service === "Gás");
+    });
     const cbMine = cb.found.filter((s) => s.sellerId === sellerId);
     const cbLines = cbMine.flatMap((s) => split(s, band));
 
