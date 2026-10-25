@@ -13,6 +13,8 @@ import {
   employeeTables,
   employees,
   payments,
+  rules,
+  ruleAssignments,
   sales,
   saleStatusHistory,
   teamMemberships,
@@ -183,6 +185,9 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   const [fy, fm] = from.split("-").map(Number);
   const cutoff = new Date(fy, fm - 7, 1).toISOString().slice(0, 10);
 
+  // Regras ativas: as automáticas aplicam-se a todos, as manuais por atribuição mensal.
+  const activeRules = (await db.select().from(rules)).filter((r) => r.active);
+
   const hist = await db
     .select({
       saleId: saleStatusHistory.saleId,
@@ -269,6 +274,10 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     clientName: string | null;
     /** Energia que esta linha representa. */
     energy: "luz" | "gas";
+    /** Data da assinatura da venda. */
+    signedOn: string | null;
+    /** Histórico de estados desta venda (para a regra dos 3 dias). */
+    hist: { luz: { status: string; on: string }[]; gas: { status: string; on: string }[] };
   };
 
   /** As energias que a venda realmente tem (LUZ -> luz; GÁS -> gas; DUAL -> ambas). */
@@ -293,7 +302,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     const list = energiesOf(e.service);
 
     for (const k of list) {
-      const lite: Lite = { saleId, number: contract(e.details), service: e.service, details: e.details, clientName: e.clientName, energy: k };
+      const lite: Lite = { saleId, number: contract(e.details), service: e.service, details: e.details, clientName: e.clientName, energy: k, signedOn: e.signedOn, hist: e.hist };
       const suppliedOn = e.sup[k];
       // Baixa/Anulado DESTA energia, em qualquer momento (definitivas).
       const baixas = [...new Set(e.baixa[k])].sort();
@@ -379,11 +388,6 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   const memberships = await db.select().from(teamMemberships);
   const allTeams = await db.select({ id: teams.id, leaderId: teams.leaderId }).from(teams);
 
-  const pick = <T extends { startDate: string; endDate: string | null }>(list: T[]) =>
-    list
-      .filter((a) => a.startDate <= to && (a.endDate == null || a.endDate >= from))
-      .sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
-
   const teamOfChief = (chiefId: number) => {
     const led = allTeams.filter((t) => t.leaderId === chiefId).map((t) => t.id);
     const ids = new Set<number>([chiefId]);
@@ -430,6 +434,67 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     total: r.total,
   });
 
+  /**
+   * Penalizações calculadas a partir das regras (aba Regras):
+   * - Contratação/Timing: a venda demora mais de 3 dias a passar a `Control`.
+   * - Campanha: a campanha da venda entra numa regra da aba Regras.
+   */
+  const normRule = (s: string | null | undefined) => (s ?? "").trim().toUpperCase();
+
+  /** Dias entre a assinatura e a entrada em `Control` (null quando ainda não passou). */
+  const daysToControl = (h: { status: string; on: string }[]) => {
+    const ctrl = h.filter((x) => normRule(x.status) === "CONTROL").map((x) => x.on).sort()[0];
+    return ctrl ?? null;
+  };
+
+  const daysBetween = (a: string, b: string) => {
+    const [ay, am, ad] = a.split("-").map(Number);
+    const [by, bm, bd] = b.split("-").map(Number);
+    return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+  };
+
+  /** Regra automática de timing (fonte: regra da aba Regras). */
+  const timingRule = activeRules.find((r) => normRule(r.name).includes("TIMING")) ?? null;
+
+  /** Penalização de timing de uma venda (positiva = a descontar). */
+  const timingPenalty = (e: Lite) => {
+    const ctrl = daysToControl(e.hist?.[e.energy] ?? []);
+    if (!ctrl || !e.signedOn) return 0;
+    const dias = daysBetween(e.signedOn, ctrl);
+    if (dias <= 3) return 0;
+    if (!timingRule) return 0;
+    return round2(Math.abs(timingRule.effectValue));
+  };
+
+  /**
+   * Regra de campanha: uma campanha da venda que conste nas regras da aba Regras.
+   * Nome `+AMIGO…` penaliza 62,5 % do valor da luz; as restantes regras de
+   * campanha (ex.: "Campanha B") aplicam o seu próprio efeito.
+   */
+  const campaignRuleFor = (code: string | null) => {
+    const c = normRule(code);
+    if (!c) return null;
+    const amigo = activeRules.find((r) => normRule(r.name).startsWith("+AMIGO"));
+    if (amigo && c.startsWith("+AMIGO")) return amigo;
+    return (
+      activeRules.find((r) => {
+        const n = normRule(r.name);
+        if (!n.includes("CAMPANHA")) return false;
+        const cv = normRule(r.compareValue);
+        return cv !== "" && c === cv;
+      }) ?? null
+    );
+  };
+
+  /** Penalização de campanha de uma venda (positiva = a descontar). */
+  const campaignPenalty = (r: Resolved) => {
+    const rule = campaignRuleFor(r.campaign);
+    if (!rule) return 0;
+    const lz = r.luz;
+    if (rule.effectType === "percent") return round2(Math.abs(rule.effectValue) * lz);
+    return round2(Math.abs(rule.effectValue));
+  };
+
   const summarize = (lines: Resolved[], sales: Lite[]) => {
     const flag = (s: Lite, k: string) => yes((s.details ?? {})[k]);
     return {
@@ -443,13 +508,29 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   };
 
   // ---- Comerciais ----
+  const CE = "CE";
+  const OWN = "RES+BTN NEG";
+  const activeAssignsLocal = (employeeId: number) =>
+    assignments
+      .filter((x) => x.employeeId === employeeId && x.kind === "commission" && x.commissionTableId != null)
+      .filter((x) => x.startDate <= to && (x.endDate == null || x.endDate >= from))
+      .sort((x, y) => (x.startDate === y.startDate ? y.id - x.id : x.startDate < y.startDate ? 1 : -1));
+  const tablesOfRegimeLocal = (employeeId: number, fallbackTableId: number | null, regime: string) => {
+    const ids: (number | null)[] = [];
+    for (const a of activeAssignsLocal(employeeId)) ids.push(a.commissionTableId);
+    if (fallbackTableId != null) ids.push(fallbackTableId);
+    return ids
+      .map((id) => cTables.find((x) => x.id === id))
+      .filter((t) => t != null && t.regime === regime && t.active);
+  };
+  const commissionTableOf = (employeeId: number, fallback: number | null) =>
+    tablesOfRegimeLocal(employeeId, fallback, OWN)[0] ?? null;
+
   for (const s of staff) {
     const mine = valid.get(s.id) ?? [];
     const cb = chargeback.get(s.id) ?? [];
 
-    const a = pick(assignments.filter((x) => x.employeeId === s.id && x.kind === "commission" && x.commissionTableId != null));
-    const tableId = a?.commissionTableId ?? s.commissionTableId;
-    const table = cTables.find((t) => t.id === tableId) ?? null;
+    const table = commissionTableOf(s.id, s.commissionTableId);
 
     // Tabela Base (chefe de equipa): as vendas dos membros da equipa somam-se às dele
     // e são comissionadas ao chefe. Com o pisco desligado, as vendas da equipa não contam.
@@ -522,6 +603,19 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     const resolved = paidSales.flatMap((e) => split(e, band));
     const cbResolved = cb.flatMap((e) => split(e, band));
 
+    // ── Penalizações por venda (regras da aba Regras e regra dos 3 dias) ──
+    // Só se aplicam a vendas que vêm a pagamento no mês.
+    let penaltyTiming = 0;
+    let penaltyCampaign = 0;
+    const lines = resolved.map((r) => {
+      const src = paidSales.find((e) => e.saleId === r.saleId);
+      const hire = src ? timingPenalty(src) : 0;
+      const camp = campaignPenalty(r);
+      penaltyTiming = round2(penaltyTiming + hire);
+      penaltyCampaign = round2(penaltyCampaign + camp);
+      return { ...toLine(r), penaltyHire: hire, penaltyCampaign: camp };
+    });
+
     const gross = round2(resolved.reduce((sum, e) => sum + e.total, 0));
     const cbValue = round2(cbResolved.reduce((sum, e) => sum + e.total, 0));
     const sum = summarize(resolved, paidSales);
@@ -534,8 +628,10 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       ...sum,
       gross,
       chargeback: cbValue,
-      due: round2(gross - cbValue),
-      lines: resolved.map(toLine),
+      penaltyTiming,
+      penaltyCampaign,
+      due: round2(gross - cbValue - penaltyTiming - penaltyCampaign),
+      lines,
       chargebackLines: cbResolved.map(toLine),
       notPaid: (notPaid.get(s.id) ?? []).map((n) => {
         const tot = split({ saleId: n.saleId, number: n.number, service: n.service, details: n.details, clientName: null, energy: n.energy }, band).reduce((sum, l) => sum + l.total, 0);
