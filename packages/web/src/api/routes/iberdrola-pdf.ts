@@ -24,6 +24,9 @@ type Person = {
   chargebackLines: { idVenda: string; service: string; base: number; dd: number; fe: number; pel: number; total: number }[];
   ruleEffects: { name: string; type: string; amount: number }[];
   vncs: { idVenda: string; amount: number }[];
+  medemLines: { idVenda: string; pontos: number; commission: number; total: number }[];
+  medemPontos: number;
+  medemTotal: number;
 };
 
 const esc = (n: string) =>
@@ -151,6 +154,16 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
   const pelS = p.lines.reduce((s, l) => s + l.pel, 0);
   const totalS = p.lines.reduce((s, l) => s + l.total, 0);
   html += `<tr class="tfoot"><td>Total</td><td class="r-num">—</td><td class="num r-num">${eur(baseS)}</td><td class="num r-num">${eur(ddS)}</td><td class="num r-num">${eur(feS)}</td><td class="num r-num">${eur(pelS)}</td><td class="num r-num">${eur(totalS)}</td></tr></tbody></table></section>`;
+
+  // Medem
+  if (p.medemLines && p.medemLines.length > 0) {
+    html += `<section><div class="s-title">Medem — ${p.medemPontos} pontos · ${eur(p.medemTotal)} (${p.medemLines.length} linha${p.medemLines.length === 1 ? "" : "s"})</div>
+<table><thead><tr><th>ID venda</th><th class="r-num">Pontos</th><th class="r-num">Comissão (€/pto)</th><th class="r-num">Total</th></tr></thead><tbody>`;
+    for (const l of p.medemLines) {
+      html += `<tr><td class="num">${esc(l.idVenda)}</td><td class="num r-num">${l.pontos}</td><td class="num r-num t-svc">${eur(l.commission)}</td><td class="num r-num" style="font-weight:600">${eur(l.total)}</td></tr>`;
+    }
+    html += `<tr class="tfoot"><td>Total</td><td class="num r-num">${p.medemPontos}</td><td class="r-num">—</td><td class="num r-num">${eur(p.medemTotal)}</td></tr></tbody></table></section>`;
+  }
 
   // Chargeback
   if (p.chargebackLines.length > 0) {

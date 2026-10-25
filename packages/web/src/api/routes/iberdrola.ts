@@ -44,6 +44,14 @@ type IberdrolaLine = {
   total: number;
 };
 
+type IberdrolaMedemLine = {
+  idVenda: string;
+  clientName: string | null;
+  pontos: number;
+  commission: number;
+  total: number;
+};
+
 type IberdrolaPerson = {
   employeeId: number;
   employeeName: string;
@@ -70,6 +78,10 @@ type IberdrolaPerson = {
   chargeback: number;
   due: number;
   lines: IberdrolaLine[];
+  /** Linhas Medem (Total Pontos × comissão do escalão). */
+  medemLines: IberdrolaMedemLine[];
+  medemPontos: number;
+  medemTotal: number;
   chargebackLines: IberdrolaLine[];
   /** Regras aplicadas a este comercial no mês, com o valor de cada uma. */
   ruleEffects: { id: number; name: string; type: string; amount: number }[];
@@ -100,7 +112,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
   const importIds = imports.map((i) => i.id);
 
   if (!importIds.length) {
-    return { month: m, unmatchedAuto: [] as string[], unmatchedChargeback: [] as string[], people: [] as IberdrolaPerson[], totals: { gross: 0, chargeback: 0, due: 0, missingTable: 0 } };
+    return { month: m, unmatchedAuto: [] as string[], unmatchedChargeback: [] as string[], unmatchedMedem: [] as string[], people: [] as IberdrolaPerson[], totals: { gross: 0, chargeback: 0, due: 0, missingTable: 0, medemTotal: 0 } };
   }
 
   const rows = await db.select().from(iberdrolaRows).where(inArray(iberdrolaRows.importId, importIds));
@@ -126,11 +138,13 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     staff.filter((s) => s.nif && s.nif.trim() !== "").map((s) => [normText(s.nif!), s.id] as const),
   );
 
-  // Linhas do Excel → entradas comissionáveis (auto "Em Fornecimento") e baixas (chargback).
+  // Linhas do Excel → entradas comissionáveis (auto "Em Fornecimento") e baixas (chargeback).
   const autoEntries: IberdrolaEntry[] = [];
   const cbEntries: IberdrolaEntry[] = [];
+  const medemLines: { idVenda: string; employeeId: number | null; clientName: string | null; pontos: number; excel: Record<string, unknown> }[] = [];
   const unmatchedAuto: string[] = [];
   const unmatchedChargeback: string[] = [];
+  const unmatchedMedem: string[] = [];
 
   for (const r of rows) {
     if (!r.idVenda) continue;
@@ -161,9 +175,18 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
         if (employeeId != null) autoEntries.push(entry);
         else unmatchedAuto.push(idVenda);
       }
-    } else if (r.sheet === "chargback") {
+    } else if (r.sheet === "chargeback") {
       if (employeeId != null) cbEntries.push(entry);
       else unmatchedChargeback.push(idVenda);
+    } else if (r.sheet === "medem") {
+      const rawPontos = colVal(data, "total pontos");
+      const pontosNum = typeof rawPontos === "number" ? rawPontos : parseFloat(String(rawPontos ?? "").replace(",", "."));
+      const pontos = Number.isFinite(pontosNum) ? pontosNum : 0;
+      if (employeeId != null) {
+        medemLines.push({ idVenda, employeeId, clientName, pontos, excel: data });
+      } else {
+        unmatchedMedem.push(idVenda);
+      }
     }
   }
 
@@ -189,6 +212,9 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       if (e.idVenda === ov.idVenda && e.employeeId === ov.fromEmployeeId) e.employeeId = ov.toEmployeeId;
     }
     for (const e of cbEntries) {
+      if (e.idVenda === ov.idVenda && e.employeeId === ov.fromEmployeeId) e.employeeId = ov.toEmployeeId;
+    }
+    for (const e of medemLines) {
       if (e.idVenda === ov.idVenda && e.employeeId === ov.fromEmployeeId) e.employeeId = ov.toEmployeeId;
     }
     const toEmp = staffById.get(ov.toEmployeeId);
@@ -280,8 +306,12 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     arr.push(e);
     bySeller.set(e.employeeId, arr);
   }
-  // Comerciais que só aparecem no chargback.
+  // Comerciais que só aparecem no chargeback ou medem.
   for (const e of cbEntries) {
+    if (e.employeeId == null) continue;
+    if (!bySeller.has(e.employeeId)) bySeller.set(e.employeeId, []);
+  }
+  for (const e of medemLines) {
     if (e.employeeId == null) continue;
     if (!bySeller.has(e.employeeId)) bySeller.set(e.employeeId, []);
   }
@@ -382,6 +412,9 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       vncs: [],
       overridesOut: [],
       overridesIn: [],
+      medemLines: [],
+      medemPontos: 0,
+      medemTotal: 0,
     };
 
     if (!table) {
@@ -418,6 +451,26 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
         .map((energy) => ({ ...e, energies: [energy] as ("luz" | "gas")[] })),
     );
     const cbLines = [...(prevCbBySeller.get(sellerId) ?? []), ...cbFallback.flatMap((e) => split(e, band))];
+
+    // Medem: soma pontos de todas as linhas, encontra o escalão de medem
+    // e paga Total Pontos × comissão do escalão por cada linha.
+    const personMedem = medemLines.filter((e) => e.employeeId === sellerId);
+    const medemPontos = personMedem.reduce((t, e) => t + e.pontos, 0);
+    const medemBands = cRows.filter((r) => r.tableId === table.id && r.kind === "medem");
+    const sortedMedemBands = [...medemBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+    const medemBand =
+      sortedMedemBands.find((b) => medemPontos >= (b.min ?? 0) && (b.max == null || medemPontos <= b.max)) ??
+      [...sortedMedemBands.filter((b) => b.max == null && medemPontos >= (b.min ?? 0))].pop() ??
+      null;
+    const medemCommission = medemBand?.commission ?? 0;
+    const medemResult: IberdrolaMedemLine[] = personMedem.map((e) => ({
+      idVenda: e.idVenda,
+      clientName: e.clientName,
+      pontos: e.pontos,
+      commission: medemCommission,
+      total: round2(e.pontos * medemCommission),
+    }));
+    const medemTotal = round2(medemResult.reduce((t, l) => t + l.total, 0));
 
     const gross = round2(lines.reduce((sum, l) => sum + l.total, 0));
     const chargeback = round2(cbLines.reduce((sum, l) => sum + l.total, 0));
@@ -485,13 +538,16 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       unit: band ? { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } : null,
       gross,
       chargeback,
-      due: round2(gross - chargeback + rulesDelta),
+      due: round2(gross - chargeback + rulesDelta + medemTotal),
       lines,
       chargebackLines: cbLines,
       ruleEffects,
       vncs: personVncs,
       overridesOut: overridesOut.get(sellerId) ?? [],
       overridesIn: overridesIn.get(sellerId) ?? [],
+      medemLines: medemResult,
+      medemPontos,
+      medemTotal,
     });
   }
 
@@ -501,12 +557,14 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     month: m,
     unmatchedAuto,
     unmatchedChargeback,
+    unmatchedMedem,
     people,
     totals: {
       gross: round2(people.reduce((s, p) => s + p.gross, 0)),
       chargeback: round2(people.reduce((s, p) => s + p.chargeback, 0)),
       due: round2(people.reduce((s, p) => s + p.due, 0)),
       missingTable: people.filter((p) => p.missingTable).length,
+      medemTotal: round2(people.reduce((s, p) => s + p.medemTotal, 0)),
     },
   };
 }
@@ -527,15 +585,16 @@ export const iberdrolaRoute = {
       .where(inArray(iberdrolaRows.importId, imports.map((i) => i.id)))
       .groupBy(iberdrolaRows.importId, iberdrolaRows.sheet);
 
-    const map = new Map<string, { auto: number; chargback: number }>();
+    const map = new Map<string, { auto: number; chargeback: number; medem: number }>();
     for (const c of counts) {
-      const e = map.get(String(c.importId)) ?? { auto: 0, chargback: 0 };
+      const e = map.get(String(c.importId)) ?? { auto: 0, chargeback: 0, medem: 0 };
       if (c.sheet === "auto") e.auto = Number(c.count);
-      else e.chargback = Number(c.count);
+      else if (c.sheet === "chargeback") e.chargeback = Number(c.count);
+      else if (c.sheet === "medem") e.medem = Number(c.count);
       map.set(String(c.importId), e);
     }
 
-    return imports.map((i) => ({ ...i, auto: map.get(String(i.id))?.auto ?? 0, chargback: map.get(String(i.id))?.chargback ?? 0, downloadable: !!i.path }));
+    return imports.map((i) => ({ ...i, auto: map.get(String(i.id))?.auto ?? 0, chargeback: map.get(String(i.id))?.chargeback ?? 0, medem: map.get(String(i.id))?.medem ?? 0, downloadable: !!i.path }));
   }),
 
   /** Linhas de um ficheiro carregado. */
@@ -699,7 +758,7 @@ function parseSheet(
   wb: { Sheets: Record<string, unknown> },
   XLSX: { utils: { sheet_to_json: (ws: unknown, opts: Record<string, unknown>) => unknown[][] } },
   sheetName: string,
-  sheet: "auto" | "chargback",
+  sheet: "auto" | "chargeback" | "medem",
 ) {
   const ws = wb.Sheets[sheetName];
   if (!ws) return [];
@@ -710,7 +769,7 @@ function parseSheet(
   const headers = aoa[hi] as unknown[];
   const idIdx = headers.findIndex((h) => norm(cell(h)) === "id de venda");
   const estIdx = headers.findIndex((h) => norm(cell(h)) === "estado");
-  const out: { sheet: "auto" | "chargback"; rowIndex: number; idVenda: string | null; estado: string | null; data: Record<string, string | null> }[] = [];
+  const out: { sheet: "auto" | "chargeback" | "medem"; rowIndex: number; idVenda: string | null; estado: string | null; data: Record<string, string | null> }[] = [];
   aoa.slice(hi + 1).forEach((r, i) => {
     if (!filled(r)) return;
     const data: Record<string, string | null> = {};
@@ -752,12 +811,12 @@ export function iberdrolaRoutes(app: Hono) {
 
     const sheetName = (want: string) => wb.SheetNames.find((n) => norm(n).includes(want));
 
-    const rows: { sheet: "auto" | "chargback"; rowIndex: number; idVenda: string | null; estado: string | null; data: Record<string, string | null> }[] = [];
-    for (const want of ["auto", "chargback"] as const) {
+    const rows: { sheet: "auto" | "chargeback" | "medem"; rowIndex: number; idVenda: string | null; estado: string | null; data: Record<string, string | null> }[] = [];
+    for (const want of ["auto", "chargeback", "medem"] as const) {
       const sn = sheetName(want);
       if (sn) rows.push(...parseSheet(wb, XLSX, sn, want));
     }
-    if (!rows.length) return c.json({ error: "Não foram encontradas as folhas 'auto'/'chargback' neste ficheiro." }, 422);
+    if (!rows.length) return c.json({ error: "Não foram encontradas as folhas 'auto'/'chargeback'/'medem' neste ficheiro. neste ficheiro." }, 422);
 
     // Guarda o ficheiro original em disco para poder ser descarregado mais tarde.
     if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -830,7 +889,7 @@ export function iberdrolaRoutes(app: Hono) {
       rows.push([p.employeeName]);
       rows.push([`Tabela: ${p.tableName ?? "Sem tabela"}`, "", `Mês: ${m}`]);
       rows.push(["Escalão", String(p.bandSales), "", "Gross", `${p.gross.toFixed(2)} €`, "", "Devido", `${p.due.toFixed(2)} €`]);
-      rows.push(["Vendas", String(p.salesCount), "", "Chargback", `${p.chargeback.toFixed(2)} €`]);
+      rows.push(["Vendas", String(p.salesCount), "", "Chargeback", `${p.chargeback.toFixed(2)} €`]);
       rows.push([]);
 
       rows.push(["--- ESCALÃO ATINGIDO ---"]);
@@ -885,13 +944,23 @@ export function iberdrolaRoutes(app: Hono) {
       rows.push([]);
 
       if (p.chargebackLines.length > 0) {
-        rows.push(["--- CHARGBACK ---"]);
+        rows.push(["--- CHARGEBACK ---"]);
         rows.push(["ID venda", "Serviço", "Base (€)", "Déb. Direto", "Fat. Eletrónica", "PEL", "Total"]);
         for (const l of p.chargebackLines) {
           rows.push([l.idVenda, l.service, l.base.toFixed(2), (l.dd || ""), (l.fe || ""), (l.pel || ""), l.total.toFixed(2)]);
         }
         const cbSum = p.chargebackLines.reduce((s, l) => s + l.total, 0);
         rows.push(["TOTAL", `${p.chargebackLines.length} linhas`, "", "", "", "", cbSum.toFixed(2)]);
+      }
+
+      if (p.medemLines && p.medemLines.length > 0) {
+        rows.push([]);
+        rows.push(["--- MEDEM ---"]);
+        rows.push(["ID venda", "Pontos", "Comissão (€/ponto)", "Total"]);
+        for (const l of p.medemLines) {
+          rows.push([l.idVenda, l.pontos, l.commission.toFixed(2), l.total.toFixed(2)]);
+        }
+        rows.push(["TOTAL", `${p.medemLines.length} linhas`, "", p.medemTotal.toFixed(2)]);
       }
 
       const ws = XLSX.utils.aoa_to_sheet(rows);

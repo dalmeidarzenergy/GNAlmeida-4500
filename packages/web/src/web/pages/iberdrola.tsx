@@ -136,7 +136,7 @@ function Historico({ canEdit }: { canEdit: boolean }) {
           <div className="flex flex-wrap items-end gap-4 px-5 py-4">
             <div className="min-w-0 flex-1">
               <div className="font-display text-[15px] font-semibold">Carregar Excel da Iberdrola</div>
-              <div className="text-[11.5px] text-ink-3">O ficheiro tem as folhas <span className="text-ink">auto</span> (vendas) e <span className="text-ink">chargback</span> (baixas).</div>
+              <div className="text-[11.5px] text-ink-3">O ficheiro tem as folhas <span className="text-ink">auto</span> (vendas), <span className="text-ink">chargeback</span> (baixas) e <span className="text-ink">Medem</span> (pontos).</div>
             </div>
             <Field label="Mês de referência">
               <input type="month" className="input num w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
@@ -167,7 +167,8 @@ function Historico({ canEdit }: { canEdit: boolean }) {
                   <th className="px-5 py-3 font-medium">FICHEIRO</th>
                   <th className="px-3 py-3 font-medium">MÊS</th>
                   <th className="px-3 py-3 text-right font-medium">AUTO</th>
-                  <th className="px-3 py-3 text-right font-medium">CHARGBACK</th>
+                  <th className="px-3 py-3 text-right font-medium">CHARGEBACK</th>
+                  <th className="px-3 py-3 text-right font-medium">MEDEM</th>
                   <th className="px-3 py-3 font-medium">CARREGADO POR</th>
                   <th className="px-3 py-3 font-medium">DATA</th>
                   <th className="px-5 py-3" />
@@ -175,7 +176,7 @@ function Historico({ canEdit }: { canEdit: boolean }) {
               </thead>
               <tbody>
                 {list.map((r) => (
-                  <Row key={r.id} id={r.id} onOpen={setViewing} onDownload={() => onDownload(r.id, r.filename, r.downloadable)} downloading={downloading === r.id} filename={r.filename} month={r.month} auto={r.auto} chargback={r.chargback} uploadedBy={r.uploadedBy} createdAt={r.createdAt} canEdit={canEdit} onDelete={() => remove.mutateAsync({ id: r.id })} onSetMonth={(m) => moveMonth.mutate({ id: r.id, month: m })} />
+                  <Row key={r.id} id={r.id} onOpen={setViewing} onDownload={() => onDownload(r.id, r.filename, r.downloadable)} downloading={downloading === r.id} filename={r.filename} month={r.month} auto={r.auto} chargeback={r.chargeback} medem={(r as any).medem ?? 0} uploadedBy={r.uploadedBy} createdAt={r.createdAt} canEdit={canEdit} onDelete={() => remove.mutateAsync({ id: r.id })} onSetMonth={(m) => moveMonth.mutate({ id: r.id, month: m })} />
                 ))}
               </tbody>
             </table>
@@ -190,7 +191,7 @@ function Historico({ canEdit }: { canEdit: boolean }) {
   );
 }
 
-function Row(props: { id: number; onOpen: (id: number) => void; onDownload: () => void; downloading: boolean; filename: string; month: string; auto: number; chargback: number; uploadedBy: string; createdAt: Date; canEdit: boolean; onDelete: () => void; onSetMonth: (m: string) => void }) {
+function Row(props: { id: number; onOpen: (id: number) => void; onDownload: () => void; downloading: boolean; filename: string; month: string; auto: number; chargeback: number; medem: number; uploadedBy: string; createdAt: Date; canEdit: boolean; onDelete: () => void; onSetMonth: (m: string) => void }) {
   const created = props.createdAt instanceof Date ? props.createdAt : new Date(props.createdAt);
   const [editing, setEditing] = useState(false);
   return (
@@ -230,7 +231,8 @@ function Row(props: { id: number; onOpen: (id: number) => void; onDownload: () =
         )}
       </td>
       <td className="num px-3 py-3 text-right">{props.auto}</td>
-      <td className="num px-3 py-3 text-right text-ink-2">{props.chargback}</td>
+      <td className="num px-3 py-3 text-right text-ink-2">{props.chargeback}</td>
+      <td className="num px-3 py-3 text-right text-ink-2">{props.medem}</td>
       <td className="px-3 py-3 text-ink-2">{props.uploadedBy}</td>
       <td className="px-3 py-3 text-ink-2">{fmtDate(created)}</td>
       <td className="px-5 py-3 text-right">
@@ -246,7 +248,8 @@ function ImportLines({ id }: { id: number }) {
   if (!data.data?.found) return <Empty title="Não encontrado" text="O ficheiro já não existe." />;
   const rows = data.data.rows;
   const auto = rows.filter((r) => r.sheet === "auto");
-  const cb = rows.filter((r) => r.sheet === "chargback");
+  const cb = rows.filter((r) => r.sheet === "chargeback");
+  const medem = rows.filter((r) => r.sheet === "medem");
   const cols = useMemo(() => {
     const seen = new Set<string>();
     for (const r of rows) for (const k of Object.keys(r.data)) seen.add(k);
@@ -287,7 +290,8 @@ function ImportLines({ id }: { id: number }) {
   return (
     <div>
       {group("Folha auto", auto)}
-      {group("Folha chargback", cb)}
+      {group("Folha chargeback", cb)}
+      {group("Folha Medem", medem)}
     </div>
   );
 }
@@ -313,14 +317,16 @@ function Finais() {
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Stat label="A RECEBER" value={fmtEur2(data?.totals.gross ?? 0)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
-        <Stat label="CHARGBACK" value={fmtEur2(data?.totals.chargeback ?? 0)} accent="var(--danger)" icon={<Undo2 size={16} />} delay={60} />
+        <Stat label="CHARGEBACK" value={fmtEur2(data?.totals.chargeback ?? 0)} accent="var(--danger)" icon={<Undo2 size={16} />} delay={60} />
+        <Stat label="MEDEM" value={fmtEur2(data?.totals.medemTotal ?? 0)} accent="var(--amber)" icon={<Wallet size={16} />} delay={90} />
         <Stat label="TOTAL" value={fmtEur2(data?.totals.due ?? 0)} accent="var(--sky)" icon={<Check size={16} />} delay={120} />
       </div>
 
-      {(data?.unmatchedAuto.length || data?.unmatchedChargeback.length) ? (
+      {(data?.unmatchedAuto.length || data?.unmatchedChargeback.length || (data as any)?.unmatchedMedem?.length) ? (
         <div className="mt-4 rounded-[12px] border border-danger/30 bg-danger/5 px-4 py-3 text-[12.5px] text-danger">
           {data.unmatchedAuto.length > 0 && <div>{data.unmatchedAuto.length} vendas do Excel não têm comercial identificado no Excel (ID de venda: {data.unmatchedAuto.join(", ")}).</div>}
-          {data.unmatchedChargeback.length > 0 && <div>{data.unmatchedChargeback.length} baixas do chargback não têm comercial identificado no Excel (ID de venda: {data.unmatchedChargeback.join(", ")}).</div>}
+          {data.unmatchedChargeback.length > 0 && <div>{data.unmatchedChargeback.length} baixas do chargeback não têm comercial identificado no Excel (ID de venda: {data.unmatchedChargeback.join(", ")}).</div>}
+          {(data as any).unmatchedMedem?.length > 0 && <div>{(data as any).unmatchedMedem.length} linhas de Medem não têm comercial identificado no Excel (ID de venda: {(data as any).unmatchedMedem.join(", ")}).</div>}
         </div>
       ) : null}
 
@@ -425,6 +431,48 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
 
   const manualRules = (rules.data ?? []).filter((r) => r.type === "manual");
   const assignedIds = new Set((assignments.data ?? []).map((a) => a.ruleId));
+
+  function medemTable(title: string, person: typeof p) {
+    const lines = (person as any).medemLines as Array<{ idVenda: string; pontos: number; commission: number; total: number }> | undefined;
+    if (!lines || !lines.length) return null;
+    const sumPontos = lines.reduce((t, l) => t + l.pontos, 0);
+    const sumTotal = lines.reduce((t, l) => t + l.total, 0);
+    return (
+      <div className="mb-5">
+        <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">{title}</div>
+        <div className="overflow-x-auto rounded-[10px] border border-line">
+          <table className="w-full min-w-[480px] text-[12.5px]">
+            <thead className="bg-surface">
+              <tr className="border-b border-line text-left">
+                <th className="px-3 py-2 font-medium">ID venda</th>
+                <th className="px-3 py-2 text-right font-medium">Pontos</th>
+                <th className="px-3 py-2 text-right font-medium">Comissão (€/pto)</th>
+                <th className="px-3 py-2 text-right font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => (
+                <tr key={i} className="border-b border-line last:border-0">
+                  <td className="num px-3 py-2 font-medium">{l.idVenda}</td>
+                  <td className="num px-3 py-2 text-right">{l.pontos}</td>
+                  <td className="num px-3 py-2 text-right text-ink-2">{fmtEur2(l.commission)}</td>
+                  <td className="num px-3 py-2 text-right font-semibold">{fmtEur2(l.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-line bg-surface text-[12px] text-ink-2">
+                <td className="px-3 py-2 font-medium">{lines.length} linha{lines.length === 1 ? "" : "s"}</td>
+                <td className="num px-3 py-2 text-right">{sumPontos}</td>
+                <td className="num px-3 py-2 text-right">—</td>
+                <td className="num px-3 py-2 text-right font-semibold text-ink">{fmtEur2(sumTotal)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    );
+  }
 
   function lineTable(title: string, lines: typeof p.lines) {
     if (!lines.length) return null;
@@ -685,7 +733,8 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
       )}
 
       {lineTable("Vendas", p.lines)}
-      {lineTable("Chargback", p.chargebackLines)}
+      {lineTable("Chargeback", p.chargebackLines)}
+      {medemTable("Medem", p)}
 
       <Modal open={assigning} onClose={() => setAssigning(false)} title={`Atribuir regras — ${monthLabel(month)}`}>
         <div className="grid gap-3">
