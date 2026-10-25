@@ -375,19 +375,26 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const emp = staffById.get(sellerId);
     if (!emp) continue;
 
-    const a = pick(
-      assignments.filter((x) => x.employeeId === sellerId && x.kind === "commission" && x.commissionTableId != null),
-      `${m}-01`,
-      `${m}-31`,
-    );
-    const tableId = a?.commissionTableId ?? emp.commissionTableId;
-    const table = cTables.find((t) => t.id === tableId) ?? null;
+    // Todas as tabelas ativas do comercial no mês (default + assignments).
+    const activeTableIds = new Set<number>();
+    if (emp.commissionTableId) activeTableIds.add(emp.commissionTableId);
+    for (const x of assignments) {
+      if (x.employeeId !== sellerId || x.kind !== "commission" || !x.commissionTableId) continue;
+      if (x.startDate <= `${m}-31` && (x.endDate == null || x.endDate >= `${m}-01`)) {
+        activeTableIds.add(x.commissionTableId);
+      }
+    }
+    const empTables = cTables.filter((t) => activeTableIds.has(t.id));
+    const resTable = empTables.find((t) => t.regime === "RES+BTN NEG") ?? null;
+    const medemTable = empTables.find((t) => t.regime === "MEDEM") ?? null;
+    const solarTable = empTables.find((t) => t.regime === "SOLAR") ?? null;
 
+    const tableNames = empTables.map((t) => t.name).filter(Boolean);
     const base: IberdrolaPerson = {
       employeeId: sellerId,
       employeeName: emp.name,
-      tableName: table?.name ?? null,
-      missingTable: !table,
+      tableName: tableNames.length > 0 ? tableNames.join(" + ") : null,
+      missingTable: empTables.length === 0,
       forceCommissionsPct: emp.forceCommissionsPct ?? 0,
       bandSales: 0,
       salesCount: mine.length,
@@ -417,68 +424,79 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       medemTotal: 0,
     };
 
-    if (!table) {
+    if (empTables.length === 0) {
       people.push(base);
       continue;
     }
 
-    const bands = cRows.filter((r) => r.tableId === table.id && r.kind === "clients");
-    // Escalão: só conta BTN (luz) em fornecimento; BP (gás) é comissionado mas não sobe o escalão.
-    // Vendas BTN com potência < 3,45 contam para o escalão mas não são pagas.
-    const lowPower = new Set(
-      mine
-        .filter((e) => e.hasBTN && (cellNum(colVal(e.excel, "potencia")) ?? 99) < 3.45)
-        .map((e) => e.idVenda),
-    );
-    const bandSales = mine.filter((e) => e.hasBTN).length;
-    // Desbloqueio de comissões: quando > 0, o primeiro escalão deixa de existir
-    // (colaborador recebe a partir do 2.º) e paga-se só a % escolhida.
-    const forced = emp.forceCommissionsPct > 0;
-    const sortedBands = [...bands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
-    const pool = forced ? sortedBands.slice(1) : bands;
-    const band =
-      pool.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
-      [...pool.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
-      (forced ? (pool[0] ?? null) : null);
+    // ── RES+BTN NEG ──
+    let band: Band | null = null;
+    let resBands: typeof bands = [];
+    const sortedBands: Band[] = [];
+    let bandIdx = -1;
+    let forced = emp.forceCommissionsPct > 0;
+    let paidEntries = mine; // fallback: todas pagas
+    let lines: IberdrolaLine[] = [];
+    let cbLines: IberdrolaLine[] = [];
 
-    // Bloqueio de vendas (objetivo): as primeiras N vendas não são pagas, salvo
-    // se o pagamento de comissões estiver desbloqueado para este comercial.
-    // Vendas de baixa potência também não são pagas, mas já foram filtradas.
-    const blocked = forced ? 0 : (table?.blockedSales ?? 0);
-    const commissionable = mine.filter((e) => !lowPower.has(e.idVenda));
-    const paidEntries = commissionable.slice(Math.min(blocked, commissionable.length));
+    if (resTable) {
+      resBands = cRows.filter((r) => r.tableId === resTable.id && r.kind === "clients");
+      // Vendas BTN com potência < 3,45 contam para o escalão mas não são pagas.
+      const lowPower = new Set(
+        mine
+          .filter((e) => e.hasBTN && (cellNum(colVal(e.excel, "potencia")) ?? 99) < 3.45)
+          .map((e) => e.idVenda),
+      );
+      const bandSales = mine.filter((e) => e.hasBTN).length;
+      const sBands = [...resBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+      const pool = forced ? sBands.slice(1) : resBands;
+      band =
+        pool.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
+        [...pool.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
+        (forced ? (pool[0] ?? null) : null);
+      bandIdx = band ? sBands.indexOf(band) : -1;
 
-    const lines = paidEntries.flatMap((e) => split(e, band));
+      // Bloqueio de vendas (objetivo) + baixa potência.
+      const blocked = forced ? 0 : (resTable?.blockedSales ?? 0);
+      const commissionable = mine.filter((e) => !lowPower.has(e.idVenda));
+      paidEntries = commissionable.slice(Math.min(blocked, commissionable.length));
 
-    // Chargeback do comercial: as vendas resolvidas no auto anterior (valor real pago)
-    // + as não encontradas, calculadas com o escalão do mês corrente (fallback).
-    const cbMine = cbEntries.filter((e) => e.employeeId === sellerId);
-    const cbFallback = cbMine.flatMap((e) =>
-      e.energies
-        .filter((energy) => !resolvedCbKeys.has(`${e.idVenda}|${energy === "gas" ? "Gás" : "Luz"}`))
-        .map((energy) => ({ ...e, energies: [energy] as ("luz" | "gas")[] })),
-    );
-    const cbLines = [...(prevCbBySeller.get(sellerId) ?? []), ...cbFallback.flatMap((e) => split(e, band))];
+      lines = paidEntries.flatMap((e) => split(e, band));
 
-    // Medem: usa o escalão que o comercial atingiu na Res+BTN Neg (bandSales)
-    // e procura a linha Medem na mesma posição (mesmo índice no escalonamento).
-    // Cada linha Medem paga Total Pontos × comissão desse escalão Medem.
-    const personMedem = medemLines.filter((e) => e.employeeId === sellerId);
-    const medemPontos = personMedem.reduce((t, e) => t + e.pontos, 0);
-    const medemBands = cRows.filter((r) => r.tableId === table.id && r.kind === "medem");
-    const sortedMedemBands = [...medemBands].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-    // Índice do escalão de clientes atingido → mesma posição no Medem.
-    const bandIdx = band ? sortedBands.indexOf(band) : -1;
-    const medemBand = (bandIdx >= 0 && bandIdx < sortedMedemBands.length) ? sortedMedemBands[bandIdx] : null;
-    const medemCommission = medemBand?.commission ?? 0;
-    const medemResult: IberdrolaMedemLine[] = personMedem.map((e) => ({
-      idVenda: e.idVenda,
-      clientName: e.clientName,
-      pontos: e.pontos,
-      commission: medemCommission,
-      total: round2(e.pontos * medemCommission),
-    }));
-    const medemTotal = round2(medemResult.reduce((t, l) => t + l.total, 0));
+      // Chargeback: vendas resolvidas no auto anterior + fallback com escalão corrente.
+      const cbMine = cbEntries.filter((e) => e.employeeId === sellerId);
+      const cbFallback = cbMine.flatMap((e) =>
+        e.energies
+          .filter((energy) => !resolvedCbKeys.has(`${e.idVenda}|${energy === "gas" ? "Gás" : "Luz"}`))
+          .map((energy) => ({ ...e, energies: [energy] as ("luz" | "gas")[] })),
+      );
+      cbLines = [...(prevCbBySeller.get(sellerId) ?? []), ...cbFallback.flatMap((e) => split(e, band))];
+    }
+
+    // ── MEDEM ──
+    let medemTotal = 0;
+    let medemResult: IberdrolaMedemLine[] = [];
+    let medemPontos = 0;
+    if (medemTable) {
+      const personMedem = medemLines.filter((e) => e.employeeId === sellerId);
+      medemPontos = personMedem.reduce((t, e) => t + e.pontos, 0);
+      const medemBands = cRows.filter((r) => r.tableId === medemTable.id && r.kind === "medem");
+      const sMedemBands = [...medemBands].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      // Escalão Medem = mesma posição que o escalão de clientes da RES.
+      const mBand = (bandIdx >= 0 && bandIdx < sMedemBands.length) ? sMedemBands[bandIdx] : null;
+      const mComm = mBand?.commission ?? 0;
+      medemResult = personMedem.map((e) => ({
+        idVenda: e.idVenda,
+        clientName: e.clientName,
+        pontos: e.pontos,
+        commission: mComm,
+        total: round2(e.pontos * mComm),
+      }));
+      medemTotal = round2(medemResult.reduce((t, l) => t + l.total, 0));
+    }
+
+    // ── SOLAR ── (placeholder, a implementar quando houver folha Solar)
+    // if (solarTable) { ... }
 
     const gross = round2(lines.reduce((sum, l) => sum + l.total, 0));
     const chargeback = round2(cbLines.reduce((sum, l) => sum + l.total, 0));
@@ -531,7 +549,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     people.push({
       ...base,
-      bandSales,
+      bandSales: resTable ? mine.filter((e) => e.hasBTN).length : 0,
       luzCount: lines.filter((l) => l.service === "Luz").length,
       gasCount: lines.filter((l) => l.service === "Gás").length,
       ddCount: sum(lines, (l) => (l.dd ? 1 : 0)),
@@ -1016,3 +1034,5 @@ export function iberdrolaRoutes(app: Hono) {
     });
   });
 }
+
+export { buildCalc };
