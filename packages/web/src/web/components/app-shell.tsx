@@ -41,7 +41,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: "Pagamentos",
     items: [
-      { to: "/pagamentos", key: "pagamentos", label: "Auto Pagamentos", icon: Wallet },
+      { to: "/pagamentos", key: "pagamentos", label: "Previsão de Pagamentos", icon: Wallet },
       { to: "/auto-iberdrola", key: "auto-iberdrola", label: "Auto Iberdrola", icon: FileSpreadsheet },
       { to: "/regras", key: "regras", label: "Regras", icon: Scale },
       { to: "/incentivos", key: "incentivos", label: "Incentivos", icon: Sparkles },

@@ -516,7 +516,7 @@ export default function PaymentsPage() {
 
   return (
     <div className="p-5 lg:p-7">
-      <PageHeader eyebrow="PAGAMENTOS" title="Auto Pagamentos" subtitle="Auto de pagamento por comercial e por mes: vendas, extras, chargebacks, penalizacoes e km.">
+      <PageHeader eyebrow="PAGAMENTOS" title="Previsão de Pagamentos" subtitle="Previsão por comercial e por mes: vendas, extras, chargebacks, penalizacoes e km.">
         <input aria-label="Mes" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
         <button type="button" className="btn btn-ghost" disabled={pdf.isPending} onClick={() => download()}>
           <FileDown size={15} /> {pdf.isPending ? "A gerar..." : "PDF (todos)"}
