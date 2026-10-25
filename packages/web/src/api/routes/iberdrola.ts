@@ -424,6 +424,12 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     const bands = cRows.filter((r) => r.tableId === table.id && r.kind === "clients");
     // Escalão: só conta BTN (luz) em fornecimento; BP (gás) é comissionado mas não sobe o escalão.
+    // Vendas BTN com potência < 3,45 contam para o escalão mas não são pagas.
+    const lowPower = new Set(
+      mine
+        .filter((e) => e.hasBTN && (cellNum(colVal(e.excel, "potencia")) ?? 99) < 3.45)
+        .map((e) => e.idVenda),
+    );
     const bandSales = mine.filter((e) => e.hasBTN).length;
     // Desbloqueio de comissões: quando > 0, o primeiro escalão deixa de existir
     // (colaborador recebe a partir do 2.º) e paga-se só a % escolhida.
@@ -437,8 +443,10 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     // Bloqueio de vendas (objetivo): as primeiras N vendas não são pagas, salvo
     // se o pagamento de comissões estiver desbloqueado para este comercial.
+    // Vendas de baixa potência também não são pagas, mas já foram filtradas.
     const blocked = forced ? 0 : (table?.blockedSales ?? 0);
-    const paidEntries = mine.slice(Math.min(blocked, mine.length));
+    const commissionable = mine.filter((e) => !lowPower.has(e.idVenda));
+    const paidEntries = commissionable.slice(Math.min(blocked, commissionable.length));
 
     const lines = paidEntries.flatMap((e) => split(e, band));
 
