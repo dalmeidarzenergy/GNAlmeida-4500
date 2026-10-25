@@ -116,6 +116,9 @@ type IberdrolaEntry = {
   /** True quando a "Nivel de tensão" é BTN (conta para o escalão). */
   hasBTN: boolean;
   excel: Record<string, unknown>;
+  /** Data da venda extraída do Excel (se disponível). Usada na CE para
+   *  filtrar vendas do chefe anteriores à criação da equipa. */
+  saleDate: string | null;
 };
 
 type Band = { luz: number | null; gas: number | null; dd: number | null; fe: number | null; pel: number | null };
@@ -182,7 +185,16 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const clientName =
       strOf(colVal(data, "cliente")) ?? strOf(colVal(data, "titular")) ?? strOf(colVal(data, "nome do cliente"));
 
-    const entry: IberdrolaEntry = { idVenda, employeeId, clientName, energies, hasBTN, excel: data };
+    // Data da venda: procura colunas comuns no Excel ("Data", "Data ativação", "Data início").
+    const rawDate =
+      strOf(colVal(data, "data")) ??
+      strOf(colVal(data, "data contratacao")) ??
+      strOf(colVal(data, "data ativacao")) ??
+      strOf(colVal(data, "data inicio")) ??
+      strOf(colVal(data, "data contrato"));
+    const saleDate = rawDate ? rawDate.slice(0, 10) : null; // normaliza YYYY-MM-DD
+
+    const entry: IberdrolaEntry = { idVenda, employeeId, clientName, energies, hasBTN, excel: data, saleDate };
 
     if (r.sheet === "auto") {
       if (r.estado === "Em Fornecimento") {
@@ -544,7 +556,24 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     let ceUnit: { luz: number; gas: number } | null = null;
     if (ceTable) {
       const teamIds = teamOfChief(sellerId);
-      const teamEntries = autoEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
+      let teamEntries = autoEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
+
+      // Se o chefe foi promovido durante o mês, as vendas próprias anteriores
+      // à criação da equipa não contam para a CE (ainda não era chefe).
+      // Só filtra quando a entry tem data do Excel; sem data, assume-se que
+      // a venda é do período válido (evita sub-pagamento).
+      const chiefTeams = allTeams.filter((t) => t.leaderId === sellerId);
+      const chiefSince = chiefTeams.length > 0
+        ? chiefTeams.reduce((earliest, t) => {
+            const d = typeof t.createdAt === "string" ? t.createdAt.slice(0, 10) : monthStart;
+            return d < earliest ? d : earliest;
+          }, monthEnd)
+        : monthStart;
+      if (chiefSince > monthStart) {
+        teamEntries = teamEntries.filter((e) =>
+          e.employeeId !== sellerId || e.saleDate == null || e.saleDate >= chiefSince,
+        );
+      }
       const ceBands = cRows.filter((r) => r.tableId === ceTable.id && r.kind === "clients");
       const ceSBands = [...ceBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
       ceBandSales = teamEntries.filter((e) => e.hasBTN).length;
