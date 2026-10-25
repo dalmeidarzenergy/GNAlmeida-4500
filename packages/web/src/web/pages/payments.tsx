@@ -1,51 +1,9 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Wallet, Check, Clock, FileDown, ChevronDown, ChevronRight, Unlock } from "lucide-react";
-import {
-  useAutoPdf,
-  useForceCommissionsToggle,
-  usePaymentAutoDetail,
-  usePaymentBreakdown,
-  usePaymentCalc,
-  usePayments,
-  useRemovePayment,
-  useSavePayment,
-} from "../queries/payments";
-import { useEmployeeOptions } from "../queries/hr";
-import { PageHeader, Modal, Field, Empty, Pill, Stat, ConfirmDelete, SubmitRow } from "../components/ui/kit";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { usePaymentAutoDetail, usePaymentBreakdown } from "../queries/payments";
+import { PageHeader, Empty, Pill } from "../components/ui/kit";
 import UnlockBoard from "../components/unlock-board";
-import { errMsg, fmtDate, fmtEur, today } from "../lib/format";
-
-const KINDS = [
-  { key: "commission", label: "Comissao (vendedor)" },
-  { key: "solar", label: "Solar" },
-  { key: "medem", label: "MEDEM" },
-  { key: "outro", label: "Outro" },
-];
-
-const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? k;
-
-type PayKind = "commission" | "solar" | "medem" | "outro";
-
-type PayRow = {
-  id: number | null;
-  employeeId: number;
-  employeeName: string;
-  month: string;
-  kind: string;
-  amount: number;
-  salesCount: number;
-  paidOn: string | null;
-  status: string;
-  pelQty: number;
-  ddQty: number;
-  feQty: number;
-  extrasAmount: number;
-  grossAmount: number;
-  penaltyTiming: number;
-  penaltyCampaign: number;
-  kmDeduction: number;
-  notes: string | null;
-};
+import { fmtEur, today } from "../lib/format";
 
 type AutoLine = {
   saleId: number;
@@ -280,18 +238,14 @@ function AutoPanel({
 }: {
   month: string;
   employeeId: number | null;
-  onRegister: (p: AutoPerson) => void;
-  onPdf: (employeeId: number) => void;
-  pdfPending: boolean;
 }) {
   const [open, setOpen] = useState(true);
   const [openTransit, setOpenTransit] = useState(true);
   const q = usePaymentAutoDetail(month, employeeId);
-  const toggleForce = useForceCommissionsToggle();
   const person = q.data && q.data.found ? q.data.person : null;
 
   if (employeeId == null) {
-    return <Empty title="Escolhe um comercial" text="Seleciona um comercial na lista para ver o auto de pagamento." />;
+    return <Empty title="Escolhe um comercial" text="Seleciona um comercial na lista para ver a previsao de pagamento." />;
   }
   if (q.isLoading) return <div className="p-5"><div className="skeleton h-24 rounded-[12px]" /></div>;
   if (!person) return <Empty title="Sem auto neste mes" text="Este comercial nao tem vendas a pagamento no mes escolhido." />;
@@ -305,25 +259,6 @@ function AutoPanel({
           <div className="mt-1 text-[11.5px] text-ink-3">
             {person.role} | {person.tableName ?? "sem tabela"}{person.unit ? ` | ${fmtEur(person.unit)}/venda` : ""} | Mes {monthLabel(month)}
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className={person.forceCommissions ? "btn btn-volt" : "btn btn-ghost"}
-            disabled={toggleForce.isPending}
-            onClick={() => toggleForce.mutateAsync({ employeeId: person.employeeId })}
-            title={person.forceCommissions ? "Comissões desbloqueadas — clique para voltar a aplicar o objetivo." : "Pagar comissões mesmo sem atingir o objetivo."}
-          >
-            <Unlock size={15} /> {person.forceCommissions ? "Comissões desbloqueadas" : "Desbloquear comissões"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={pdfPending}
-            onClick={() => onPdf(person.employeeId)}
-          >
-            <FileDown size={15} /> {pdfPending ? "A gerar..." : "PDF deste comercial"}
-          </button>
         </div>
       </div>
 
@@ -472,9 +407,6 @@ function AutoPanel({
 
         <div className="space-y-4">
           <AutoResumo p={person} />
-          <button type="button" className="btn btn-volt w-full" onClick={() => onRegister(person)}>
-            <Plus size={15} /> Registar pagamento
-          </button>
           <div className="rounded-[12px] border border-line p-4 text-[11.5px] text-ink-3">
             <div className="label-mono mb-2">Base de calculo</div>
             Subtotal das vendas: <span className="num font-semibold text-ink">{fmtEur(total)}</span>
@@ -489,51 +421,17 @@ function AutoPanel({
 export default function PaymentsPage() {
   const [month, setMonth] = useState(today().slice(0, 7));
   const [selected, setSelected] = useState<number | null>(null);
-  const [edit, setEdit] = useState<PayRow | "new" | null>(null);
-  const [pdfMsg, setPdfMsg] = useState<string | null>(null);
-  const payments = usePayments();
   const breakdown = usePaymentBreakdown(month);
-  const pdf = useAutoPdf();
-  const removePay = useRemovePayment();
-  const rows = payments.data ?? [];
   const people = breakdown.data?.people ?? [];
-
-  const monthRows = rows.filter((r) => r.month === month);
-  const totalPaid = monthRows.filter((r) => r.status === "pago").reduce((s, r) => s + r.amount, 0);
-  const calc = usePaymentCalc(month);
-  const totalDue = calc.data?.totals?.due ?? 0;
-  // Por pagar = calculado menos o que ja foi pago.
-  const totalPending = totalDue - totalPaid;
-
-  const download = async (employeeId?: number) => {
-    setPdfMsg(null);
-    try {
-      const res = await pdf.generate.mutateAsync(employeeId ? { month, employeeId } : { month });
-      if (!res.ok || !res.url) return setPdfMsg(res.reason ?? "Nao foi possivel gerar o PDF.");
-      window.open(res.url, "_blank");
-      setPdfMsg(employeeId ? `PDF gerado: ${res.name}` : `PDF gerado com ${res.count} autos: ${res.name}`);
-    } catch (e) { setPdfMsg(errMsg(e)); }
-  };
 
   return (
     <div className="p-5 lg:p-7">
-      <PageHeader eyebrow="PAGAMENTOS" title="Previsão de Pagamentos" subtitle="Previsão por comercial e por mes: vendas, extras, chargebacks, penalizacoes e km.">
+      <PageHeader eyebrow="PAGAMENTOS" title="Previsão de Pagamentos" subtitle="Previsão por comercial e por mes, calculada a partir das vendas registadas no CRM.">
         <input aria-label="Mes" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
-        <button type="button" className="btn btn-ghost" disabled={pdf.isPending} onClick={() => download()}>
-          <FileDown size={15} /> {pdf.isPending ? "A gerar..." : "PDF (todos)"}
-        </button>
-        <button type="button" className="btn btn-volt" onClick={() => setEdit("new")}><Plus size={15} /> Novo pagamento</button>
       </PageHeader>
-
-      {pdfMsg && <div className="mt-4 rounded-[12px] border border-line bg-volt/5 px-4 py-2 text-[12px] text-ink-2">{pdfMsg}</div>}
 
       <div className="mt-4">
         <UnlockBoard month={month} />
-      </div>
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="A PAGAR (CALCULADO)" value={fmtEur(totalDue)} accent="var(--volt)" icon={<Wallet size={16} />} delay={0} />
-        <Stat label="JA PAGO" value={fmtEur(totalPaid)} accent="var(--sky)" icon={<Check size={16} />} delay={60} />
-        <Stat label="POR PAGAR" value={fmtEur(totalPending)} accent="var(--amber)" icon={<Clock size={16} />} delay={120} />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -570,94 +468,8 @@ export default function PaymentsPage() {
           )}
         </div>
 
-        <AutoPanel month={month} employeeId={selected} onPdf={(id) => download(id)} pdfPending={pdf.isPending} onRegister={(p) => setEdit({
-          id: null,
-          employeeId: p.employeeId,
-          employeeName: p.employeeName,
-          month,
-          kind: "commission",
-          amount: Number(p.due.toFixed(2)),
-          salesCount: p.totalSales,
-          paidOn: today(),
-          status: "pago",
-          pelQty: p.pelQty,
-          ddQty: p.ddQty,
-          feQty: p.feQty,
-          extrasAmount: p.extrasAmount,
-          grossAmount: p.gross,
-          penaltyTiming: p.penaltyTiming,
-          penaltyCampaign: p.penaltyCampaign,
-          kmDeduction: p.kmDeduction,
-          notes: p.tableName ? `Tabela: ${p.tableName}` : null,
-        })} />
+        <AutoPanel month={month} employeeId={selected} />
       </div>
-
-      <div className="card mt-6 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
-          <div>
-            <div className="font-display text-[15px] font-semibold">Registo de pagamentos</div>
-            <div className="text-[11.5px] text-ink-3">Pagamentos lancados manualmente, com estado pago ou por pagar.</div>
-          </div>
-        </div>
-        {payments.isLoading ? (
-          <div className="p-5"><div className="skeleton h-24 rounded-[12px]" /></div>
-        ) : !monthRows.length ? (
-          <Empty title="Sem pagamentos registados" text="Lance um pagamento, ou usa Registar num auto." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-[13px]">
-              <thead>
-                <tr className="border-b border-line text-left">
-                  <th className="px-5 py-3 font-medium">FUNCIONARIO</th>
-                  <th className="px-3 py-3 font-medium">TIPO</th>
-                  <th className="px-3 py-3 text-right font-medium">VENDAS</th>
-                  <th className="px-3 py-3 text-right font-medium">EXTRAS</th>
-                  <th className="px-3 py-3 text-right font-medium">VALOR</th>
-                  <th className="px-3 py-3 font-medium">PAGO EM</th>
-                  <th className="px-3 py-3 font-medium">ESTADO</th>
-                  <th className="px-3 py-3 font-medium">PENALIZACOES</th>
-                  <th className="px-3 py-3 font-medium">NOTAS</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {monthRows.map((r) => (
-                  <tr key={r.id} className="border-b border-line last:border-0">
-                    <td className="px-5 py-3 font-medium">{r.employeeName}</td>
-                    <td className="px-3 py-3 text-ink-2">{kindLabel(r.kind)}</td>
-                    <td className="num px-3 py-3 text-right">{r.salesCount}</td>
-                    <td className="num px-3 py-3 text-right text-ink-2">{r.extrasAmount ? fmtEur(r.extrasAmount) : "-"}</td>
-                    <td className="num px-3 py-3 text-right font-semibold">{fmtEur(r.amount)}</td>
-                    <td className="px-3 py-3 text-ink-2">{r.paidOn ? fmtDate(r.paidOn) : "-"}</td>
-                    <td className="px-3 py-3">{r.status === "pago" ? <Pill tone="ok">Pago</Pill> : <Pill tone="warn">Por pagar</Pill>}</td>
-                    <td className="px-3 py-3 text-[11.5px] text-ink-3">
-                      {r.penaltyTiming || r.penaltyCampaign || r.kmDeduction ? (
-                        <>
-                          {r.penaltyTiming ? <div>Timing: -{fmtEur(r.penaltyTiming)}</div> : null}
-                          {r.penaltyCampaign ? <div>Campanha: -{fmtEur(r.penaltyCampaign)}</div> : null}
-                          {r.kmDeduction ? <div>Km: -{fmtEur(r.kmDeduction)}</div> : null}
-                        </>
-                      ) : ("-")}
-                    </td>
-                    <td className="px-3 py-3 text-ink-2">{r.notes ?? "-"}</td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button type="button" className="btn-icon" aria-label="PDF do auto" disabled={pdf.isPending} onClick={() => download(r.employeeId)}><FileDown size={14} /></button>
-                        <button type="button" className="btn-icon" aria-label="Editar" onClick={() => setEdit(r)}><Pencil size={14} /></button>
-                        <button type="button" className="btn-icon" aria-label="Apagar" onClick={async () => { if (r.id != null) await removePay.mutateAsync({ id: r.id }); }}><Trash2 size={14} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <Modal open={edit !== null} onClose={() => setEdit(null)} title={edit && edit !== "new" && edit.id ? "Editar pagamento" : "Novo pagamento"}>
-        {edit !== null && (<PaymentForm initial={edit === "new" ? null : edit} defaultMonth={month} onClose={() => setEdit(null)} />)}
-      </Modal>
     </div>
   );
 }
