@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { user } from "./auth-schema";
 
 export * from "./auth-schema";
@@ -159,7 +159,11 @@ export const sales = sqliteTable("sales", {
   total: real("total").notNull().default(0),
   notes: text("notes"),
   createdAt: createdAt(),
-});
+}, (t) => [
+  index("idx_sales_date").on(t.date),
+  index("idx_sales_seller").on(t.sellerId),
+  index("idx_sales_status").on(t.status),
+]);
 
 export const saleItems = sqliteTable("sale_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -259,7 +263,11 @@ export const saleStatusHistory = sqliteTable("sale_status_history", {
   changedOn: text("changed_on").notNull(),
   changedBy: text("changed_by"),
   createdAt: createdAt(),
-});
+}, (t) => [
+  index("idx_ssh_sale").on(t.saleId),
+  index("idx_ssh_status").on(t.status),
+  index("idx_ssh_changed").on(t.changedOn),
+]);
 
 /**
  * Calendário da agenda. Tipo "pessoal" (um por utilizador) ou "equipa" (um por equipa).
