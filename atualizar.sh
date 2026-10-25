@@ -52,6 +52,24 @@ for col in ("is_seller", "vacation_days"):
         c.execute("ALTER TABLE employees DROP COLUMN " + col)
         c.commit()
         print("  coluna employees." + col + " removida")
+c.close()
+PY
+
+# Colunas novas NOT NULL com default têm de existir ANTES do push, senao o drizzle-kit
+# tenta adiciona-las sem default e aborta com aviso de data-loss.
+python3 <<'PY'
+import sqlite3
+c = sqlite3.connect("src/data.db")
+empcols = [r[1] for r in c.execute("PRAGMA table_info(employees)").fetchall()]
+before = {
+    "force_commissions": "integer NOT NULL DEFAULT 0",
+}
+for col, decl in before.items():
+    if col not in empcols:
+        c.execute("ALTER TABLE employees ADD COLUMN " + col + " " + decl)
+        c.commit()
+        print("  coluna employees." + col + " adicionada (antes do push)")
+c.close()
 PY
 
 bun --env-file=../../.env drizzle-kit push
