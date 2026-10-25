@@ -1,23 +1,10 @@
-# D2D Terreno — Integração
+# Regras — implementado
 
-## Phase 1: Core (em curso)
-- [ ] Copy D2D HTML to public/
-- [ ] Create DB schema (d2d_shifts, d2d_doors, d2d_events, d2d_daily_reports)
-- [ ] Create API routes (Hono): POST /api/d2d, GET /api/d2d/me, GET /api/d2d/equipa
-- [ ] Create React page component (d2d.tsx) with iframe + postMessage
-- [ ] Add route in app.tsx
-- [ ] Add nav item in app-shell.tsx
-- [ ] Verify lint + build
+Regras de pagamento sobre o Auto Iberdrola.
 
-## Phase 2: Documents
-- [ ] d2d_documents table, d2d_caixa table
-- [ ] POST /api/d2d/documentos (multipart)
-- [ ] GET /api/d2d/caixa
-- [ ] Handle document events (documento_apagado, documentos_enviados, documentos_lidos)
-
-## Phase 3: Auto-close & Push
-- [ ] Schedule for 23:59 auto-close
-- [ ] Push notification infrastructure
-
-## Phase 4: Sales integration
-- [ ] When "venda" result → create client + sale
+- `rules` (auto/manual) + `rule_assignments` (funcionário + mês) no schema.
+- API `rules` (list/create/update/remove/assignments) em `routes/rules.ts`.
+- Página Regras com CRUD completo.
+- Botão "Atribuir" no detalhe do comercial (Autos Finais) para regras manuais.
+- Separador "Autos" na ficha do funcionário (resumo detalhado por mês + vendas).
+- `buildCalc` aplica regras automáticas (condição sobre coluna do Excel) e manuais atribuídas.

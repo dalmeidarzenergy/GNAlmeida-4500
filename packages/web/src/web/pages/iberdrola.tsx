@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil } from "lucide-react";
+import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
 import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth } from "../queries/iberdrola";
+import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur, fmtEur2, monthLabel, thisMonth } from "../lib/format";
 import { authClient } from "../lib/auth";
@@ -315,7 +316,7 @@ function Finais() {
             <div className="text-[11.5px] text-ink-3">Vendas de cada comercial e respetivos valores.</div>
           </div>
           {selected != null ? (
-            <PersonDetail employeeId={selected} people={people} />
+            <PersonDetail employeeId={selected} people={people} month={month} />
           ) : (
             <div className="p-6">{calc.isLoading ? <div className="skeleton h-40 rounded-[12px]" /> : <Empty title="Escolhe um comercial" text="Seleciona um comercial na lista para ver as vendas." />}</div>
           )}
@@ -325,9 +326,20 @@ function Finais() {
   );
 }
 
-function PersonDetail({ employeeId, people }: { employeeId: number; people: NonNullable<ReturnType<typeof useIberdrolaCalc>["data"]>["people"] }) {
+function PersonDetail({ employeeId, people, month }: { employeeId: number; people: NonNullable<ReturnType<typeof useIberdrolaCalc>["data"]>["people"]; month: string }) {
   const p = people.find((x) => x.employeeId === employeeId);
+  const me = useMe();
+  const canEdit = me.data?.permissions?.["regras"]?.edit ?? false;
+  const rules = useRules();
+  const employeeIds = useMemo(() => [employeeId], [employeeId]);
+  const assignments = useRuleAssignments(month, employeeIds);
+  const saveAssignments = useSaveRuleAssignments();
+  const [assigning, setAssigning] = useState(false);
+  const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   if (!p) return <div className="p-6"><Empty title="Sem dados" text="Não foi possível encontrar este comercial." /></div>;
+
+  const manualRules = (rules.data ?? []).filter((r) => r.type === "manual");
+  const assignedIds = new Set((assignments.data ?? []).map((a) => a.ruleId));
 
   function lineTable(title: string, lines: typeof p.lines) {
     if (!lines.length) return null;
@@ -381,7 +393,14 @@ function PersonDetail({ employeeId, people }: { employeeId: number; people: NonN
     <div className="p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="font-display text-[15px] font-semibold">{p.employeeName}</div>
+          <div className="flex items-center gap-2">
+            <div className="font-display text-[15px] font-semibold">{p.employeeName}</div>
+            {canEdit && manualRules.length > 0 && (
+              <button type="button" className="btn btn-volt px-2.5 py-1 text-[12px]" onClick={() => { setPendingIds(new Set(assignedIds)); setAssigning(true); }}>
+                <Scale size={13} /> Atribuir
+              </button>
+            )}
+          </div>
           <div className="text-[11.5px] text-ink-3">{p.tableName ?? "Sem tabela comisional"}</div>
         </div>
         <div className="flex gap-2">
@@ -447,8 +466,78 @@ function PersonDetail({ employeeId, people }: { employeeId: number; people: NonN
         </div>
       </div>
 
+      {p.ruleEffects.length > 0 && (
+        <div className="mb-5">
+          <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink-2">Regras aplicadas</div>
+          <div className="overflow-x-auto rounded-[10px] border border-line">
+            <table className="w-full min-w-[420px] text-[12.5px]">
+              <thead className="bg-surface">
+                <tr className="border-b border-line text-left">
+                  <th className="px-3 py-2 font-medium">Regra</th>
+                  <th className="px-3 py-2 font-medium">Tipo</th>
+                  <th className="px-3 py-2 text-right font-medium">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.ruleEffects.map((r) => (
+                  <tr key={r.id} className="border-b border-line last:border-0">
+                    <td className="px-3 py-2">{r.name}</td>
+                    <td className="px-3 py-2 text-ink-2">{r.type === "auto" ? "Automática" : "Manual"}</td>
+                    <td className={`num px-3 py-2 text-right font-semibold ${r.amount < 0 ? "text-rose" : ""}`}>{r.amount < 0 ? "−" : "+"}{fmtEur2(Math.abs(r.amount))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {lineTable("Vendas", p.lines)}
       {lineTable("Chargback", p.chargebackLines)}
+
+      <Modal open={assigning} onClose={() => setAssigning(false)} title={`Atribuir regras — ${monthLabel(month)}`}>
+        <div className="grid gap-3">
+          {manualRules.length === 0 ? (
+            <Empty title="Sem regras manuais" text="Cria regras manuais na página Regras para as poderes atribuir." />
+          ) : (
+            manualRules.map((r) => (
+              <label key={r.id} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={pendingIds.has(r.id)}
+                  onChange={(e) => {
+                    const next = new Set(pendingIds);
+                    if (e.target.checked) next.add(r.id);
+                    else next.delete(r.id);
+                    setPendingIds(next);
+                  }}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-medium">{r.name}</span>
+                  {r.description && <span className="block text-[11.5px] text-ink-3">{r.description}</span>}
+                </span>
+                <span className="num text-[12.5px] text-ink-2">
+                  {r.effectType === "percent" ? `${r.effectValue > 0 ? "+" : ""}${Math.round(r.effectValue * 100)}%` : `${r.effectValue > 0 ? "+" : ""}${r.effectValue}€`}
+                </span>
+              </label>
+            ))
+          )}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button type="button" className="btn btn-ghost" onClick={() => setAssigning(false)}>Cancelar</button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={saveAssignments.isPending}
+              onClick={async () => {
+                await saveAssignments.mutateAsync({ employeeId, month, ruleIds: [...pendingIds] });
+                setAssigning(false);
+              }}
+            >
+              {saveAssignments.isPending && <Loader2 size={15} className="animate-spin" />} Guardar
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

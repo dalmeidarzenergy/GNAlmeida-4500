@@ -598,6 +598,39 @@ export const employeeTables = sqliteTable("employee_tables", {
  * (pagamento dos comerciais). Cada import = um ficheiro carregado, associado
  * a um mês de referência.
  */
+/** Regras de pagamento (penalidades, descontos) aplicadas sobre o Auto Iberdrola. */
+export const rules = sqliteTable("rules", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("manual"), // manual | auto
+  description: text("description"),
+  /** Coluna do Excel a inspecionar (só para regras auto). Ex: "Timing de contratação" */
+  sourceColumn: text("source_column"),
+  /** Operador de comparação para regras auto: > | < | >= | <= | == | != */
+  operator: text("operator"),
+  /** Valor a comparar (texto ou número; guarda-se como texto). */
+  compareValue: text("compare_value"),
+  /** Tipo do efeito: fixed_eur (€ fixos) | percent (-10% = -0.1) */
+  effectType: text("effect_type").notNull().default("fixed_eur"),
+  /** Valor do efeito (e.g. -10, -0.10). */
+  effectValue: real("effect_value").notNull().default(0),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: createdAt(),
+});
+
+/** Regra manual atribuída a um funcionário num mês específico. */
+export const ruleAssignments = sqliteTable("rule_assignments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ruleId: integer("rule_id")
+    .notNull()
+    .references(() => rules.id, { onDelete: "cascade" }),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  month: text("month").notNull(), // YYYY-MM
+  createdAt: createdAt(),
+});
+
 export const iberdrolaImports = sqliteTable("iberdrola_imports", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   filename: text("filename").notNull(),

@@ -15,6 +15,8 @@ import {
   employees,
   iberdrolaImports,
   iberdrolaRows,
+  ruleAssignments,
+  rules,
   sales,
   userRoles,
 } from "../database/schema";
@@ -78,6 +80,8 @@ type IberdrolaPerson = {
   due: number;
   lines: IberdrolaLine[];
   chargebackLines: IberdrolaLine[];
+  /** Regras aplicadas a este comercial no mês, com o valor de cada uma. */
+  ruleEffects: { id: number; name: string; type: string; amount: number }[];
 };
 
 type LiteSale = {
@@ -147,6 +151,49 @@ async function buildCalc(m: string) {
   const cTables = await db.select().from(commissionTables);
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
   const assignments = await db.select().from(employeeTables);
+
+  // Regras de pagamento: automáticas (todas) e manuais atribuídas neste mês.
+  const allRules = await db.select().from(rules);
+  const activeRules = allRules.filter((r) => r.active);
+  const autoRules = activeRules.filter((r) => r.type === "auto");
+  const manualRules = activeRules.filter((r) => r.type === "manual");
+  const monthAssignments = await db.select().from(ruleAssignments).where(eq(ruleAssignments.month, m));
+  const assignedByEmployee = new Map<number, Set<number>>();
+  for (const a of monthAssignments) {
+    const s = assignedByEmployee.get(a.employeeId) ?? new Set<number>();
+    s.add(a.ruleId);
+    assignedByEmployee.set(a.employeeId, s);
+  }
+
+  // Mapa do id de venda -> linha do Excel (para avaliar condições das regras automáticas).
+  const excelByContract = new Map<string, Record<string, unknown>>();
+  for (const r of rows) if (r.idVenda) excelByContract.set(r.idVenda, r.data ?? {});
+
+  const cellNum = (v: unknown): number | null => {
+    const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  };
+  const normCol = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+  /** Avalia a condição de uma regra automática sobre uma venda (linha do Excel). */
+  const matchesCondition = (rule: (typeof allRules)[number], excel: Record<string, unknown>): boolean => {
+    if (!rule.sourceColumn || !rule.operator) return false;
+    // Localiza a coluna por nome, ignorando maiúsculas/acentos.
+    const key = Object.keys(excel).find((k) => normCol(k) === normCol(rule.sourceColumn!));
+    if (key == null) return false;
+    const raw = excel[key];
+    const cmp = rule.compareValue ?? "";
+    const op = rule.operator;
+    if (op === "==") return String(raw ?? "") === String(cmp);
+    if (op === "!=") return String(raw ?? "") !== String(cmp);
+    const a = cellNum(raw);
+    const b = cellNum(cmp);
+    if (a == null || b == null) return false;
+    if (op === ">") return a > b;
+    if (op === "<") return a < b;
+    if (op === ">=") return a >= b;
+    if (op === "<=") return a <= b;
+    return false;
+  };
 
   const pick = <T extends { startDate: string; endDate: string | null }>(list: T[], from: string, to: string) =>
     list.filter((a) => a.startDate <= to && (a.endDate == null || a.endDate >= from)).sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
@@ -238,6 +285,7 @@ async function buildCalc(m: string) {
       due: 0,
       lines: [],
       chargebackLines: [],
+      ruleEffects: [],
     };
 
     if (!table) {
@@ -265,6 +313,34 @@ async function buildCalc(m: string) {
     const feAmount = sum(lines, (l) => l.fe);
     const pelAmount = sum(lines, (l) => l.pel);
 
+    // --- Aplicação de regras de pagamento ---
+    const ruleEffects: { id: number; name: string; type: string; amount: number }[] = [];
+
+    // Automáticas: por cada venda que satisfaz a condição (coluna do Excel).
+    for (const r of autoRules) {
+      let total = 0;
+      for (const s of mine) {
+        const excel = excelByContract.get(contract(s.details));
+        if (!excel || !matchesCondition(r, excel)) continue;
+        const saleTotal = split(s, band).reduce((t, l) => t + l.total, 0);
+        const amt = r.effectType === "percent" ? round2(r.effectValue * saleTotal) : r.effectValue;
+        total = round2(total + amt);
+      }
+      if (total !== 0) ruleEffects.push({ id: r.id, name: r.name, type: "auto", amount: total });
+    }
+
+    // Manuais: atribuídas a este comercial no mês; aplicam-se ao total bruto.
+    const assignedRuleIds = assignedByEmployee.get(sellerId);
+    if (assignedRuleIds) {
+      for (const r of manualRules) {
+        if (!assignedRuleIds.has(r.id)) continue;
+        const amt = r.effectType === "percent" ? round2(r.effectValue * gross) : r.effectValue;
+        ruleEffects.push({ id: r.id, name: r.name, type: "manual", amount: amt });
+      }
+    }
+
+    const rulesDelta = round2(ruleEffects.reduce((t, e) => t + e.amount, 0));
+
     people.push({
       ...base,
       bandSales,
@@ -281,9 +357,10 @@ async function buildCalc(m: string) {
       unit: band ? { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } : null,
       gross,
       chargeback,
-      due: round2(gross - chargeback),
+      due: round2(gross - chargeback + rulesDelta),
       lines,
       chargebackLines: cbLines,
+      ruleEffects,
     });
   }
 
@@ -368,6 +445,20 @@ export const iberdrolaRoute = {
   calc: requireView("auto-iberdrola")
     .input(z.object({ month }))
     .handler(async ({ input }) => buildCalc(input.month)),
+
+  /** Resumo dos autos de um funcionário, por mês (para a ficha do funcionário). */
+  employee: requireView("auto-iberdrola")
+    .input(z.object({ employeeId: z.number() }))
+    .handler(async ({ input }) => {
+      const months = await db.select({ month: iberdrolaImports.month }).from(iberdrolaImports).groupBy(iberdrolaImports.month).orderBy(asc(iberdrolaImports.month));
+      const out: { month: string; person: IberdrolaPerson | null }[] = [];
+      for (const { month } of months) {
+        const calc = await buildCalc(month);
+        const person = calc.people.find((p) => p.employeeId === input.employeeId) ?? null;
+        if (person) out.push({ month, person });
+      }
+      return out;
+    }),
 };
 
 /* ------------------------------------------------------------

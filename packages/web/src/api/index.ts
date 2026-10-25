@@ -9,6 +9,7 @@ import { commissionTablesRoute } from "./routes/commission-tables";
 import { chiefTablesRoute } from "./routes/chief-tables";
 import { paymentsRoute } from "./routes/payments";
 import { iberdrolaRoute, iberdrolaRoutes } from "./routes/iberdrola";
+import { rulesRoute } from "./routes/rules";
 import { sales } from "./routes/sales";
 import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
@@ -30,6 +31,7 @@ export const router = {
   chiefTables: chiefTablesRoute,
   payments: paymentsRoute,
   iberdrola: iberdrolaRoute,
+  rules: rulesRoute,
   sales,
   reports,
   campaigns,

@@ -6,12 +6,13 @@ import { OrgChart } from "../components/org-chart";
 import { TeamFilter, useTeamIds } from "../components/team-filter";
 import { useDepartments, useEmployees, usePositions, useRemoveEmployee, useSaveEmployee } from "../queries/hr";
 import { useCommissionTables } from "../queries/commission-tables";
+import { useIberdrolaEmployee } from "../queries/iberdrola";
 import { PageHeader, Pill, Avatar, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, ConfirmDelete } from "../components/ui/kit";
 import { EmployeeTableHistory } from "../components/employee-tables";
 import { EMP_STATUS } from "../lib/labels";
 import { ETTS } from "../../api/shared/bonds";
 import { COMMISSION_GROUP_LABEL, COMMISSION_GROUP_OPTIONS } from "../../api/shared/commission-groups";
-import { errMsg, fmtDate, fmtEur, tenure, today } from "../lib/format";
+import { errMsg, fmtDate, fmtEur, fmtEur2, monthLabel, tenure, today } from "../lib/format";
 
 type Emp = NonNullable<ReturnType<typeof useEmployees>["data"]>[number];
 
@@ -84,6 +85,7 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
   const [preview, setPreview] = useState<string | null>(initial?.photoUrl ?? null);
   const [uploading, setUploading] = useState(false);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
+  const [tab, setTab] = useState<"dados" | "autos">("dados");
   const posOptions = (positions.data ?? []).filter((p) => !f.departmentId || p.departmentId === f.departmentId);
   const all = emps.data ?? [];
   const top = all.find((e) => e.managerId == null && e.id !== initial?.id);
@@ -147,7 +149,20 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
   };
 
   return (
-    <form onSubmit={submit}>
+    <div>
+      {initial && (
+        <div className="mb-4">
+          <Tabs value={tab} onChange={setTab} items={[
+            { key: "dados" as const, label: "Dados" },
+            { key: "autos" as const, label: "Autos" },
+          ]} />
+        </div>
+      )}
+
+      {tab === "autos" && initial ? (
+        <EmployeeAutos employeeId={initial.id} />
+      ) : (
+      <form onSubmit={submit}>
       <div className="grid gap-4 sm:grid-cols-2">
         <PhotoPicker name={f.name} preview={preview} uploading={uploading} onPick={pickPhoto} onClear={() => { set("photoKey", null); setPreview(null); }} />
         <Field label="Nome completo" className="sm:col-span-2">
@@ -267,7 +282,99 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
         error={error}
         extra={initial && <ConfirmDelete pending={remove.isPending} onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onClose(); }} />}
       />
-    </form>
+      </form>
+      )}
+    </div>
+  );
+}
+
+function EmployeeAutos({ employeeId }: { employeeId: number }) {
+  const data = useIberdrolaEmployee(employeeId);
+  const entries = data.data ?? [];
+
+  if (data.isLoading) return <div className="p-4"><div className="skeleton h-48 rounded-[12px]" /></div>;
+  if (!entries.length) return <div className="p-4"><Empty title="Sem autos" text="Este funcionário ainda não tem autos Iberdrola calculados. Carrega ficheiros no Auto Iberdrola e os cálculos aparecem aqui." /></div>;
+
+  return (
+    <div className="space-y-5">
+      {entries.map(({ month, person }) =>
+        person ? (
+          <div key={month} className="overflow-hidden rounded-[12px] border border-line">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3">
+              <div className="font-display text-[14px] font-semibold">{monthLabel(month)}</div>
+              <div className="flex flex-wrap gap-4 text-[11px] text-ink-2">
+                <span>Bruto <span className="num ml-1 text-[12px] font-semibold text-ink">{fmtEur(person.gross)}</span></span>
+                <span>Chargback <span className="num ml-1 text-[12px] font-semibold text-rose">{fmtEur(person.chargeback)}</span></span>
+                <span>Devido <span className="num ml-1 text-[12px] font-semibold text-volt">{fmtEur(person.due)}</span></span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-[12.5px]">
+                <thead className="bg-surface">
+                  <tr className="border-b border-line text-left">
+                    <th className="px-4 py-2 font-medium">ID venda</th>
+                    <th className="px-3 py-2 font-medium">Serviço</th>
+                    <th className="px-3 py-2 text-right font-medium">Base</th>
+                    <th className="px-3 py-2 text-right font-medium">Déb. Direto</th>
+                    <th className="px-3 py-2 text-right font-medium">Fat. Eletrónica</th>
+                    <th className="px-3 py-2 text-right font-medium">PEL</th>
+                    <th className="px-3 py-2 text-right font-medium">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {person.lines.map((l, i) => (
+                    <tr key={i} className="border-b border-line last:border-0">
+                      <td className="num px-4 py-2 font-medium">{l.idVenda}</td>
+                      <td className="px-3 py-2">{l.service}</td>
+                      <td className="num px-3 py-2 text-right">{l.base ? fmtEur2(l.base) : "-"}</td>
+                      <td className="num px-3 py-2 text-right text-ink-2">{l.dd ? fmtEur2(l.dd) : "-"}</td>
+                      <td className="num px-3 py-2 text-right text-ink-2">{l.fe ? fmtEur2(l.fe) : "-"}</td>
+                      <td className="num px-3 py-2 text-right text-ink-2">{l.pel ? fmtEur2(l.pel) : "-"}</td>
+                      <td className="num px-3 py-2 text-right font-semibold">{fmtEur2(l.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {person.chargebackLines.length > 0 && (
+              <div className="border-t border-line">
+                <div className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-ink-2">Chargback</div>
+                <div className="overflow-x-auto py-2">
+                  <table className="w-full min-w-[640px] text-[12.5px]">
+                    <tbody>
+                      {person.chargebackLines.map((l, i) => (
+                        <tr key={i} className="border-b border-line last:border-0">
+                          <td className="num px-4 py-2 font-medium">{l.idVenda}</td>
+                          <td className="px-3 py-2">{l.service}</td>
+                          <td className="num px-3 py-2 text-right" />
+                          <td className="num px-3 py-2 text-right" />
+                          <td className="num px-3 py-2 text-right" />
+                          <td className="num px-3 py-2 text-right" />
+                          <td className="num px-3 py-2 text-right font-semibold text-rose">−{fmtEur2(l.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {person.ruleEffects.length > 0 && (
+              <div className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
+                {person.ruleEffects.map((r) => (
+                  <span key={r.id} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-[11.5px]">
+                    {r.name}
+                    <span className={`num font-semibold ${r.amount < 0 ? "text-rose" : "text-ink"}`}>{r.amount < 0 ? "−" : "+"}{fmtEur2(Math.abs(r.amount))}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null,
+      )}
+    </div>
   );
 }
 
