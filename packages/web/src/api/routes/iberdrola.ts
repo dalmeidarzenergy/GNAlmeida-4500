@@ -46,6 +46,7 @@ type IberdrolaPerson = {
   employeeName: string;
   tableName: string | null;
   missingTable: boolean;
+  forceCommissions: boolean;
   bandSales: number;
   salesCount: number;
   luzCount: number;
@@ -106,7 +107,7 @@ async function buildCalc(m: string) {
   // Funcionários: ligam o comercial do Excel por "NIF Comercial" ou "Comercial" (nome).
   // Não é usada qualquer ligação à aba Vendas.
   const staff = await db
-    .select({ id: employees.id, name: employees.name, nif: employees.nif, commissionTableId: employees.commissionTableId })
+    .select({ id: employees.id, name: employees.name, nif: employees.nif, commissionTableId: employees.commissionTableId, forceCommissions: employees.forceCommissions })
     .from(employees);
   const staffById = new Map(staff.map((s) => [s.id, s]));
   const staffByName = new Map(staff.map((s) => [normText(s.name), s.id] as const));
@@ -263,6 +264,7 @@ async function buildCalc(m: string) {
       employeeName: emp.name,
       tableName: table?.name ?? null,
       missingTable: !table,
+      forceCommissions: emp.forceCommissions ?? false,
       bandSales: 0,
       salesCount: mine.length,
       luzCount: 0,
@@ -297,7 +299,12 @@ async function buildCalc(m: string) {
       [...bands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
       null;
 
-    const lines = mine.flatMap((e) => split(e, band));
+    // Bloqueio de vendas (objetivo): as primeiras N vendas não são pagas, salvo
+    // se o pagamento de comissões estiver forçado para este comercial.
+    const blocked = emp.forceCommissions ? 0 : (table?.blockedSales ?? 0);
+    const paidEntries = mine.slice(Math.min(blocked, mine.length));
+
+    const lines = paidEntries.flatMap((e) => split(e, band));
     const cbMine = cbEntries.filter((e) => e.employeeId === sellerId);
     const cbLines = cbMine.flatMap((e) => split(e, band));
 
@@ -312,10 +319,10 @@ async function buildCalc(m: string) {
     // --- Aplicação de regras de pagamento ---
     const ruleEffects: { id: number; name: string; type: string; amount: number }[] = [];
 
-    // Automáticas: por cada venda que satisfaz a condição (coluna do Excel).
+    // Automáticas: por cada venda paga que satisfaz a condição (coluna do Excel).
     for (const r of autoRules) {
       let total = 0;
-      for (const e of mine) {
+      for (const e of paidEntries) {
         if (!matchesCondition(r, e.excel)) continue;
         const saleTotal = split(e, band).reduce((t, l) => t + l.total, 0);
         const amt = r.effectType === "percent" ? round2(r.effectValue * saleTotal) : r.effectValue;
@@ -440,6 +447,17 @@ export const iberdrolaRoute = {
   calc: requireView("auto-iberdrola")
     .input(z.object({ month }))
     .handler(async ({ input }) => buildCalc(input.month)),
+
+  /** Liga/desliga o pagamento forçado de comissões de um comercial (ignora o bloqueio da tabela). */
+  forceCommissionsToggle: requireEdit("auto-iberdrola")
+    .input(z.object({ employeeId: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      const [emp] = await db.select({ forceCommissions: employees.forceCommissions }).from(employees).where(eq(employees.id, input.employeeId));
+      if (!emp) return { found: false as const, forceCommissions: false };
+      const next = !emp.forceCommissions;
+      await db.update(employees).set({ forceCommissions: next }).where(eq(employees.id, input.employeeId));
+      return { found: true as const, employeeId: input.employeeId, forceCommissions: next };
+    }),
 
   /** Resumo dos autos de um funcionário, por mês (para a ficha do funcionário). */
   employee: requireView("auto-iberdrola")

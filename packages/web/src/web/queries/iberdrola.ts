@@ -61,3 +61,7 @@ export const useIberdrolaCalc = (month: string) =>
 /** Resumo dos autos de um funcionário, por mês. */
 export const useIberdrolaEmployee = (employeeId: number | null) =>
   useQuery({ ...orpc.iberdrola.employee.queryOptions({ input: { employeeId: employeeId ?? 0 } }), enabled: employeeId != null });
+
+/** Liga/desliga o pagamento forçado de comissões de um comercial. */
+export const useIberdrolaForceCommissionsToggle = () =>
+  useMutation(orpc.iberdrola.forceCommissionsToggle.mutationOptions({ onSuccess: useInv() }));

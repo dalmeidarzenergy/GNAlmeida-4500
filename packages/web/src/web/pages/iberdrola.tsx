@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale } from "lucide-react";
+import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsToggle } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -334,6 +334,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const employeeIds = useMemo(() => [employeeId], [employeeId]);
   const assignments = useRuleAssignments(month, employeeIds);
   const saveAssignments = useSaveRuleAssignments();
+  const toggleForce = useIberdrolaForceCommissionsToggle();
   const [assigning, setAssigning] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   if (!p) return <div className="p-6"><Empty title="Sem dados" text="Não foi possível encontrar este comercial." /></div>;
@@ -398,6 +399,17 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
             {canEdit && manualRules.length > 0 && (
               <button type="button" className="btn btn-volt px-2.5 py-1 text-[12px]" onClick={() => { setPendingIds(new Set(assignedIds)); setAssigning(true); }}>
                 <Scale size={13} /> Atribuir
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                className={p.forceCommissions ? "btn btn-volt px-2.5 py-1 text-[12px]" : "btn btn-ghost px-2.5 py-1 text-[12px]"}
+                disabled={toggleForce.isPending}
+                onClick={() => toggleForce.mutateAsync({ employeeId: p.employeeId })}
+                title={p.forceCommissions ? "Comissões desbloqueadas — clique para voltar a aplicar o objetivo." : "Pagar comissões mesmo sem atingir o objetivo (ignora o bloqueio de vendas)."}
+              >
+                <Unlock size={13} /> {p.forceCommissions ? "Comissões desbloqueadas" : "Desbloquear comissões"}
               </button>
             )}
           </div>
