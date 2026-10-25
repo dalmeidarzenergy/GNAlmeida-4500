@@ -24,8 +24,6 @@ type Person = {
   chargebackLines: { idVenda: string; service: string; base: number; dd: number; fe: number; pel: number; total: number }[];
   ruleEffects: { name: string; type: string; amount: number }[];
   vncs: { idVenda: string; amount: number }[];
-  overridesOut: { idVenda: string; toName: string }[];
-  overridesIn: { idVenda: string; fromName: string }[];
 };
 
 const esc = (n: string) =>
@@ -85,7 +83,6 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
   .r-num { text-align: right; }
   .t-pos { color: #3f8f1f; font-weight: 600; } .t-neg { color: #c0392b; } .t-svc { color: #5d6b62; }
   .tfoot td { background: #f2f6ef; font-weight: 600; border-top: 1px solid #dde6d8; }
-  .swap-out { color: #b57614; } .swap-in { color: #3f8f1f; }
   .footer { margin-top: 30px; padding-top: 12px; border-top: 1px solid #e2e9dd; font-size: 7pt; color: #7a867e; display: flex; justify-content: space-between; }
   @page { size: A4; margin: 10mm; }
 </style></head><body>
@@ -97,21 +94,20 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
 <h1>${esc(p.employeeName)}</h1>
 <h2>${esc(p.tableName ?? "Sem tabela comisional")} &nbsp;·&nbsp; ${monthLabel}</h2>
 <div class="meta">
-  <span>Escalão ${p.bandSales}</span>
+  <span>Nº de Venda para Escalão: ${p.bandSales}</span>
   <span>${p.salesCount} vendas</span>
   <span>${p.luzCount} luz / ${p.gasCount} gás</span>
 </div>
 <div class="kpis">
   <div class="kpi"><div class="label">Bruto</div><div class="value v">${eur(p.gross)}</div></div>
   <div class="kpi"><div class="label">Chargeback</div><div class="value t-neg">${eur(p.chargeback)}</div></div>
-  <div class="kpi"><div class="label">Devido</div><div class="value s">${eur(p.due)}</div></div>
-  <div class="kpi"><div class="label">Base</div><div class="value">${eur(p.baseAmount)}</div></div>
+  <div class="kpi"><div class="label">A Pagar</div><div class="value s">${eur(p.due)}</div></div>
+  <div class="kpi"><div class="label">Luz + Gás</div><div class="value">${eur(p.baseAmount)}</div></div>
   <div class="kpi"><div class="label">Serviços</div><div class="value">${eur(p.svcAmount)}</div></div>
   <div class="kpi"><div class="label">DD / FE / PEL</div><div class="value" style="font-size:12pt">${p.ddCount} / ${p.feCount} / ${p.pelCount}</div></div>
 </div>`;
 
-  // Escalão atingido
-  html += `<section><div class="s-title">Escalão atingido</div><table><thead><tr><th>Item</th><th class="r-num">Valor unitário</th><th class="r-num">Qtd</th><th class="r-num">Total</th></tr></thead><tbody>`;
+  html += `<section><div class="s-title">Nº de Venda para Escalão</div><table><thead><tr><th>Item</th><th class="r-num">Valor unitário</th><th class="r-num">Qtd</th><th class="r-num">Total</th></tr></thead><tbody>`;
   if (p.unit) {
     html += `<tr><td>Luz</td><td class="num r-num">${eur(p.unit.luz)}</td><td class="num r-num">${p.luzCount}</td><td class="num r-num">${eur(p.unit.luz * p.luzCount)}</td></tr>`;
     html += `<tr><td>Gás</td><td class="num r-num">${eur(p.unit.gas)}</td><td class="num r-num">${p.gasCount}</td><td class="num r-num">${eur(p.unit.gas * p.gasCount)}</td></tr>`;
@@ -143,17 +139,9 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
     html += `</tbody></table></section>`;
   }
 
-  // Trocas de venda
-  if (p.overridesOut.length > 0 || p.overridesIn.length > 0) {
-    html += `<section><div class="s-title">Trocas de venda</div><table><thead><tr><th>ID venda</th><th>Direção</th><th>Comercial</th></tr></thead><tbody>`;
-    for (const o of p.overridesOut) html += `<tr><td class="num">${esc(o.idVenda)}</td><td class="swap-out">Cedida →</td><td>${esc(o.toName)}</td></tr>`;
-    for (const o of p.overridesIn) html += `<tr><td class="num">${esc(o.idVenda)}</td><td class="swap-in">← Recebida</td><td>${esc(o.fromName)}</td></tr>`;
-    html += `</tbody></table></section>`;
-  }
-
   // Vendas
   html += `<section><div class="s-title">Vendas (${p.lines.length} linha${p.lines.length === 1 ? "" : "s"})</div>
-<table><thead><tr><th>ID venda</th><th>Serviço</th><th class="r-num">Base</th><th class="r-num">DD</th><th class="r-num">FE</th><th class="r-num">PEL</th><th class="r-num">Total</th></tr></thead><tbody>`;
+<table><thead><tr><th>ID venda</th><th>Serviço</th><th class="r-num">Luz + Gás</th><th class="r-num">DD</th><th class="r-num">FE</th><th class="r-num">PEL</th><th class="r-num">Total</th></tr></thead><tbody>`;
   for (const l of p.lines) {
     html += `<tr><td class="num">${esc(l.idVenda)}</td><td>${l.service}</td><td class="num r-num">${l.base ? eur(l.base) : "—"}</td><td class="num r-num t-svc">${l.dd ? eur(l.dd) : "—"}</td><td class="num r-num t-svc">${l.fe ? eur(l.fe) : "—"}</td><td class="num r-num t-svc">${l.pel ? eur(l.pel) : "—"}</td><td class="num r-num" style="font-weight:600">${eur(l.total)}</td></tr>`;
   }
@@ -167,7 +155,7 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
   // Chargeback
   if (p.chargebackLines.length > 0) {
     html += `<section><div class="s-title">Chargeback (${p.chargebackLines.length} linha${p.chargebackLines.length === 1 ? "" : "s"})</div>
-<table><thead><tr><th>ID venda</th><th>Serviço</th><th class="r-num">Base</th><th class="r-num">DD</th><th class="r-num">FE</th><th class="r-num">PEL</th><th class="r-num">Total</th></tr></thead><tbody>`;
+<table><thead><tr><th>ID venda</th><th>Serviço</th><th class="r-num">Luz + Gás</th><th class="r-num">DD</th><th class="r-num">FE</th><th class="r-num">PEL</th><th class="r-num">Total</th></tr></thead><tbody>`;
     for (const l of p.chargebackLines) {
       html += `<tr><td class="num">${esc(l.idVenda)}</td><td>${l.service}</td><td class="num r-num">${l.base ? eur(l.base) : "—"}</td><td class="num r-num t-svc">${l.dd ? eur(l.dd) : "—"}</td><td class="num r-num t-svc">${l.fe ? eur(l.fe) : "—"}</td><td class="num r-num t-svc">${l.pel ? eur(l.pel) : "—"}</td><td class="num r-num t-neg">${eur(l.total)}</td></tr>`;
     }
