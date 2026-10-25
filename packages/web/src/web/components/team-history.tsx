@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
-import { useEditMembership, useEmployees, useMoveMember, useRemoveMembership, useTeams } from "../queries/hr";
+import { useAddPeriod, useEditMembership, useEditPeriod, useEmployees, useMoveMember, useRemoveMembership, useRemovePeriod, useTeams } from "../queries/hr";
 import { Field, SubmitRow } from "./ui/kit";
 import { errMsg, fmtDate } from "../lib/format";
 
@@ -66,40 +66,84 @@ export function TeamHistory({ team }: { team: Team }) {
   );
 }
 
-/** Histórico de chefia de uma equipa (quem liderou, de quando a quando). */
-export function TeamLeadershipHistory({ team }: { team: Team }) {
+/** Períodos de atividade de uma equipa (abertura/fecho), editáveis pelo utilizador. */
+export function TeamPeriodsHistory({ team }: { team: Team }) {
+  const add = useAddPeriod();
+  const edit = useEditPeriod();
+  const remove = useRemovePeriod();
+  const [error, setError] = useState<string | null>(null);
   const today = todayLisbon();
-  const leadership = (team as any).leadership as { leadershipId: number; startDate: string; endDate: string | null; leaderId: number; name: string }[] | undefined;
-  if (!leadership?.length) return <p className="text-[12.5px] text-ink-3">Ainda sem histórico de chefia.</p>;
+  const periods = ((team as any).periods as { id: number; startDate: string; endDate: string | null }[] | undefined) ?? [];
+  const sorted = [...periods].sort((a, b) => b.startDate.localeCompare(a.startDate));
+
+  const save = async (id: number, startDate: string, endDate: string | null) => {
+    setError(null);
+    try {
+      await edit.mutateAsync({ id, startDate, endDate });
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+  const removePeriod = async (id: number) => {
+    setError(null);
+    try {
+      await remove.mutateAsync({ id });
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+  const addPeriod = async () => {
+    setError(null);
+    try {
+      await add.mutateAsync({ teamId: team.id, startDate: today });
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
   return (
     <div>
-      <div className="overflow-x-auto rounded-[10px] border border-line">
-        <table className="w-full text-[12.5px]">
-          <thead>
-            <tr className="border-b border-line text-left text-ink-3">
-              <th className="label-mono px-3 py-2 font-normal">Chefe</th>
-              <th className="label-mono px-3 py-2 font-normal">Desde</th>
-              <th className="label-mono px-3 py-2 font-normal">Até</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leadership.map((l) => {
-              const current = l.startDate <= today && (l.endDate == null || l.endDate >= today);
-              return (
-                <tr key={l.leadershipId} className="border-b border-line last:border-b-0">
-                  <td className="px-3 py-2">
-                    <span className="font-medium">{l.name}</span>
-                    {current ? <span className="ml-2 text-[11px] text-volt">atual</span> : null}
-                  </td>
-                  <td className="px-3 py-2">{fmtDate(l.startDate)}</td>
-                  <td className="px-3 py-2">{l.endDate ? fmtDate(l.endDate) : "—"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {!sorted.length ? (
+        <p className="text-[12.5px] text-ink-3">Sem períodos de atividade. Defina quando a equipa abre.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-[10px] border border-line">
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="border-b border-line text-left text-ink-3">
+                <th className="label-mono px-3 py-2 font-normal">Abertura</th>
+                <th className="label-mono px-3 py-2 font-normal">Fecho</th>
+                <th className="px-3 py-2"><span className="sr-only">Ações</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((p) => {
+                const current = p.startDate <= today && (p.endDate == null || p.endDate >= today);
+                return (
+                  <tr key={p.id} className="border-b border-line last:border-b-0">
+                    <td className="px-3 py-2">
+                      <input type="date" aria-label="Abertura da equipa" className="input h-8 w-36 text-[12.5px]" defaultValue={p.startDate} key={`s${p.startDate}`} onBlur={(e) => e.target.value && e.target.value !== p.startDate && save(p.id, e.target.value, p.endDate)} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="date" aria-label="Fecho da equipa" className="input h-8 w-36 text-[12.5px]" defaultValue={p.endDate ?? ""} key={`e${p.endDate}`} onBlur={(e) => (e.target.value || null) !== p.endDate && save(p.id, p.startDate, e.target.value || null)} />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <span className="mr-2 text-[11px] text-ink-3">{current ? "aberta" : "fechada"}</span>
+                      <button type="button" aria-label="Apagar período" className="text-ink-3 hover:text-danger" onClick={() => removePeriod(p.id)}>
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="mt-2 flex items-center justify-between">
+        <p className="text-[11.5px] text-ink-3">Fecho vazio = continua aberta. Para reabrir após um fecho, adicione um novo período. As vendas da equipa contam apenas quando está aberta.</p>
+        <button type="button" className="btn btn-ghost h-8 text-[12px]" onClick={addPeriod} disabled={add.isPending}>+ Novo período</button>
       </div>
-      <p className="mt-2 text-[11.5px] text-ink-3">Períodos em que cada chefe liderou a equipa. Uma equipa pode fechar e reabrir, ou mudar de chefe — cada período fica registado.</p>
+      {error && <p className="mt-2 text-[12px] text-danger">{error}</p>}
     </div>
   );
 }

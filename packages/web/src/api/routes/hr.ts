@@ -3,7 +3,7 @@ import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { authed, requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { absences, calendars, chiefTables, commissionTables, departments, employeeTables, employees, positions, teamLeadership, teamMemberships, teams, userRoles } from "../database/schema";
+import { absences, calendars, chiefTables, commissionTables, departments, employeeTables, employees, positions, teamPeriods, teamMemberships, teams, userRoles } from "../database/schema";
 import { localWithPhotos } from "../lib/s3";
 import { ensureTeamCalendar, syncPersonalCalendarTeam } from "./agenda";
 import { canManage } from "../shared/hierarchy";
@@ -129,22 +129,6 @@ async function closeMemberships(employeeId: number, date: string, teamId?: numbe
 async function moveMember(employeeId: number, teamId: number | null, date: string) {
   await closeMemberships(employeeId, date);
   if (teamId != null) await db.insert(teamMemberships).values({ teamId, employeeId, startDate: date });
-}
-
-/** Garante que a chefia da equipa está registada no histórico a partir de `date`.
- *  Se o chefe mudou, fecha o período em aberto e abre outro; senão não faz nada. */
-async function syncTeamLeader(teamId: number, leaderId: number, date: string) {
-  const [open] = await db
-    .select({ leaderId: teamLeadership.leaderId })
-    .from(teamLeadership)
-    .where(and(eq(teamLeadership.teamId, teamId), sql`${teamLeadership.endDate} is null`))
-    .limit(1);
-  if (open && open.leaderId === leaderId) return;
-  await db
-    .update(teamLeadership)
-    .set({ endDate: dayBefore(date) })
-    .where(and(eq(teamLeadership.teamId, teamId), sql`${teamLeadership.endDate} is null`));
-  await db.insert(teamLeadership).values({ teamId, leaderId, startDate: date });
 }
 
 /** Ids que um chefe de equipa pode ver/gerir: ele próprio e os membros das equipas que chefia. */
@@ -528,18 +512,15 @@ export const hr = {
       const history = all
         .map(({ photoKey: _p, ...m }) => m)
         .sort((a, b) => b.startDate.localeCompare(a.startDate) || a.name.localeCompare(b.name));
-      const leadership = await db
+      const periods = await db
         .select({
-          leadershipId: teamLeadership.id,
-          teamId: teamLeadership.teamId,
-          startDate: teamLeadership.startDate,
-          endDate: teamLeadership.endDate,
-          leaderId: teamLeadership.leaderId,
-          name: employees.name,
+          id: teamPeriods.id,
+          teamId: teamPeriods.teamId,
+          startDate: teamPeriods.startDate,
+          endDate: teamPeriods.endDate,
         })
-        .from(teamLeadership)
-        .innerJoin(employees, eq(employees.id, teamLeadership.leaderId))
-        .orderBy(desc(teamLeadership.startDate));
+        .from(teamPeriods)
+        .orderBy(desc(teamPeriods.startDate));
       const withUrls = await localWithPhotos(members);
       const leaders = localWithPhotos(rows.map((r) => ({ ...r, photoKey: r.leaderPhotoKey })));
       return leaders.map(({ photoUrl, leaderPhotoKey: _k, photoKey: _p, ...t }) => ({
@@ -547,7 +528,7 @@ export const hr = {
         leaderPhotoUrl: photoUrl,
         members: withUrls.filter((m) => m.teamId === t.id),
         history: history.filter((m) => m.teamId === t.id),
-        leadership: leadership.filter((l) => l.teamId === t.id),
+        periods: periods.filter((p) => p.teamId === t.id),
       }));
     }),
     create: requireEdit("equipas").input(teamInput).handler(async ({ input }) => {
@@ -555,7 +536,8 @@ export const hr = {
       const { memberIds: _m, effectiveDate, ...data } = input;
       const [row] = await db.insert(teams).values({ ...data, coordinatorId: data.coordinatorId ?? null }).returning();
       await setTeamMembers(row.id, memberIds, effectiveDate);
-      await syncTeamLeader(row.id, data.leaderId, effectiveDate ?? todayLisbon());
+      // A equipa nasce aberta a partir da data efetiva (ou hoje).
+      await db.insert(teamPeriods).values({ teamId: row.id, startDate: effectiveDate ?? todayLisbon(), endDate: null });
       // Nasce o calendário da equipa; os calendários pessoais dos membros passam para esta equipa.
       await ensureTeamCalendar(row.id);
       for (const m of memberIds) await syncPersonalCalendarTeam(m, row.id);
@@ -566,7 +548,6 @@ export const hr = {
       const { id, memberIds: _m, effectiveDate, ...data } = input;
       await db.update(teams).set(data).where(eq(teams.id, id));
       await setTeamMembers(id, memberIds, effectiveDate);
-      await syncTeamLeader(id, data.leaderId, effectiveDate ?? todayLisbon());
       return { ok: true };
     }),
     /** Muda um comercial de equipa a partir de uma data (a pertença anterior termina no dia antes). */
@@ -600,6 +581,30 @@ export const hr = {
       }),
     removeMembership: requireEdit("equipas").input(idInput).handler(async ({ input }) => {
       await db.delete(teamMemberships).where(eq(teamMemberships.id, input.id));
+      return { ok: true };
+    }),
+    /** Abre (ou reabre) a equipa a partir de uma data — novo período de atividade. */
+    addPeriod: requireEdit("equipas")
+      .input(z.object({ teamId: z.number(), startDate: dateInput }))
+      .handler(async ({ input }) => {
+        const [t] = await db.select({ id: teams.id }).from(teams).where(eq(teams.id, input.teamId));
+        if (!t) throw new ORPCError("NOT_FOUND", { message: "Equipa não encontrada." });
+        const [row] = await db.insert(teamPeriods).values({ teamId: input.teamId, startDate: input.startDate, endDate: null }).returning();
+        return { ok: true, period: row };
+      }),
+    /** Edita as datas de início/fim de um período de atividade da equipa. */
+    editPeriod: requireEdit("equipas")
+      .input(z.object({ id: z.number(), startDate: dateInput, endDate: dateInput.nullable() }))
+      .handler(async ({ input }) => {
+        if (input.endDate && input.endDate < input.startDate) throw new ORPCError("BAD_REQUEST", { message: "A data de fecho não pode ser anterior à de abertura." });
+        const [p] = await db.select().from(teamPeriods).where(eq(teamPeriods.id, input.id));
+        if (!p) throw new ORPCError("NOT_FOUND", { message: "Período não encontrado." });
+        await db.update(teamPeriods).set({ startDate: input.startDate, endDate: input.endDate }).where(eq(teamPeriods.id, input.id));
+        return { ok: true };
+      }),
+    /** Remove um período de atividade da equipa. */
+    removePeriod: requireEdit("equipas").input(idInput).handler(async ({ input }) => {
+      await db.delete(teamPeriods).where(eq(teamPeriods.id, input.id));
       return { ok: true };
     }),
     remove: requireEdit("equipas").input(idInput).handler(async ({ input }) => {

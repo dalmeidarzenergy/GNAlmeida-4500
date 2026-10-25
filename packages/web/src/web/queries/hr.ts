@@ -24,6 +24,9 @@ export const useMoveMember = () => useMutation(orpc.hr.teams.moveMember.mutation
 export const useEditMembership = () => useMutation(orpc.hr.teams.editMembership.mutationOptions({ onSuccess: useInvalidateHr() }));
 export const useRemoveMembership = () => useMutation(orpc.hr.teams.removeMembership.mutationOptions({ onSuccess: useInvalidateHr() }));
 export const useRemoveTeam = () => useMutation(orpc.hr.teams.remove.mutationOptions({ onSuccess: useInvalidateHr() }));
+export const useAddPeriod = () => useMutation(orpc.hr.teams.addPeriod.mutationOptions({ onSuccess: useInvalidateHr() }));
+export const useEditPeriod = () => useMutation(orpc.hr.teams.editPeriod.mutationOptions({ onSuccess: useInvalidateHr() }));
+export const useRemovePeriod = () => useMutation(orpc.hr.teams.removePeriod.mutationOptions({ onSuccess: useInvalidateHr() }));
 export const useAbsences = () => useQuery(orpc.hr.absences.list.queryOptions());
 
 export function useSaveDepartment() {

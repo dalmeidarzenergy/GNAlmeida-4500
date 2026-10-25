@@ -75,15 +75,14 @@ PY
 
 bun --env-file=../../.env drizzle-kit push
 
-# Histórico de chefia de equipa: cria a tabela (se o push ainda não o fez) e
-# preenche os períodos para as equipas já existentes (a partir da data de criação).
+# Períodos de atividade da equipa: cria a tabela (se o push ainda não o fez) e
+# preenche um período aberto para as equipas já existentes (a partir da data de criação).
 python3 <<'PY'
 import sqlite3, datetime
 c = sqlite3.connect("src/data.db")
-c.execute("""CREATE TABLE IF NOT EXISTS team_leadership (
+c.execute("""CREATE TABLE IF NOT EXISTS team_periods (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-    leader_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     start_date TEXT NOT NULL,
     end_date TEXT,
     created_at INTEGER NOT NULL DEFAULT (unixepoch())
@@ -91,16 +90,16 @@ c.execute("""CREATE TABLE IF NOT EXISTS team_leadership (
 n = 0
 for t in c.execute("SELECT id, leader_id, created_at FROM teams WHERE leader_id IS NOT NULL").fetchall():
     tid, lid, created = t
-    row = c.execute("SELECT id FROM team_leadership WHERE team_id = ?", (tid,)).fetchone()
+    row = c.execute("SELECT id FROM team_periods WHERE team_id = ?", (tid,)).fetchone()
     if row:
         continue
     ts = created if isinstance(created, int) else int(float(created))
     d = datetime.date.fromtimestamp(ts).isoformat()
-    c.execute("INSERT INTO team_leadership (team_id, leader_id, start_date, end_date) VALUES (?, ?, ?, NULL)", (tid, lid, d))
+    c.execute("INSERT INTO team_periods (team_id, start_date, end_date) VALUES (?, ?, NULL)", (tid, d))
     n += 1
 c.commit()
 if n:
-    print("  team_leadership preenchida com " + str(n) + " periodos")
+    print("  team_periods preenchida com " + str(n) + " periodos")
 c.close()
 PY
 

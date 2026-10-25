@@ -22,7 +22,7 @@ import {
   userRoles,
   teams,
   teamMemberships,
-  teamLeadership,
+  teamPeriods,
 } from "../database/schema";
 import { effectivePermissions, type Permissions } from "../permissions";
 
@@ -221,50 +221,43 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
   const assignments = await db.select().from(employeeTables);
 
-  // Equipas e pertenças: para apurar o escalão de chefe de equipa (CE) pela soma
-  // das vendas BTN em fornecimento dos membros da equipa liderada pelo chefe.
+  // Equipas, pertenças e períodos de atividade: para apurar o escalão de chefe de
+  // equipa (CE) pela soma das vendas BTN em fornecimento dos membros da equipa.
+  // A equipa só conta nos períodos em que está aberta (definidos pelo utilizador).
   const allTeams = await db.select().from(teams);
   const allMemberships = await db.select().from(teamMemberships);
-  const allLeadership = await db.select().from(teamLeadership);
+  const allPeriods = await db.select().from(teamPeriods);
   const monthStart = `${m}-01`;
   const monthEnd = `${m}-31`;
 
-  // Períodos de chefia no mês: usa o histórico team_leadership (quem chefiava a
-  // equipa em cada data). Equipas ainda sem histórico recorrem a teams.leaderId
-  // (chefe atual) para não quebrar dados antigos.
-  const ledByChief = new Map<number, { teamId: number; since: string }[]>();
-  const pushLed = (chiefId: number, teamId: number, since: string) => {
-    const arr = ledByChief.get(chiefId) ?? [];
-    arr.push({ teamId, since });
-    ledByChief.set(chiefId, arr);
-  };
-  for (const t of allTeams) {
-    const led = allLeadership.filter((l) => l.teamId === t.id);
-    if (led.length) {
-      for (const l of led) {
-        const start = l.startDate;
-        const end = l.endDate ?? monthEnd;
-        if (start > monthEnd || end < monthStart) continue; // não chefiava neste mês
-        pushLed(l.leaderId, t.id, start);
-      }
-    } else if (t.leaderId != null) {
-      const since = t.createdAt instanceof Date ? t.createdAt.toISOString().slice(0, 10) : monthStart;
-      pushLed(t.leaderId, t.id, since < monthStart ? monthStart : since);
-    }
+  // Períodos de atividade que sobrepõem o mês, por equipa.
+  const periodsByTeam = new Map<number, { start: string; end: string }[]>();
+  for (const p of allPeriods) {
+    const start = p.startDate;
+    const end = p.endDate ?? monthEnd;
+    if (start > monthEnd || end < monthStart) continue; // equipa fechada neste mês
+    const arr = periodsByTeam.get(p.teamId) ?? [];
+    arr.push({ start, end });
+    periodsByTeam.set(p.teamId, arr);
   }
 
-  /** Membros da equipa liderada pelo chefe (no mês) e desde quando chefia. */
-  const teamOfChief = (chiefId: number): { memberIds: Set<number>; since: string } => {
-    const led = ledByChief.get(chiefId) ?? [];
-    const teamIds = new Set(led.map((l) => l.teamId));
+  /** Equipas lideradas pelo chefe que estão abertas em algum momento do mês. */
+  const activeTeamsOfChief = (chiefId: number): number[] =>
+    allTeams.filter((t) => t.leaderId === chiefId && (periodsByTeam.get(t.id)?.length ?? 0) > 0).map((t) => t.id);
+
+  /** Membros da equipa liderada pelo chefe (no mês) e os períodos em que a equipa estava aberta. */
+  const teamOfChief = (chiefId: number): { memberIds: Set<number>; activeRanges: { start: string; end: string }[] } => {
+    const teamIds = activeTeamsOfChief(chiefId);
     const ids = new Set<number>([chiefId]);
     for (const mem of allMemberships) {
-      if (!teamIds.has(mem.teamId)) continue;
+      if (!teamIds.includes(mem.teamId)) continue;
       if (mem.startDate > monthEnd || (mem.endDate != null && mem.endDate < monthStart)) continue;
       ids.add(mem.employeeId);
     }
-    const since = led.length ? led.reduce((min, l) => (l.since < min ? l.since : min), monthEnd) : monthStart;
-    return { memberIds: ids, since };
+    const activeRanges = teamIds
+      .flatMap((tid) => periodsByTeam.get(tid) ?? [])
+      .map((r) => ({ start: r.start < monthStart ? monthStart : r.start, end: r.end > monthEnd ? monthEnd : r.end }));
+    return { memberIds: ids, activeRanges };
   };
 
   // Penalidades VNC do mês, por comercial.
@@ -585,16 +578,16 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     let ceCbLines: IberdrolaLine[] = [];
     let ceUnit: { luz: number; gas: number } | null = null;
     if (ceTable) {
-      const { memberIds: teamIds, since: chiefSince } = teamOfChief(sellerId);
+      const { memberIds: teamIds, activeRanges } = teamOfChief(sellerId);
       let teamEntries = autoEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
 
-      // Se o chefe assumiu a chefia durante o mês (ou a equipa reabriu), as
-      // vendas próprias anteriores a essa data não contam para a CE (ainda não
-      // era chefe). Só filtra quando a entry tem data do Excel; sem data,
-      // assume-se que a venda é do período válido (evita sub-pagamento).
-      if (chiefSince > monthStart) {
+      // As vendas próprias do chefe só contam para a CE nas datas em que a
+      // equipa estava aberta. Só filtra quando a entry tem data do Excel; sem
+      // data, assume-se que a venda é do período válido (evita sub-pagamento).
+      if (activeRanges.length) {
+        const inRange = (d: string) => activeRanges.some((r) => d >= r.start && d <= r.end);
         teamEntries = teamEntries.filter((e) =>
-          e.employeeId !== sellerId || e.saleDate == null || e.saleDate >= chiefSince,
+          e.employeeId !== sellerId || e.saleDate == null || inRange(e.saleDate),
         );
       }
       const ceBands = cRows.filter((r) => r.tableId === ceTable.id && r.kind === "clients");
@@ -858,40 +851,31 @@ export const iberdrolaRoute = {
       return { removed: true };
     }),
 
-  /** Equipas com líder e membros ativos no mês (usa o histórico de chefias). */
+  /** Equipas com líder e membros ativos no mês (só as abertas por períodos de atividade). */
   teamList: requireView("auto-iberdrola")
     .input(z.object({ month }))
     .handler(async ({ input }) => {
       const monthStart = `${input.month}-01`;
       const monthEnd = `${input.month}-31`;
       const allTeams = await db.select().from(teams);
-      const leadership = await db.select().from(teamLeadership);
+      const periods = await db.select().from(teamPeriods);
       const memberships = await db.select().from(teamMemberships)
         .where(sql`${teamMemberships.startDate} <= ${monthEnd} AND (${teamMemberships.endDate} IS NULL OR ${teamMemberships.endDate} >= ${monthStart})`);
       const staff = await db.select({ id: employees.id, name: employees.name }).from(employees);
       const names = new Map(staff.map((s) => [s.id, s.name]));
 
-      // Pares (equipa, chefe) que chefiaram em algum momento do mês. Equipas
-      // ainda sem histórico recorrem ao chefe atual.
-      const led: { teamId: number; leaderId: number }[] = [];
-      for (const t of allTeams) {
-        const hist = leadership.filter((l) => l.teamId === t.id);
-        if (hist.length) {
-          for (const l of hist) {
-            if (l.startDate > monthEnd || (l.endDate ?? monthEnd) < monthStart) continue;
-            led.push({ teamId: t.id, leaderId: l.leaderId });
-          }
-        } else if (t.leaderId != null) {
-          led.push({ teamId: t.id, leaderId: t.leaderId });
-        }
-      }
+      // Apenas equipas com um período de atividade a sobrepor o mês (abertas).
+      const activeTeams = allTeams.filter((t) => {
+        if (t.leaderId == null) return false;
+        return periods.some((p) => p.teamId === t.id && p.startDate <= monthEnd && (p.endDate ?? monthEnd) >= monthStart);
+      });
 
-      return led
-        .map(({ teamId, leaderId }) => {
-          const t = allTeams.find((x) => x.id === teamId);
+      return activeTeams
+        .map((t) => {
+          const leaderId = t.leaderId!;
           const memberSet = new Map<number, string>();
           for (const m of memberships) {
-            if (m.teamId === teamId) memberSet.set(m.employeeId, names.get(m.employeeId) ?? `#${m.employeeId}`);
+            if (m.teamId === t.id) memberSet.set(m.employeeId, names.get(m.employeeId) ?? `#${m.employeeId}`);
           }
           // O chefe também pertence à equipa, mesmo sem linha em team_memberships.
           memberSet.set(leaderId, names.get(leaderId) ?? `#${leaderId}`);
@@ -899,8 +883,8 @@ export const iberdrolaRoute = {
             .map(([employeeId, employeeName]) => ({ employeeId, employeeName }))
             .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
           return {
-            id: teamId,
-            name: t?.name ?? `Equipa #${teamId}`,
+            id: t.id,
+            name: t.name,
             leaderId,
             leaderName: names.get(leaderId) ?? `#${leaderId}`,
             members,

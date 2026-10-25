@@ -229,18 +229,16 @@ export const teamMemberships = sqliteTable("team_memberships", {
 });
 
 /**
- * Histórico de chefia de equipa. Cada período vai de `startDate` a `endDate` (inclusive; sem fim = atual).
- * Permite apurar quem era chefe de equipa em cada mês, mesmo que a equipa tenha fechado e
- * reaberto ou mudado de chefe — a `teams.leaderId` só guarda o chefe atual.
+ * Períodos de atividade de uma equipa. Cada período vai de `startDate` a `endDate`
+ * (inclusive; sem fim = ainda aberta). O utilizador define quando a equipa abre e fecha;
+ * pode haver vários períodos (ex.: fechou um mês e reabriu mais tarde). O chefe é sempre
+ * `teams.leaderId` — as equipas não trocam de chefe, só abrem/fecham.
  */
-export const teamLeadership = sqliteTable("team_leadership", {
+export const teamPeriods = sqliteTable("team_periods", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   teamId: integer("team_id")
     .notNull()
     .references(() => teams.id, { onDelete: "cascade" }),
-  leaderId: integer("leader_id")
-    .notNull()
-    .references(() => employees.id, { onDelete: "cascade" }),
   startDate: text("start_date").notNull(),
   endDate: text("end_date"),
   createdAt: createdAt(),
