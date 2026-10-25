@@ -444,12 +444,12 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       // Vendas BTN com potência < 3,45 contam para o escalão mas não são pagas.
       const lowPower = new Set(
         mine
-          .filter((e) => e.hasBTN && (cellNum(colVal(e.excel, "potencia")) ?? 99) < 3.45)
+          .filter((e) => e.hasBTN && (cellNum(colVal(e.excel, "potencia contratada")) ?? cellNum(colVal(e.excel, "potencia")) ?? 99) < 3.45)
           .map((e) => e.idVenda),
       );
       const bandSales = mine.filter((e) => e.hasBTN).length;
       const sBands = [...resBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
-      const pool = forced ? sBands.slice(1) : resBands;
+      const pool = forced ? sBands.slice(1) : sBands;
       band =
         pool.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
         [...pool.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
@@ -521,11 +521,19 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       if (total !== 0) ruleEffects.push({ id: r.id, name: r.name, type: "auto", amount: total });
     }
 
-    // Manuais: atribuídas a este comercial no mês; aplicam-se ao total bruto.
+    // Manuais: atribuídas a este comercial no mês.
+    // Regras "Folha de Km" são aplicadas ao valor final depois de VNC,
+    // as restantes são aplicadas ao total bruto.
     const assignedRuleIds = assignedByEmployee.get(sellerId);
+    let kmRule: (typeof manualRules)[number] | null = null;
     if (assignedRuleIds) {
       for (const r of manualRules) {
         if (!assignedRuleIds.has(r.id)) continue;
+        const isKm = normText(r.name).includes("folha de km") || normText(r.name).includes("km");
+        if (isKm) {
+          kmRule = r;
+          continue;
+        }
         const amt = r.effectType === "percent" ? round2(r.effectValue * gross) : r.effectValue;
         ruleEffects.push({ id: r.id, name: r.name, type: "manual", amount: amt });
       }
@@ -543,6 +551,17 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const personVncs = vncsByEmployee.get(sellerId) ?? [];
     for (const v of personVncs) {
       if (v.amount > 0) ruleEffects.push({ id: v.id, name: `VNC ${v.idVenda}`, type: "vnc", amount: -v.amount });
+    }
+
+    // Regra "Folha de Km": aplica a percentagem ao valor final
+    // (gross - chargeback + medem + outras regras + unlock + VNC).
+    if (kmRule) {
+      const dueBeforeKm = round2(gross - chargeback + medemTotal +
+        ruleEffects.reduce((t, e) => t + e.amount, 0));
+      const kmAmt = kmRule.effectType === "percent"
+        ? round2(kmRule.effectValue * dueBeforeKm)
+        : kmRule.effectValue;
+      ruleEffects.push({ id: kmRule.id, name: kmRule.name, type: "manual", amount: kmAmt });
     }
 
     const rulesDelta = round2(ruleEffects.reduce((t, e) => t + e.amount, 0));
