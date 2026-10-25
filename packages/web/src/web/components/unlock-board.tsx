@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Lock, LockOpen } from "lucide-react";
 import { usePaymentForecast } from "../queries/payments";
 import { Empty } from "./ui/kit";
 import { errMsg } from "../lib/format";
@@ -101,18 +100,19 @@ export default function UnlockBoard({ month }: { month: string }) {
                 <th className="label-mono px-3 py-2 font-normal">Faltam</th>
                 <th className="label-mono px-3 py-2 font-normal">Registadas</th>
                 <th className="label-mono px-3 py-2 font-normal">Faltam</th>
-                <th className="px-5 py-2"><span className="sr-only">Estado</span></th>
+                <th className="label-mono px-5 py-2 text-right font-normal">Objetivo</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => {
                 const key = "employeeId" in r ? `e${r.employeeId}` : `t${r.teamId}`;
-                const label = "name" in r ? r.name : r.name;
+                const label = "teamName" in r ? r.teamName : r.name;
                 return (
                   <tr key={key} className="border-b border-line last:border-b-0 hover:bg-surface-2/50">
                     <td className="px-5 py-2.5">
                       <span className="font-medium">{label}</span>
                       {"isChief" in r && r.isChief && <span className="ml-2 rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-3">chefe</span>}
+                      {"teamName" in r && <div className="text-[11px] text-ink-3">{r.name}</div>}
                     </td>
                     <td className="px-3 py-2.5 text-ink-3">{r.tableName ?? "—"}</td>
                     <td className="px-3 py-2.5"><Progress value={r.fornecimento} min={r.bandMin} /></td>
@@ -128,9 +128,7 @@ export default function UnlockBoard({ month }: { month: string }) {
                     <td className="px-5 py-2.5 text-right">
                       {r.bandMin <= 0
                         ? <span className="text-ink-3">—</span>
-                        : r.desbloqueado
-                          ? <LockOpen size={14} className="inline text-volt" />
-                          : <Lock size={14} className="inline text-amber" />}
+                        : <span className="num text-[13px] text-ink-2">{r.bandMin} vendas</span>}
                     </td>
                   </tr>
                 );
@@ -140,7 +138,7 @@ export default function UnlockBoard({ month }: { month: string }) {
         </div>
       )}
       <p className="border-t border-line px-5 py-2.5 text-[11.5px] text-ink-3">
-        <strong className="text-ink-2">Em fornecimento</strong> são as vendas BTN (Luz/Dual) que já entraram em fornecimento — é o que apura o escalão.{" "}
+        <strong className="text-ink-2">Em fornecimento</strong> são as vendas BTN (Luz/Dual) assinadas no mês e que entraram em fornecimento no próprio mês — é o que apura o escalão; uma venda assinada num mês e fornecida noutro não conta em nenhum dos dois. O MEDEM não entra nesta contagem.{" "}
         <strong className="text-ink-2">Registadas</strong> são todas as vendas do mês, exceto as que estão em Baixa ou Anuladas.
       </p>
     </div>
