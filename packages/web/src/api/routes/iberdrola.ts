@@ -46,7 +46,7 @@ type IberdrolaPerson = {
   employeeName: string;
   tableName: string | null;
   missingTable: boolean;
-  forceCommissions: boolean;
+  forceCommissionsPct: number;
   bandSales: number;
   salesCount: number;
   luzCount: number;
@@ -107,7 +107,7 @@ async function buildCalc(m: string) {
   // Funcionários: ligam o comercial do Excel por "NIF Comercial" ou "Comercial" (nome).
   // Não é usada qualquer ligação à aba Vendas.
   const staff = await db
-    .select({ id: employees.id, name: employees.name, nif: employees.nif, commissionTableId: employees.commissionTableId, forceCommissions: employees.forceCommissions })
+    .select({ id: employees.id, name: employees.name, nif: employees.nif, commissionTableId: employees.commissionTableId, forceCommissionsPct: employees.forceCommissionsPct })
     .from(employees);
   const staffById = new Map(staff.map((s) => [s.id, s]));
   const staffByName = new Map(staff.map((s) => [normText(s.name), s.id] as const));
@@ -264,7 +264,7 @@ async function buildCalc(m: string) {
       employeeName: emp.name,
       tableName: table?.name ?? null,
       missingTable: !table,
-      forceCommissions: emp.forceCommissions ?? false,
+      forceCommissionsPct: emp.forceCommissionsPct ?? 0,
       bandSales: 0,
       salesCount: mine.length,
       luzCount: 0,
@@ -294,18 +294,19 @@ async function buildCalc(m: string) {
     const bands = cRows.filter((r) => r.tableId === table.id && r.kind === "clients");
     // Escalão: só conta BTN (luz) em fornecimento; BP (gás) é comissionado mas não sobe o escalão.
     const bandSales = mine.filter((e) => e.hasBTN).length;
-    // Comissões forçadas: o primeiro escalão deixa de existir — o colaborador
-    // passa a receber a partir do segundo escalão da tabela.
+    // Desbloqueio de comissões: quando > 0, o primeiro escalão deixa de existir
+    // (colaborador recebe a partir do 2.º) e paga-se só a % escolhida.
+    const forced = emp.forceCommissionsPct > 0;
     const sortedBands = [...bands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
-    const pool = emp.forceCommissions ? sortedBands.slice(1) : bands;
+    const pool = forced ? sortedBands.slice(1) : bands;
     const band =
       pool.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
       [...pool.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
-      (emp.forceCommissions ? (pool[0] ?? null) : null);
+      (forced ? (pool[0] ?? null) : null);
 
     // Bloqueio de vendas (objetivo): as primeiras N vendas não são pagas, salvo
-    // se o pagamento de comissões estiver forçado para este comercial.
-    const blocked = emp.forceCommissions ? 0 : (table?.blockedSales ?? 0);
+    // se o pagamento de comissões estiver desbloqueado para este comercial.
+    const blocked = forced ? 0 : (table?.blockedSales ?? 0);
     const paidEntries = mine.slice(Math.min(blocked, mine.length));
 
     const lines = paidEntries.flatMap((e) => split(e, band));
@@ -342,6 +343,14 @@ async function buildCalc(m: string) {
         if (!assignedRuleIds.has(r.id)) continue;
         const amt = r.effectType === "percent" ? round2(r.effectValue * gross) : r.effectValue;
         ruleEffects.push({ id: r.id, name: r.name, type: "manual", amount: amt });
+      }
+    }
+
+    // Desbloqueio de comissões: reduz o total bruto à % escolhida e fica discriminado nas regras.
+    if (forced && emp.forceCommissionsPct < 100) {
+      const reduction = round2(gross * (1 - emp.forceCommissionsPct / 100));
+      if (reduction > 0) {
+        ruleEffects.push({ id: 0, name: `Desbloqueio comissões ${emp.forceCommissionsPct}%`, type: "unlock", amount: -reduction });
       }
     }
 
@@ -452,15 +461,14 @@ export const iberdrolaRoute = {
     .input(z.object({ month }))
     .handler(async ({ input }) => buildCalc(input.month)),
 
-  /** Liga/desliga o pagamento forçado de comissões de um comercial (ignora o bloqueio da tabela). */
-  forceCommissionsToggle: requireEdit("auto-iberdrola")
-    .input(z.object({ employeeId: z.number().int().positive() }))
+  /** Define o desbloqueio de comissões de um comercial: 0 (objetivo) ou 25/50/75/100 (% do 2.º escalão). */
+  forceCommissionsSet: requireEdit("auto-iberdrola")
+    .input(z.object({ employeeId: z.number().int().positive(), pct: z.number().int().refine((v) => [0, 25, 50, 75, 100].includes(v), "Percentagem inválida.") }))
     .handler(async ({ input }) => {
-      const [emp] = await db.select({ forceCommissions: employees.forceCommissions }).from(employees).where(eq(employees.id, input.employeeId));
-      if (!emp) return { found: false as const, forceCommissions: false };
-      const next = !emp.forceCommissions;
-      await db.update(employees).set({ forceCommissions: next }).where(eq(employees.id, input.employeeId));
-      return { found: true as const, employeeId: input.employeeId, forceCommissions: next };
+      const [emp] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, input.employeeId));
+      if (!emp) return { found: false as const, forceCommissionsPct: 0 };
+      await db.update(employees).set({ forceCommissionsPct: input.pct }).where(eq(employees.id, input.employeeId));
+      return { found: true as const, employeeId: input.employeeId, forceCommissionsPct: input.pct };
     }),
 
   /** Resumo dos autos de um funcionário, por mês (para a ficha do funcionário). */

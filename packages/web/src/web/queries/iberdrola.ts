@@ -62,6 +62,6 @@ export const useIberdrolaCalc = (month: string) =>
 export const useIberdrolaEmployee = (employeeId: number | null) =>
   useQuery({ ...orpc.iberdrola.employee.queryOptions({ input: { employeeId: employeeId ?? 0 } }), enabled: employeeId != null });
 
-/** Liga/desliga o pagamento forçado de comissões de um comercial. */
-export const useIberdrolaForceCommissionsToggle = () =>
-  useMutation(orpc.iberdrola.forceCommissionsToggle.mutationOptions({ onSuccess: useInv() }));
+/** Define o desbloqueio de comissões de um comercial (0 = objetivo; 25/50/75/100 = % do 2.º escalão). */
+export const useIberdrolaForceCommissionsSet = () =>
+  useMutation(orpc.iberdrola.forceCommissionsSet.mutationOptions({ onSuccess: useInv() }));

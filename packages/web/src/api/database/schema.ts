@@ -69,6 +69,8 @@ export const employees = sqliteTable("employees", {
   bond: text("bond"),
   /** Quando true, ignora o bloqueio de vendas da tabela comisional e paga todas. */
   forceCommissions: integer("force_commissions", { mode: "boolean" }).notNull().default(false),
+  /** Desbloqueio de comissões (Auto Iberdrola): 0 = objetivo ativo; 25/50/75/100 = % do 2.º escalão a pagar. */
+  forceCommissionsPct: integer("force_commissions_pct").notNull().default(0),
   createdAt: createdAt(),
 });
 

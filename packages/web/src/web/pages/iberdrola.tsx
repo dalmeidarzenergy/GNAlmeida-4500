@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsToggle } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -334,9 +334,10 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const employeeIds = useMemo(() => [employeeId], [employeeId]);
   const assignments = useRuleAssignments(month, employeeIds);
   const saveAssignments = useSaveRuleAssignments();
-  const toggleForce = useIberdrolaForceCommissionsToggle();
+  const setForce = useIberdrolaForceCommissionsSet();
   const [assigning, setAssigning] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  const [forceOpen, setForceOpen] = useState(false);
   if (!p) return <div className="p-6"><Empty title="Sem dados" text="Não foi possível encontrar este comercial." /></div>;
 
   const manualRules = (rules.data ?? []).filter((r) => r.type === "manual");
@@ -404,12 +405,12 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
             {canEdit && (
               <button
                 type="button"
-                className={p.forceCommissions ? "btn btn-volt px-2.5 py-1 text-[12px]" : "btn btn-ghost px-2.5 py-1 text-[12px]"}
-                disabled={toggleForce.isPending}
-                onClick={() => toggleForce.mutateAsync({ employeeId: p.employeeId })}
-                title={p.forceCommissions ? "Comissões desbloqueadas — clique para voltar a aplicar o objetivo." : "Pagar comissões mesmo sem atingir o objetivo (ignora o bloqueio de vendas)."}
+                className={p.forceCommissionsPct > 0 ? "btn btn-volt px-2.5 py-1 text-[12px]" : "btn btn-ghost px-2.5 py-1 text-[12px]"}
+                disabled={setForce.isPending}
+                onClick={() => setForceOpen(true)}
+                title={p.forceCommissionsPct > 0 ? `Comissões desbloqueadas a ${p.forceCommissionsPct}% — clique para alterar ou voltar ao objetivo.` : "Pagar comissões sem atingir o objetivo (a partir do 2.º escalão)."}
               >
-                <Unlock size={13} /> {p.forceCommissions ? "Comissões desbloqueadas" : "Desbloquear comissões"}
+                <Unlock size={13} /> {p.forceCommissionsPct > 0 ? `Comissões ${p.forceCommissionsPct}%` : "Desbloquear comissões"}
               </button>
             )}
           </div>
@@ -494,7 +495,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 {p.ruleEffects.map((r) => (
                   <tr key={r.id} className="border-b border-line last:border-0">
                     <td className="px-3 py-2">{r.name}</td>
-                    <td className="px-3 py-2 text-ink-2">{r.type === "auto" ? "Automática" : "Manual"}</td>
+                    <td className="px-3 py-2 text-ink-2">{r.type === "auto" ? "Automática" : r.type === "unlock" ? "Desbloqueio" : "Manual"}</td>
                     <td className={`num px-3 py-2 text-right font-semibold ${r.amount < 0 ? "text-rose" : ""}`}>{r.amount < 0 ? "−" : "+"}{fmtEur2(Math.abs(r.amount))}</td>
                   </tr>
                 ))}
@@ -548,6 +549,43 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
               {saveAssignments.isPending && <Loader2 size={15} className="animate-spin" />} Guardar
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal open={forceOpen} onClose={() => setForceOpen(false)} title="Desbloquear comissões">
+        <div className="text-[12.5px] text-ink-2">
+          Ao desbloquear, o comercial passa a receber a partir do <span className="font-semibold text-ink">2.º escalão</span> da tabela. Escolhe a percentagem do valor total a pagar.
+        </div>
+        <div className="mt-4 grid gap-2">
+          {[25, 50, 75, 100].map((pct) => (
+            <button
+              key={pct}
+              type="button"
+              className={`flex items-center justify-between rounded-[10px] border px-3 py-2.5 text-left transition-colors ${p.forceCommissionsPct === pct ? "border-volt bg-volt/10" : "border-line bg-surface hover:bg-volt/5"}`}
+              disabled={setForce.isPending}
+              onClick={async () => {
+                await setForce.mutateAsync({ employeeId, pct });
+                setForceOpen(false);
+              }}
+            >
+              <span className="text-[13px] font-medium">Pagar {pct}%</span>
+              <span className="num text-[12px] text-ink-2">{p.gross > 0 ? fmtEur2(p.gross * pct / 100) : "—"}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-2 pt-2">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={setForce.isPending}
+            onClick={async () => {
+              await setForce.mutateAsync({ employeeId, pct: 0 });
+              setForceOpen(false);
+            }}
+          >
+            <Undo2 size={14} /> Voltar ao objetivo
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => setForceOpen(false)}>Cancelar</button>
         </div>
       </Modal>
     </div>

@@ -63,6 +63,7 @@ c = sqlite3.connect("src/data.db")
 empcols = [r[1] for r in c.execute("PRAGMA table_info(employees)").fetchall()]
 before = {
     "force_commissions": "integer NOT NULL DEFAULT 0",
+    "force_commissions_pct": "integer NOT NULL DEFAULT 0",
 }
 for col, decl in before.items():
     if col not in empcols:
@@ -104,6 +105,10 @@ if "force_commissions" not in emp:
     c.execute("ALTER TABLE employees ADD COLUMN force_commissions integer NOT NULL DEFAULT 0")
     c.commit()
     print("  coluna employees.force_commissions adicionada")
+if "force_commissions_pct" not in emp:
+    c.execute("ALTER TABLE employees ADD COLUMN force_commissions_pct integer NOT NULL DEFAULT 0")
+    c.commit()
+    print("  coluna employees.force_commissions_pct adicionada")
 
 tabs = [r[0] for r in c.execute("select name from sqlite_master where type='table'").fetchall()]
 assert "commission_tables" in tabs and "commission_rows" in tabs, "ERRO: tabelas commission_* em falta"
