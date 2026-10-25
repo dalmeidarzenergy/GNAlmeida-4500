@@ -694,7 +694,10 @@ export const paymentsRoute = {
    * (mesma fórmula do Auto Iberdrola) + quadro de desbloqueio de comissões.
    *
    * Desbloqueio (igual para todos, ignora o pagamento forçado):
+   * - objetivo = 1.º escalão que PAGA comissão (> 0 €) da tabela atribuída
+   *   (a faixa de 0 € é o estado bloqueado, não o objetivo);
    * - escalão apurado pelas vendas BTN (Luz/Dual) que entraram em fornecimento no mês;
+   * - equipas: o objetivo vem da tabela CE atribuída ao chefe (grupo team-leader);
    * - "registadas" = todas as vendas do mês menos as que estão em Baixa ou Anuladas.
    */
   previsao: requireView("pagamentos")
@@ -714,42 +717,79 @@ export const paymentsRoute = {
       const allTeams = await db.select().from(teams);
       const memberships = await db.select().from(teamMemberships);
 
-      // ── Tabela COMERCIAL atribuida a um colaborador no mes (kind = commission) ──
-      const commissionAssign = (employeeId) =>
+      // ── As duas tabelas de uma pessoa, resolvidas em separado ──
+      // 1) Tabela COMERCIAL (vendas proprias): qualquer tabela atribuida que NAO seja
+      //    do grupo team-leader (essa e de equipa). Ex.: "Gestor Comercial - Jan26".
+      // 2) Tabela CE (vendas da equipa): so as do grupo team-leader
+      //    (ex.: "Chefe de Equipa - Jan26").
+      const activeAssigns = (employeeId) =>
         assignments
           .filter((x) => x.employeeId === employeeId && x.kind === "commission" && x.commissionTableId != null)
           .filter((x) => x.startDate <= b.to && (x.endDate == null || x.endDate >= b.from))
-          .sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
+          .sort((x, y) => (x.startDate === y.startDate ? y.id - x.id : x.startDate < y.startDate ? 1 : -1));
 
-      const commissionTableOf = (employeeId, fallback) => {
-        const a = commissionAssign(employeeId);
-        return cTables.find((t) => t.id === (a?.commissionTableId ?? fallback)) ?? null;
+      /** Tabela cujo grupo e (ou nao e) team-leader, entre as atribuidas no mes. */
+      const tableByRole = (employeeId, wantTeamLeader, fallback) => {
+        for (const a of activeAssigns(employeeId)) {
+          const t = cTables.find((x) => x.id === a.commissionTableId);
+          if (t && (t.group === "team-leader") === wantTeamLeader) return t;
+        }
+        if (fallback == null) return null;
+        const fb = cTables.find((x) => x.id === fallback) ?? null;
+        return fb && (fb.group === "team-leader") === wantTeamLeader ? fb : null;
       };
 
-      // ── Tabela CE (chefe de equipa) atribuida a um colaborador no mes (kind = chief) ──
+      /** Tabela comercial: a das vendas proprias (nunca a de equipa/CE). */
+      const commissionTableOf = (employeeId, fallback) => tableByRole(employeeId, false, fallback);
+
+      // ── Tabela CE (chefe de equipa): a tabela de equipa atribuida ao chefe.
+      //    As chief_tables/chief_rows continuam a ser o fallback, para quando
+      //    o modulo CE for preenchido com escaloes proprios.
       const chiefAssign = (employeeId) =>
         assignments
           .filter((x) => x.employeeId === employeeId && x.kind === "chief" && x.chiefTableId != null)
           .filter((x) => x.startDate <= b.to && (x.endDate == null || x.endDate >= b.from))
-          .sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
+          .sort((x, y) => (x.startDate === y.startDate ? y.id - x.id : x.startDate < y.startDate ? 1 : -1))[0];
 
-      const chiefTableOf = (employeeId, fallback) => {
+      const chiefTableOf = (employeeId) => {
         const a = chiefAssign(employeeId);
-        return chiefTablesRows.find((t) => t.id === (a?.chiefTableId ?? fallback)) ?? null;
+        if (a) return chiefTablesRows.find((t) => t.id === a.chiefTableId) ?? null;
+        return tableByRole(employeeId, true, null);
       };
 
-      /** 1.o escalao de uma tabela comissional (minimo do escalao mais baixo, kind=clients). */
+      /**
+       * 1.o escalao que PAGA comissao de uma tabela comissional (kind=clients).
+       * O escalao 0-29 com comissoes a 0 e a faixa "bloqueado", nao o objetivo:
+       * o objetivo e o primeiro escalao com comissao > 0 (ex.: 30 no Daniel).
+       */
       const firstCommissionMin = (tableId) => {
-        const bands = cRows.filter((r) => r.tableId === tableId && r.kind === "clients");
-        const sorted = [...bands].sort((x, y) => (x.min ?? 0) - (y.min ?? 0));
-        return sorted.length ? sorted[0].min ?? 0 : 0;
+        const bands = cRows
+          .filter((r) => r.tableId === tableId && r.kind === "clients")
+          .sort((x, y) => (x.min ?? 0) - (y.min ?? 0));
+        const paid = bands.find((r) => (r.luz ?? 0) > 0 || (r.gas ?? 0) > 0);
+        return paid?.min ?? 0;
       };
 
-      /** 1.o escalao de uma tabela CE (kind=team = vendas da equipa). */
+      /** 1.o escalao que paga de uma tabela CE (kind=team = vendas da equipa). */
       const firstChiefMin = (tableId) => {
-        const bands = chiefRowsRows.filter((r) => r.tableId === tableId && r.kind === "team");
-        const sorted = [...bands].sort((x, y) => (x.min ?? 0) - (y.min ?? 0));
-        return sorted.length ? sorted[0].min ?? 0 : 0;
+        const bands = chiefRowsRows
+          .filter((r) => r.tableId === tableId && r.kind === "team")
+          .sort((x, y) => (x.min ?? 0) - (y.min ?? 0));
+        const paid = bands.find((r) => (r.commission ?? 0) > 0);
+        return paid?.min ?? 0;
+      };
+
+      /**
+       * Objetivo de uma equipa. A tabela CE pode ser:
+       * - uma chief_table (modulo CE) -> escalao de equipa (kind="team");
+       * - uma tabela comissional do grupo team-leader (ex.: "Chefe de Equipa - Jan26")
+       *   -> usa os escaloes de clientes, como qualquer tabela comissional.
+       */
+      const chiefObjectiveMin = (table) => {
+        if (!table) return 0;
+        const own = firstChiefMin(table.id);
+        if (own > 0) return own;
+        return firstCommissionMin(table.id);
       };
 
       // ── Fornecimento: vendas BTN (Luz/Dual) que entraram em fornecimento DENTRO do mes ──
@@ -796,6 +836,8 @@ export const paymentsRoute = {
           const regs = registeredBySeller.get(s.id) ?? 0;
           if (!supplied && !regs) return null;
           const table = commissionTableOf(s.id, s.commissionTableId);
+          // Um chefe tem DUAS tabelas: a comissional (vendas proprias) e a CE
+          // (vendas da equipa). O quadro por comercial usa sempre a comissional.
           const min = table ? firstCommissionMin(table.id) : 0;
           const isChief = allTeams.some((t) => t.leaderId === s.id);
           return {
@@ -824,12 +866,12 @@ export const paymentsRoute = {
             ids.add(m.employeeId);
           }
           const mine = sellerRows.filter((r) => ids.has(r.employeeId));
-          const table = chiefTableOf(t.leaderId, null);
-          const min = table ? firstChiefMin(table.id) : 0;
+          const table = chiefTableOf(t.leaderId);
+          const min = chiefObjectiveMin(table);
           const fornecimento = mine.reduce((s, r) => s + r.fornecimento, 0);
           const registadas = mine.reduce((s, r) => s + r.registadas, 0);
           // Sem tabela CE atribuida, a equipa nao tem objetivo definido.
-          if (!table) return null;
+          if (!table || min <= 0) return null;
           return {
             teamId: t.id,
             name: t.name,

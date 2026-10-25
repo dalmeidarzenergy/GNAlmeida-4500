@@ -10,20 +10,30 @@ type TeamRow = Forecast["unlock"]["teams"][number];
 
 /** Barra de progresso das vendas face ao 1.º escalão. */
 function Progress({ value, min }: { value: number; min: number }) {
-  const pct = min > 0 ? Math.min(100, Math.round((value / min) * 100)) : 100;
-  const done = min > 0 && value >= min;
+  if (min <= 0) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2" />
+        <span className="num text-[11.5px] text-ink-3">{value} vendas</span>
+      </div>
+    );
+  }
+  const pct = Math.min(100, Math.round((value / min) * 100));
+  const done = value >= min;
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2">
         <div className={`h-full rounded-full ${done ? "bg-volt" : "bg-amber"}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="num text-[11.5px] text-ink-3">{min > 0 ? `${value}/${min}` : "—"}</span>
+      <span className="num text-[11.5px] text-ink-3">{value}/{min}</span>
     </div>
   );
 }
 
 /** Número de vendas que faltam, com destaque quando já está desbloqueado. */
-function Missing({ faltam, desbloqueado }: { faltam: number; desbloqueado: boolean }) {
+function Missing({ faltam, desbloqueado, min }: { faltam: number; desbloqueado: boolean; min: number }) {
+  // Tabela sem escalão a pagar (ex.: freelancer): não há objetivo a desbloquear.
+  if (min <= 0) return <span className="text-[13px] text-ink-3">sem mínimo</span>;
   if (desbloqueado) return <span className="num text-[13px] font-semibold text-volt">desbloqueado</span>;
   return (
     <span className="num text-[13px] font-semibold text-amber">
@@ -48,7 +58,7 @@ export default function UnlockBoard({ month }: { month: string }) {
   const teams: TeamRow[] = data?.unlock.teams ?? [];
   const rows = mode === "comercial" ? sellers : teams;
 
-  const totalFaltam = rows.filter((r) => !r.desbloqueado).length;
+  const totalFaltam = rows.filter((r) => r.bandMin > 0 && !r.desbloqueado).length;
 
   return (
     <div className="card mb-4 overflow-hidden">
@@ -56,7 +66,7 @@ export default function UnlockBoard({ month }: { month: string }) {
         <div>
           <div className="label-mono">Desbloqueio de comissões</div>
           <p className="mt-0.5 text-[12px] text-ink-3">
-            Vendas necessárias para atingir o mínimo do 1.º escalão da tabela comissional.
+            Vendas necessárias para atingir o 1.º escalão que paga comissão da tabela atribuída.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -106,17 +116,21 @@ export default function UnlockBoard({ month }: { month: string }) {
                     </td>
                     <td className="px-3 py-2.5 text-ink-3">{r.tableName ?? "—"}</td>
                     <td className="px-3 py-2.5"><Progress value={r.fornecimento} min={r.bandMin} /></td>
-                    <td className="px-3 py-2.5"><Missing faltam={r.faltamFornecimento} desbloqueado={r.desbloqueado} /></td>
+                    <td className="px-3 py-2.5"><Missing faltam={r.faltamFornecimento} desbloqueado={r.desbloqueado} min={r.bandMin} /></td>
                     <td className="num px-3 py-2.5 text-ink-2">{r.registadas}</td>
                     <td className="px-3 py-2.5">
-                      {r.faltamRegistadas === 0
-                        ? <span className="num text-[13px] font-semibold text-volt">desbloqueado</span>
-                        : <span className="num text-[13px] text-ink-2">{r.faltamRegistadas}</span>}
+                      {r.bandMin <= 0
+                        ? <span className="text-[13px] text-ink-3">—</span>
+                        : r.faltamRegistadas === 0
+                          ? <span className="num text-[13px] font-semibold text-volt">desbloqueado</span>
+                          : <span className="num text-[13px] text-ink-2">{r.faltamRegistadas}</span>}
                     </td>
                     <td className="px-5 py-2.5 text-right">
-                      {r.desbloqueado
-                        ? <LockOpen size={14} className="inline text-volt" />
-                        : <Lock size={14} className="inline text-amber" />}
+                      {r.bandMin <= 0
+                        ? <span className="text-ink-3">—</span>
+                        : r.desbloqueado
+                          ? <LockOpen size={14} className="inline text-volt" />
+                          : <Lock size={14} className="inline text-amber" />}
                     </td>
                   </tr>
                 );
