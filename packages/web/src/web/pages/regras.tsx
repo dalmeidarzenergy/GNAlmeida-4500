@@ -144,7 +144,12 @@ export default function RegrasPage() {
 function RuleForm({ initial, onClose }: { initial: Rule | null; onClose: () => void }) {
   const save = useSaveRule();
   const remove = useRemoveRule();
-  const [f, setF] = useState(initial ? { ...initial, description: initial.description ?? "" } : { ...blank });
+  // `effectValue` guarda-se como fração (ex: -10% = -0.10). No formulário usa-se o valor em %.
+  const [f, setF] = useState(() => {
+    const base = initial ? { ...initial, description: initial.description ?? "" } : { ...blank };
+    if (initial && initial.effectType === "percent") base.effectValue = initial.effectValue * 100;
+    return base;
+  });
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
 
@@ -157,7 +162,7 @@ function RuleForm({ initial, onClose }: { initial: Rule | null; onClose: () => v
         type: f.type,
         description: f.description.trim() || null,
         effectType: f.effectType,
-        effectValue: f.effectValue,
+        effectValue: f.effectType === "percent" ? f.effectValue / 100 : f.effectValue,
         active: f.active,
       };
       if (f.type === "auto") {
