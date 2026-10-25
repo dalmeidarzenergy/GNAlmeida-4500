@@ -449,12 +449,20 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       );
       const bandSales = mine.filter((e) => e.hasBTN).length;
       const sBands = [...resBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+
+      // Escalão real atingido (para Medem e bandIdx), independente do desbloqueio.
+      const realBand =
+        sBands.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
+        [...sBands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
+        null;
+      bandIdx = realBand ? sBands.indexOf(realBand) : -1;
+
+      // Escalão efectivo para pagamento (pode saltar o 1.º se forced).
       const pool = forced ? sBands.slice(1) : sBands;
       band =
         pool.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
         [...pool.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
         (forced ? (pool[0] ?? null) : null);
-      bandIdx = band ? sBands.indexOf(band) : -1;
 
       // Bloqueio de vendas (objetivo) + baixa potência.
       const blocked = forced ? 0 : (resTable?.blockedSales ?? 0);
