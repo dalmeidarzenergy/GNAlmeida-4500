@@ -218,19 +218,18 @@ async function buildCalc(m: string) {
   const split = (s: LiteSale, band: Band | null, excelRow: Record<string, unknown> | null): IberdrolaLine[] => {
     const idVenda = contract(s.details);
     // DD, FE, PEL vêm do Excel, não do CRM.
-    // - "Método de Pagamento" contém o valor "Débito Direto" → DD pago.
+    // - "Método de Pagamento" = "Débito Directo" → DD pago (aceita também "Débito Direto").
     // - "FE" / "Fatura Eletronica" == "SIM" → FE pago.
     const colVal = (name: string) => {
       if (!excelRow) return null;
       const key = Object.keys(excelRow).find((k) => normCol(k) === name);
       return key != null ? excelRow[key] : null;
     };
-    const isDebitoDireto = normCol(String(colVal("metodo de pagamento") ?? "")).includes("debito direto");
-    const hasDD = isDebitoDireto;
+    const metodo = normCol(String(colVal("metodo de pagamento") ?? ""));
+    const hasDD = metodo.includes("debito");
     const hasFE = yes(colVal("fe")) || yes(colVal("fatura eletronica"));
-    // PEL: coluna "PEL PLUS" contém "PEL" (ou "SIM") → pago.
-    const pelVal = normCol(String(colVal("pel plus") ?? ""));
-    const hasPEL = pelVal === "pel" || yes(colVal("pel plus"));
+    // PEL: coluna "PEL" == "SIM" (aceita também "PEL PLUS" == "PEL"/"SIM").
+    const hasPEL = yes(colVal("pel")) || normCol(String(colVal("pel plus") ?? "")) === "pel" || yes(colVal("pel plus"));
 
     const svc = {
       dd: hasDD ? band?.dd ?? 0 : 0,
