@@ -509,10 +509,12 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     // --- Aplicação de regras de pagamento ---
     const ruleEffects: { id: number; name: string; type: string; amount: number }[] = [];
 
-    // Automáticas: por cada venda paga que satisfaz a condição (coluna do Excel).
+    // Automáticas: por cada venda do comercial que satisfaz a condição (coluna do Excel).
+    // Avalia todas as vendas, mesmo as bloqueadas/baixa potência — se o timing é mau,
+    // a penalidade aplica-se independentemente de a venda ser paga ou não.
     for (const r of autoRules) {
       let total = 0;
-      for (const e of paidEntries) {
+      for (const e of mine) {
         if (!matchesCondition(r, e.excel)) continue;
         const saleTotal = split(e, band).reduce((t, l) => t + l.total, 0);
         const amt = r.effectType === "percent" ? round2(r.effectValue * saleTotal) : r.effectValue;
