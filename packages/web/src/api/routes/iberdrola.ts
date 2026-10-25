@@ -114,14 +114,15 @@ async function buildCalc(m: string) {
   //  - BP  (Nivel de pressão) é comissionado mas NÃO conta para o escalão.
   const autoBTN = new Set<string>();
   const autoCommission = new Set<string>();
-  const autoDataByContract = new Map<string, Record<string, unknown>>();
   const cbIds = new Set<string>();
+  // Linha do Excel por contrato (auto e chargback), para ler DD/FE/PEL e condições das regras.
+  const excelByContract = new Map<string, Record<string, unknown>>();
   for (const r of rows) {
     if (!r.idVenda) continue;
+    const data = (r.data ?? {}) as Record<string, unknown>;
+    excelByContract.set(r.idVenda, data);
     if (r.sheet === "auto" && r.estado === "Em Fornecimento") {
       autoCommission.add(r.idVenda);
-      const data = (r.data ?? {}) as Record<string, unknown>;
-      autoDataByContract.set(r.idVenda, data);
       const nivelKey = Object.keys(data).find((k) => normCol(k) === "nivel de tensao");
       if (nivelKey && String(data[nivelKey] ?? "").toUpperCase() === "BTN") {
         autoBTN.add(r.idVenda);
@@ -181,9 +182,6 @@ async function buildCalc(m: string) {
     assignedByEmployee.set(a.employeeId, s);
   }
 
-  // Mapa do id de venda -> linha do Excel (para avaliar condições das regras automáticas).
-  const excelByContract = new Map(autoDataByContract);
-
   const cellNum = (v: unknown): number | null => {
     const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
     return Number.isFinite(n) ? n : null;
@@ -217,15 +215,25 @@ async function buildCalc(m: string) {
    * vem do escalão atingido da tabela comisional; se não há escalão, nada é pago.
    * Os serviços (débito direto, fatura eletrónica, PEL) pagam uma vez por venda.
    */
-  const split = (s: LiteSale, band: Band | null): IberdrolaLine[] => {
-    const d = s.details ?? {};
+  const split = (s: LiteSale, band: Band | null, excelRow: Record<string, unknown> | null): IberdrolaLine[] => {
     const idVenda = contract(s.details);
-    // Cada serviço aderido (débito direto, fatura eletrónica, PEL) paga UMA vez por venda,
-    // independentemente do número de linhas de energia (DUAL = 1 luz + 1 gás).
+    // DD, FE, PEL vêm do Excel, não do CRM.
+    // - "Método de Pagamento" contém o valor "Débito Direto" → DD pago.
+    // - "FE" / "Fatura Eletronica" == "SIM" → FE pago.
+    const colVal = (name: string) => {
+      if (!excelRow) return null;
+      const key = Object.keys(excelRow).find((k) => normCol(k) === name);
+      return key != null ? excelRow[key] : null;
+    };
+    const isDebitoDireto = normCol(String(colVal("metodo de pagamento") ?? "")).includes("debito direto");
+    const hasDD = isDebitoDireto;
+    const hasFE = yes(colVal("fe")) || yes(colVal("fatura eletronica"));
+    const hasPEL = yes(colVal("pel"));
+
     const svc = {
-      dd: yes(d.ddc) ? band?.dd ?? 0 : 0,
-      fe: yes(d.fe) ? band?.fe ?? 0 : 0,
-      pel: yes(d.pel) ? band?.pel ?? 0 : 0,
+      dd: hasDD ? band?.dd ?? 0 : 0,
+      fe: hasFE ? band?.fe ?? 0 : 0,
+      pel: hasPEL ? band?.pel ?? 0 : 0,
     };
     const svcTotal = round2(svc.dd + svc.fe + svc.pel);
     return energiesOf(s.service).map((energy, i) => {
@@ -321,11 +329,11 @@ async function buildCalc(m: string) {
       const c = contract(s.details);
       if (!autoCommission.has(c)) return [];
       const hasBTN = autoBTN.has(c);
-      const all = split(s, band);
+      const all = split(s, band, excelByContract.get(c) ?? null);
       return hasBTN ? all : all.filter((l) => l.service === "Gás");
     });
     const cbMine = cb.found.filter((s) => s.sellerId === sellerId);
-    const cbLines = cbMine.flatMap((s) => split(s, band));
+    const cbLines = cbMine.flatMap((s) => split(s, band, excelByContract.get(contract(s.details)) ?? null));
 
     const gross = round2(lines.reduce((sum, l) => sum + l.total, 0));
     const chargeback = round2(cbLines.reduce((sum, l) => sum + l.total, 0));
@@ -344,7 +352,7 @@ async function buildCalc(m: string) {
       for (const s of mine) {
         const excel = excelByContract.get(contract(s.details));
         if (!excel || !matchesCondition(r, excel)) continue;
-        const saleTotal = split(s, band).reduce((t, l) => t + l.total, 0);
+        const saleTotal = split(s, band, excelByContract.get(contract(s.details)) ?? null).reduce((t, l) => t + l.total, 0);
         const amt = r.effectType === "percent" ? round2(r.effectValue * saleTotal) : r.effectValue;
         total = round2(total + amt);
       }
