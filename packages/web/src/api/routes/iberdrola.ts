@@ -820,9 +820,15 @@ export const iberdrolaRoute = {
       return allTeams
         .filter((t) => t.leaderId != null)
         .map((t) => {
-          const members = memberships
-            .filter((m) => m.teamId === t.id)
-            .map((m) => ({ employeeId: m.employeeId, employeeName: names.get(m.employeeId) ?? `#${m.employeeId}` }))
+          const memberSet = new Map<number, string>();
+          for (const m of memberships) {
+            if (m.teamId === t.id) memberSet.set(m.employeeId, names.get(m.employeeId) ?? `#${m.employeeId}`);
+          }
+          // O chefe de equipa também pertence à equipa — inclui-lo mesmo que
+          // não tenha uma linha própria em team_memberships.
+          memberSet.set(t.leaderId!, names.get(t.leaderId!) ?? `#${t.leaderId}`);
+          const members = [...memberSet.entries()]
+            .map(([employeeId, employeeName]) => ({ employeeId, employeeName }))
             .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
           return {
             id: t.id,
