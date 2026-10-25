@@ -153,10 +153,21 @@ else
 fi
 
 echo "==> 5/5  Verificacao"
-CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:${PORT:-3000}/funcionarios || echo 000)
-echo "  /funcionarios -> HTTP $CODE"
+# O watchdog arranca a app na porta 4200 (via PORT=4200); 3000 e o default do __server.ts.
+# Tentamos 4200 primeiro e caímos para 3000 caso a app esteja a servir noutra porta.
+APP_PORT=""
+for P in 4200 3000; do
+  C=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${P}/funcionarios" || echo 000)
+  if [ "$C" = "200" ]; then
+    APP_PORT=$P
+    break
+  fi
+done
+[ -n "$APP_PORT" ] || APP_PORT=${PORT:-4200}
+CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${APP_PORT}/funcionarios" || echo 000)
+echo "  /funcionarios (porta $APP_PORT) -> HTTP $CODE"
 echo ""
-SERVED=$(curl -s http://localhost:${PORT:-3000}/ | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1)
+SERVED=$(curl -s "http://localhost:${APP_PORT}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1)
 BUILT=$(ls packages/web/dist/assets/ | grep -E '^index-.*\.js$' | head -1)
 if [ -n "$SERVED" ] && [ "$SERVED" != "$BUILT" ]; then
   echo "  AVISO: o servidor serve $SERVED mas o dist tem $BUILT — reinicia o servidor a mao."
