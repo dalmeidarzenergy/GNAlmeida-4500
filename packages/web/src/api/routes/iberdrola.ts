@@ -8,7 +8,6 @@ import { requireView, requireEdit, type Role } from "../middleware/auth";
 import { db } from "../database";
 import { PUBLIC_DIR } from "../lib/public-files";
 import {
-  clients,
   commissionRows,
   commissionTables,
   employeeTables,
@@ -17,7 +16,6 @@ import {
   iberdrolaRows,
   ruleAssignments,
   rules,
-  sales,
   userRoles,
 } from "../database/schema";
 import { effectivePermissions, type Permissions } from "../permissions";
@@ -29,21 +27,8 @@ const month = z.string().regex(/^\d{4}-\d{2}$/, "Mês inválido.");
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const yes = (v: unknown) => (typeof v === "string" ? v.toLowerCase() === "sim" : v === true);
 
-const SERVICE_LABEL: Record<string, string> = { LUZ: "Luz", "GÁS": "Gás", GAS: "Gás", DUAL: "Dual", SOLAR: "Solar" };
-const serviceLabel = (s: string | null) => (s ? SERVICE_LABEL[s.toUpperCase()] ?? s : "-");
-
-const energiesOf = (svc: string | null): ("luz" | "gas")[] => {
-  const s = (svc ?? "").toUpperCase();
-  if (s === "GÁS" || s === "GAS") return ["gas"];
-  if (s === "DUAL") return ["luz", "gas"];
-  return ["luz"];
-};
-
-/** Número de contrato (details.contractNumber) normalizado para texto; "-" se faltar. */
-const contract = (details: Record<string, unknown> | null) => {
-  const v = details?.contractNumber;
-  return typeof v === "string" && v.trim() !== "" ? v.trim() : typeof v === "number" ? String(v) : "-";
-};
+/** Normaliza texto para ligar o comercial do Excel ao funcionário e localizar colunas. */
+const normText = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 
 type IberdrolaLine = {
   idVenda: string;
@@ -84,13 +69,15 @@ type IberdrolaPerson = {
   ruleEffects: { id: number; name: string; type: string; amount: number }[];
 };
 
-type LiteSale = {
-  id: number;
-  sellerId: number | null;
-  service: string | null;
-  details: Record<string, unknown> | null;
-  number: string;
+type IberdrolaEntry = {
+  idVenda: string;
+  employeeId: number | null;
   clientName: string | null;
+  /** Energias desta entrada, derivadas do Excel: BTN → luz, BP → gás. */
+  energies: ("luz" | "gas")[];
+  /** True quando a "Nivel de tensão" é BTN (conta para o escalão). */
+  hasBTN: boolean;
+  excel: Record<string, unknown>;
 };
 
 type Band = { luz: number | null; gas: number | null; dd: number | null; fe: number | null; pel: number | null };
@@ -106,64 +93,67 @@ async function buildCalc(m: string) {
 
   const rows = await db.select().from(iberdrolaRows).where(inArray(iberdrolaRows.importId, importIds));
 
-  // Normalizador para nomes de colunas do Excel (ignora maiúsculas/acentos).
-  const normCol = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
-
-  // Só as vendas "Em Fornecimento" da folha `auto` entram no auto.
-  //  - BTN (Nivel de tensão) conta para o escalão.
-  //  - BP  (Nivel de pressão) é comissionado mas NÃO conta para o escalão.
-  const autoBTN = new Set<string>();
-  const autoCommission = new Set<string>();
-  const cbIds = new Set<string>();
-  // Linha do Excel por contrato (auto e chargback), para ler DD/FE/PEL e condições das regras.
-  const excelByContract = new Map<string, Record<string, unknown>>();
-  for (const r of rows) {
-    if (!r.idVenda) continue;
-    const data = (r.data ?? {}) as Record<string, unknown>;
-    excelByContract.set(r.idVenda, data);
-    if (r.sheet === "auto" && r.estado === "Em Fornecimento") {
-      autoCommission.add(r.idVenda);
-      const nivelKey = Object.keys(data).find((k) => normCol(k) === "nivel de tensao");
-      if (nivelKey && String(data[nivelKey] ?? "").toUpperCase() === "BTN") {
-        autoBTN.add(r.idVenda);
-      }
-    } else if (r.sheet === "chargback") {
-      cbIds.add(r.idVenda);
-    }
-  }
-
-  // Liga ao comercial pelo ID de venda (número de contrato), não por nome/NIF.
-  const allSales = await db
-    .select({
-      id: sales.id,
-      sellerId: sales.sellerId,
-      service: sales.service,
-      details: sales.details,
-      number: sales.number,
-      clientName: clients.name,
-    })
-    .from(sales)
-    .leftJoin(clients, eq(clients.id, sales.clientId));
-
-  const byContract = new Map<string, LiteSale>();
-  for (const s of allSales) {
-    const c = contract(s.details);
-    if (c !== "-") byContract.set(c, s);
-  }
-
-  const match = (ids: Set<string>) => {
-    const found: LiteSale[] = [];
-    const missing: string[] = [];
-    for (const id of ids) {
-      const s = byContract.get(id);
-      if (s && s.sellerId != null) found.push(s);
-      else missing.push(id);
-    }
-    return { found, missing };
+  /** Devolve o valor de uma coluna do Excel pelo nome (ignora maiúsculas/acentos). */
+  const colVal = (data: Record<string, unknown>, name: string): unknown => {
+    const key = Object.keys(data).find((k) => normText(k) === normText(name));
+    return key != null ? data[key] : null;
+  };
+  const strOf = (v: unknown): string | null => {
+    const s = typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim();
+    return s === "" ? null : s;
   };
 
-  const auto = match(autoCommission);
-  const cb = match(cbIds);
+  // Funcionários: ligam o comercial do Excel por "NIF Comercial" ou "Comercial" (nome).
+  // Não é usada qualquer ligação à aba Vendas.
+  const staff = await db
+    .select({ id: employees.id, name: employees.name, nif: employees.nif, commissionTableId: employees.commissionTableId })
+    .from(employees);
+  const staffById = new Map(staff.map((s) => [s.id, s]));
+  const staffByName = new Map(staff.map((s) => [normText(s.name), s.id] as const));
+  const staffByNif = new Map(
+    staff.filter((s) => s.nif && s.nif.trim() !== "").map((s) => [normText(s.nif!), s.id] as const),
+  );
+
+  // Linhas do Excel → entradas comissionáveis (auto "Em Fornecimento") e baixas (chargback).
+  const autoEntries: IberdrolaEntry[] = [];
+  const cbEntries: IberdrolaEntry[] = [];
+  const unmatchedAuto: string[] = [];
+  const unmatchedChargeback: string[] = [];
+
+  for (const r of rows) {
+    if (!r.idVenda) continue;
+    const idVenda = String(r.idVenda).trim();
+    const data = (r.data ?? {}) as Record<string, unknown>;
+
+    // Energias derivadas do Excel: "Nivel de tensão" = BTN → luz; "Nivel de pressão" = BP → gás.
+    const nivelTensao = normText(strOf(colVal(data, "nivel de tensao")) ?? "").toUpperCase();
+    const nivelPressao = normText(strOf(colVal(data, "nivel de pressao")) ?? "").toUpperCase();
+    const hasBTN = nivelTensao === "BTN";
+    const hasBP = nivelPressao === "BP";
+    const energies: ("luz" | "gas")[] = [];
+    if (hasBTN) energies.push("luz");
+    if (hasBP) energies.push("gas");
+    if (!energies.length) energies.push("luz");
+
+    const nif = normText(strOf(colVal(data, "nif comercial")) ?? "");
+    const nome = normText(strOf(colVal(data, "comercial")) ?? "");
+    const employeeId = (nif && staffByNif.get(nif)) || (nome && staffByName.get(nome)) || null;
+
+    const clientName =
+      strOf(colVal(data, "cliente")) ?? strOf(colVal(data, "titular")) ?? strOf(colVal(data, "nome do cliente"));
+
+    const entry: IberdrolaEntry = { idVenda, employeeId, clientName, energies, hasBTN, excel: data };
+
+    if (r.sheet === "auto") {
+      if (r.estado === "Em Fornecimento") {
+        if (employeeId != null) autoEntries.push(entry);
+        else unmatchedAuto.push(idVenda);
+      }
+    } else if (r.sheet === "chargback") {
+      if (employeeId != null) cbEntries.push(entry);
+      else unmatchedChargeback.push(idVenda);
+    }
+  }
 
   const cTables = await db.select().from(commissionTables);
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
@@ -186,11 +176,10 @@ async function buildCalc(m: string) {
     const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", "."));
     return Number.isFinite(n) ? n : null;
   };
-  /** Avalia a condição de uma regra automática sobre uma venda (linha do Excel). */
+  /** Avalia a condição de uma regra automática sobre uma linha do Excel. */
   const matchesCondition = (rule: (typeof allRules)[number], excel: Record<string, unknown>): boolean => {
     if (!rule.sourceColumn || !rule.operator) return false;
-    // Localiza a coluna por nome, ignorando maiúsculas/acentos.
-    const key = Object.keys(excel).find((k) => normCol(k) === normCol(rule.sourceColumn!));
+    const key = Object.keys(excel).find((k) => normText(k) === normText(rule.sourceColumn!));
     if (key == null) return false;
     const raw = excel[key];
     const cmp = rule.compareValue ?? "";
@@ -210,26 +199,14 @@ async function buildCalc(m: string) {
   const pick = <T extends { startDate: string; endDate: string | null }>(list: T[], from: string, to: string) =>
     list.filter((a) => a.startDate <= to && (a.endDate == null || a.endDate >= from)).sort((x, y) => (x.startDate < y.startDate ? 1 : -1))[0];
 
-  /**
-   * Divide uma venda nas suas linhas de auto. Cada valor (base luz, base gás e cada serviço)
-   * vem do escalão atingido da tabela comisional; se não há escalão, nada é pago.
-   * Os serviços (débito direto, fatura eletrónica, PEL) pagam uma vez por venda.
-   */
-  const split = (s: LiteSale, band: Band | null, excelRow: Record<string, unknown> | null): IberdrolaLine[] => {
-    const idVenda = contract(s.details);
-    // DD, FE, PEL vêm do Excel, não do CRM.
-    // - "Método de Pagamento" = "Débito Directo" → DD pago (aceita também "Débito Direto").
-    // - "FE" / "Fatura Eletronica" == "SIM" → FE pago.
-    const colVal = (name: string) => {
-      if (!excelRow) return null;
-      const key = Object.keys(excelRow).find((k) => normCol(k) === name);
-      return key != null ? excelRow[key] : null;
-    };
-    const metodo = normCol(String(colVal("metodo de pagamento") ?? ""));
+  /** Divide uma entrada (linha do Excel) nas suas linhas de auto. DD/FE/PEL são lidos do Excel. */
+  const split = (entry: IberdrolaEntry, band: Band | null): IberdrolaLine[] => {
+    const excelRow = entry.excel;
+    // "Método de Pagamento" = "Débito Directo"/"Débito Direto" → DD; "FE"/"Fatura Eletronica" = "SIM" → FE; "PEL" = "SIM" (ou "PEL PLUS") → PEL.
+    const metodo = normText(strOf(colVal(excelRow, "metodo de pagamento")) ?? "");
     const hasDD = metodo.includes("debito");
-    const hasFE = yes(colVal("fe")) || yes(colVal("fatura eletronica"));
-    // PEL: coluna "PEL" == "SIM" (aceita também "PEL PLUS" == "PEL"/"SIM").
-    const hasPEL = yes(colVal("pel")) || normCol(String(colVal("pel plus") ?? "")) === "pel" || yes(colVal("pel plus"));
+    const hasFE = yes(colVal(excelRow, "fe")) || yes(colVal(excelRow, "fatura eletronica"));
+    const hasPEL = yes(colVal(excelRow, "pel")) || normText(strOf(colVal(excelRow, "pel plus")) ?? "") === "pel" || yes(colVal(excelRow, "pel plus"));
 
     const svc = {
       dd: hasDD ? band?.dd ?? 0 : 0,
@@ -237,12 +214,12 @@ async function buildCalc(m: string) {
       pel: hasPEL ? band?.pel ?? 0 : 0,
     };
     const svcTotal = round2(svc.dd + svc.fe + svc.pel);
-    return energiesOf(s.service).map((energy, i) => {
+    return entry.energies.map((energy, i) => {
       const base = round2(energy === "gas" ? band?.gas ?? 0 : band?.luz ?? 0);
       const svcLine = i === 0 ? svc : { dd: 0, fe: 0, pel: 0 };
       return {
-        idVenda,
-        clientName: s.clientName,
+        idVenda: entry.idVenda,
+        clientName: entry.clientName,
         service: energy === "gas" ? "Gás" : "Luz",
         base,
         ...svcLine,
@@ -251,25 +228,19 @@ async function buildCalc(m: string) {
     });
   };
 
-
-  // Agrupa as vendas por comercial.
-  const bySeller = new Map<number, LiteSale[]>();
-  const group = (list: LiteSale[]) => {
-    for (const s of list) {
-      const arr = bySeller.get(s.sellerId!) ?? [];
-      arr.push(s);
-      bySeller.set(s.sellerId!, arr);
-    }
-  };
-  group(auto.found);
-
-  // Comerciais que só aparecem no chargback (sem vendas no mês).
-  for (const s of cb.found) {
-    if (!bySeller.has(s.sellerId!)) bySeller.set(s.sellerId!, []);
+  // Agrupa as entradas por comercial.
+  const bySeller = new Map<number, IberdrolaEntry[]>();
+  for (const e of autoEntries) {
+    if (e.employeeId == null) continue;
+    const arr = bySeller.get(e.employeeId) ?? [];
+    arr.push(e);
+    bySeller.set(e.employeeId, arr);
   }
-
-  const staff = await db.select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId }).from(employees);
-  const staffById = new Map(staff.map((s) => [s.id, s]));
+  // Comerciais que só aparecem no chargback.
+  for (const e of cbEntries) {
+    if (e.employeeId == null) continue;
+    if (!bySeller.has(e.employeeId)) bySeller.set(e.employeeId, []);
+  }
 
   const people: IberdrolaPerson[] = [];
 
@@ -318,23 +289,15 @@ async function buildCalc(m: string) {
 
     const bands = cRows.filter((r) => r.tableId === table.id && r.kind === "clients");
     // Escalão: só conta BTN (luz) em fornecimento; BP (gás) é comissionado mas não sobe o escalão.
-    const bandSales = mine.filter((s) => autoBTN.has(contract(s.details))).flatMap((s) => energiesOf(s.service).filter((e) => e === "luz")).length;
+    const bandSales = mine.filter((e) => e.hasBTN).length;
     const band =
       bands.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
       [...bands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
       null;
 
-    // Linhas comissionadas: só as que estão "Em Fornecimento" (autoCommission).
-    // Se o contrato não tem BTN, só gera a linha de gás (BP).
-    const lines = mine.flatMap((s) => {
-      const c = contract(s.details);
-      if (!autoCommission.has(c)) return [];
-      const hasBTN = autoBTN.has(c);
-      const all = split(s, band, excelByContract.get(c) ?? null);
-      return hasBTN ? all : all.filter((l) => l.service === "Gás");
-    });
-    const cbMine = cb.found.filter((s) => s.sellerId === sellerId);
-    const cbLines = cbMine.flatMap((s) => split(s, band, excelByContract.get(contract(s.details)) ?? null));
+    const lines = mine.flatMap((e) => split(e, band));
+    const cbMine = cbEntries.filter((e) => e.employeeId === sellerId);
+    const cbLines = cbMine.flatMap((e) => split(e, band));
 
     const gross = round2(lines.reduce((sum, l) => sum + l.total, 0));
     const chargeback = round2(cbLines.reduce((sum, l) => sum + l.total, 0));
@@ -350,10 +313,9 @@ async function buildCalc(m: string) {
     // Automáticas: por cada venda que satisfaz a condição (coluna do Excel).
     for (const r of autoRules) {
       let total = 0;
-      for (const s of mine) {
-        const excel = excelByContract.get(contract(s.details));
-        if (!excel || !matchesCondition(r, excel)) continue;
-        const saleTotal = split(s, band, excelByContract.get(contract(s.details)) ?? null).reduce((t, l) => t + l.total, 0);
+      for (const e of mine) {
+        if (!matchesCondition(r, e.excel)) continue;
+        const saleTotal = split(e, band).reduce((t, l) => t + l.total, 0);
         const amt = r.effectType === "percent" ? round2(r.effectValue * saleTotal) : r.effectValue;
         total = round2(total + amt);
       }
@@ -399,8 +361,8 @@ async function buildCalc(m: string) {
 
   return {
     month: m,
-    unmatchedAuto: auto.missing,
-    unmatchedChargeback: cb.missing,
+    unmatchedAuto,
+    unmatchedChargeback,
     people,
     totals: {
       gross: round2(people.reduce((s, p) => s + p.gross, 0)),

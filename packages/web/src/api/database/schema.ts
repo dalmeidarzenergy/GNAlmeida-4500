@@ -643,7 +643,7 @@ export const iberdrolaImports = sqliteTable("iberdrola_imports", {
 
 /**
  * Linhas de um import Iberdrola (folhas `auto` e `chargback`).
- * `idVenda` = "ID de venda" do Excel (número de contrato) para ligar à venda do CRM;
+ * `idVenda` = "ID de venda" do Excel;
  * `data` = linha completa, coluna → valor, tal como veio do ficheiro.
  */
 export const iberdrolaRows = sqliteTable("iberdrola_rows", {

@@ -274,8 +274,8 @@ function Finais() {
 
       {(data?.unmatchedAuto.length || data?.unmatchedChargeback.length) ? (
         <div className="mt-4 rounded-[12px] border border-danger/30 bg-danger/5 px-4 py-3 text-[12.5px] text-danger">
-          {data.unmatchedAuto.length > 0 && <div>{data.unmatchedAuto.length} vendas do Excel não ligam a nenhuma venda do CRM (ID de venda: {data.unmatchedAuto.join(", ")}).</div>}
-          {data.unmatchedChargeback.length > 0 && <div>{data.unmatchedChargeback.length} baixas do chargback não ligam a nenhuma venda do CRM (ID de venda: {data.unmatchedChargeback.join(", ")}).</div>}
+          {data.unmatchedAuto.length > 0 && <div>{data.unmatchedAuto.length} vendas do Excel não têm comercial identificado no Excel (ID de venda: {data.unmatchedAuto.join(", ")}).</div>}
+          {data.unmatchedChargeback.length > 0 && <div>{data.unmatchedChargeback.length} baixas do chargback não têm comercial identificado no Excel (ID de venda: {data.unmatchedChargeback.join(", ")}).</div>}
         </div>
       ) : null}
 
