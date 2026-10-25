@@ -757,6 +757,43 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
       {lineTable("Chargeback", p.chargebackLines)}
       {medemTable("Medem", p)}
 
+      {(p as any).ceLines?.length > 0 && (
+        <div className="mb-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[12px] font-semibold uppercase tracking-wide text-ink-2">Comissão de chefe de equipa (CE)</div>
+            <div className="text-[12px] font-semibold text-amber">{(p as any).ceBandSales} vendas BTN · escalão {fmtEur2((p as any).ceUnit?.luz ?? 0)} / {fmtEur2((p as any).ceUnit?.gas ?? 0)}</div>
+          </div>
+          <div className="overflow-x-auto rounded-[10px] border border-line">
+            <table className="w-full min-w-[680px] text-[12.5px]">
+              <thead className="bg-surface">
+                <tr className="border-b border-line text-left">
+                  <th className="px-3 py-2 font-medium">ID venda</th>
+                  <th className="px-3 py-2 font-medium">Serviço</th>
+                  <th className="px-3 py-2 text-right font-medium">Base</th>
+                  <th className="px-3 py-2 text-right font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(p as any).ceLines.map((l: any, i: number) => (
+                  <tr key={i} className="border-b border-line last:border-0">
+                    <td className="num px-3 py-2 font-medium">{l.idVenda}</td>
+                    <td className="px-3 py-2">{l.service}</td>
+                    <td className="num px-3 py-2 text-right">{l.base ? fmtEur2(l.base) : "-"}</td>
+                    <td className="num px-3 py-2 text-right font-semibold">{fmtEur2(l.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-line bg-surface text-[12px] text-ink-2">
+                  <td className="px-3 py-2 font-medium" colSpan={3}>Total CE</td>
+                  <td className="num px-3 py-2 text-right font-semibold text-ink">{fmtEur2((p as any).ceGross)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
       <Modal open={assigning} onClose={() => setAssigning(false)} title={`Atribuir regras — ${monthLabel(month)}`}>
         <div className="grid gap-3">
           {manualRules.length === 0 ? (

@@ -93,6 +93,18 @@ type IberdrolaPerson = {
   overridesOut: { idVenda: string; toName: string }[];
   /** Vendas que foram recebidas de outro comercial (troca de venda). */
   overridesIn: { idVenda: string; fromName: string }[];
+  /** Chefe de equipa: nº de vendas BTN em fornecimento da equipa (para o escalão CE). */
+  ceBandSales: number;
+  /** Chefe de equipa: valor unitário do escalão CE atingido. */
+  ceUnit: { luz: number; gas: number } | null;
+  /** Chefe de equipa: total bruto pago pela tabela CE. */
+  ceGross: number;
+  /** Chefe de equipa: chargeback da equipa pela tabela CE. */
+  ceChargeback: number;
+  /** Chefe de equipa: linhas de vendas da equipa pagas pela tabela CE. */
+  ceLines: IberdrolaLine[];
+  /** Chefe de equipa: linhas de chargeback da equipa na tabela CE. */
+  ceChargebackLines: IberdrolaLine[];
 };
 
 type IberdrolaEntry = {
@@ -455,6 +467,12 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       medemLines: [],
       medemPontos: 0,
       medemTotal: 0,
+      ceBandSales: 0,
+      ceUnit: null,
+      ceGross: 0,
+      ceChargeback: 0,
+      ceLines: [],
+      ceChargebackLines: [],
     };
 
     if (empTables.length === 0) {
@@ -516,9 +534,14 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     // ── CE (chefe de equipa) ──
     // Escalão pela soma das vendas BTN em fornecimento da equipa liderada pelo chefe
-    // (incluindo as do próprio chefe). Remunera cada venda da equipa (LUZ/GÁS/DD/FE/PEL)
-    // pelo valor do escalão atingido — igual à tabela de vendedor, mas a nível de equipa.
+    // (incluindo as do próprio chefe). Remunera cada venda da equipa (LUZ/GÁS)
+    // pelo valor do escalão atingido.
+    // A CE é ADITIVA à tabela RES+BTN NEG: se o chefe também vender, recebe
+    // as vendas próprias pela RES e as da equipa pela CE, acumulando ambos.
     let ceBandSales = 0;
+    let ceLines: IberdrolaLine[] = [];
+    let ceCbLines: IberdrolaLine[] = [];
+    let ceUnit: { luz: number; gas: number } | null = null;
     if (ceTable) {
       const teamIds = teamOfChief(sellerId);
       const teamEntries = autoEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
@@ -529,12 +552,12 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
         ceSBands.find((b) => ceBandSales >= (b.min ?? 0) && (b.max == null || ceBandSales <= b.max)) ??
         [...ceSBands.filter((b) => b.max == null && ceBandSales >= (b.min ?? 0))].pop() ??
         null;
-      band = ceBand;
+      ceUnit = ceBand ? { luz: ceBand.luz ?? 0, gas: ceBand.gas ?? 0 } : null;
       const ceBlocked = ceTable.blockedSales ?? 0;
       const cePaid = teamEntries.slice(Math.min(ceBlocked, teamEntries.length));
-      lines = cePaid.flatMap((e) => split(e, ceBand));
+      ceLines = cePaid.flatMap((e) => split(e, ceBand));
       const teamCb = cbEntries.filter((e) => e.employeeId != null && teamIds.has(e.employeeId!));
-      cbLines = teamCb.flatMap((e) => split(e, ceBand));
+      ceCbLines = teamCb.flatMap((e) => split(e, ceBand));
     }
 
     // ── MEDEM ──
@@ -564,6 +587,8 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     const gross = round2(lines.reduce((sum, l) => sum + l.total, 0));
     const chargeback = round2(cbLines.reduce((sum, l) => sum + l.total, 0));
+    const ceGross = round2(ceLines.reduce((t, l) => t + l.total, 0));
+    const ceChargeback = round2(ceCbLines.reduce((t, l) => t + l.total, 0));
 
     const sum = (l: IberdrolaLine[], f: (x: IberdrolaLine) => number) => round2(l.reduce((t, x) => t + f(x), 0));
     const ddAmount = sum(lines, (l) => l.dd);
@@ -634,7 +659,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     people.push({
       ...base,
-      bandSales: ceTable ? ceBandSales : (resTable ? mine.filter((e) => e.hasBTN).length : 0),
+      bandSales: resTable ? mine.filter((e) => e.hasBTN).length : 0,
       luzCount: lines.filter((l) => l.service === "Luz").length,
       gasCount: lines.filter((l) => l.service === "Gás").length,
       ddCount: sum(lines, (l) => (l.dd ? 1 : 0)),
@@ -649,7 +674,13 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       unit: band ? { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } : null,
       gross,
       chargeback,
-      due: round2(gross - chargeback + rulesDelta + medemTotal),
+      due: round2(gross - chargeback + rulesDelta + medemTotal + ceGross - ceChargeback),
+      ceBandSales,
+      ceUnit,
+      ceGross,
+      ceChargeback,
+      ceLines,
+      ceChargebackLines: ceCbLines,
       lines,
       chargebackLines: cbLines,
       ruleEffects,
