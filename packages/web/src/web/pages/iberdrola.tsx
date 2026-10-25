@@ -25,6 +25,27 @@ async function downloadImport(id: number, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+/** Descarrega o PDF detalhado de um comercial (via Chrome headless no servidor). */
+async function downloadPdf(month: string, employeeId: number) {
+  const token = authClient.managedAuth.getToken();
+  const res = await fetch(`${window.location.origin}/api/iberdrola/pdf/${month}/${employeeId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Erro ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = window.document.createElement("a");
+  a.href = url;
+  a.download = `Auto_Iberdrola_${month}.pdf`;
+  window.document.body.appendChild(a);
+  a.click();
+  window.document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /** Descarrega o Excel geral dos autos do mês (uma folha por comercial). */
 async function downloadExcel(month: string) {
   const token = authClient.managedAuth.getToken();
@@ -487,7 +508,15 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
           </div>
           <div className="text-[11.5px] text-ink-3">{p.tableName ?? "Sem tabela comisional"}</div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-ghost px-2.5 py-1 text-[12px]"
+            onClick={() => downloadPdf(month, employeeId).catch((e) => window.alert(errMsg(e)))}
+            title="Descarregar PDF detalhado deste comercial."
+          >
+            <Download size={13} /> PDF
+          </button>
           <Stat label="Escalão" value={String(p.bandSales)} accent="var(--amber)" />
           <Stat label="Vendas" value={String(p.salesCount)} accent="var(--sky)" />
           <Stat label="Devido" value={fmtEur2(p.due)} accent="var(--volt)" />

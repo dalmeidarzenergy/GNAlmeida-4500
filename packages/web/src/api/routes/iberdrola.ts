@@ -3,6 +3,7 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { Hono } from "hono";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { buildIberdrolaPdf } from "./iberdrola-pdf";
 import { auth } from "../auth";
 import { requireView, requireEdit, type Role } from "../middleware/auth";
 import { db } from "../database";
@@ -828,6 +829,37 @@ export function iberdrolaRoutes(app: Hono) {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`Auto_Iberdrola_${m}.xlsx`)}`,
+      },
+    });
+  });
+
+  // PDF detalhado por comercial (design bonito, via HTML → Chrome headless).
+  app.get("/api/iberdrola/pdf/:month/:employeeId", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    if (!ctx.permissions["auto-iberdrola"]?.view) return c.json({ error: "Sem permissão" }, 403);
+
+    const m = decodeURIComponent(c.req.param("month"));
+    if (!/^\d{4}-\d{2}$/.test(m)) return c.json({ error: "Mês inválido" }, 400);
+    const empId = Number(decodeURIComponent(c.req.param("employeeId")));
+    if (!Number.isInteger(empId) || empId <= 0) return c.json({ error: "Funcionário inválido" }, 400);
+
+    const calc = await buildCalc(m);
+    const p = calc.people.find((x) => x.employeeId === empId);
+    if (!p) return c.json({ error: "Comercial sem autos neste mês" }, 404);
+
+    let pdfBuf: Buffer;
+    try {
+      pdfBuf = buildIberdrolaPdf(p, m);
+    } catch {
+      return c.json({ error: "Erro ao gerar o PDF." }, 500);
+    }
+
+    const safeName = p.employeeName.replace(/[^a-zA-Z0-9À-ÿ\-_ ]/g, "").replace(/\s+/g, "_").slice(0, 40) || "comercial";
+    return new Response(pdfBuf as unknown as BodyInit, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(`Auto_Iberdrola_${safeName}_${m}.pdf`)}`,
       },
     });
   });
