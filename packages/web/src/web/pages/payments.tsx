@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Wallet, Check, Clock, FileDown, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Wallet, Check, Clock, FileDown, ChevronDown, ChevronRight, Unlock } from "lucide-react";
 import {
   useAutoPdf,
+  useForceCommissionsToggle,
   usePaymentAutoDetail,
   usePaymentBreakdown,
   usePaymentCalc,
@@ -81,6 +82,7 @@ type AutoPerson = {
   kmDeduction: number;
   due: number;
   missingTable: boolean;
+  forceCommissions: boolean;
   lines: AutoLine[];
   chargebackLines: AutoLine[];
   notPaid: { number: string; service: string; status: string; value: number }[];
@@ -284,6 +286,7 @@ function AutoPanel({
   const [open, setOpen] = useState(true);
   const [openTransit, setOpenTransit] = useState(true);
   const q = usePaymentAutoDetail(month, employeeId);
+  const toggleForce = useForceCommissionsToggle();
   const person = q.data && q.data.found ? q.data.person : null;
 
   if (employeeId == null) {
@@ -302,14 +305,25 @@ function AutoPanel({
             {person.role} | {person.tableName ?? "sem tabela"}{person.unit ? ` | ${fmtEur(person.unit)}/venda` : ""} | Mes {monthLabel(month)}
           </div>
         </div>
-        <button
-          type="button"
-          className="btn btn-ghost"
-          disabled={pdfPending}
-          onClick={() => onPdf(person.employeeId)}
-        >
-          <FileDown size={15} /> {pdfPending ? "A gerar..." : "PDF deste comercial"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={person.forceCommissions ? "btn btn-volt" : "btn btn-ghost"}
+            disabled={toggleForce.isPending}
+            onClick={() => toggleForce.mutateAsync({ employeeId: person.employeeId })}
+            title={person.forceCommissions ? "Comissões desbloqueadas — clique para voltar a aplicar o objetivo." : "Pagar comissões mesmo sem atingir o objetivo."}
+          >
+            <Unlock size={15} /> {person.forceCommissions ? "Comissões desbloqueadas" : "Desbloquear comissões"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={pdfPending}
+            onClick={() => onPdf(person.employeeId)}
+          >
+            <FileDown size={15} /> {pdfPending ? "A gerar..." : "PDF deste comercial"}
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">

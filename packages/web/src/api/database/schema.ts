@@ -67,6 +67,8 @@ export const employees = sqliteTable("employees", {
   ett: text("ett"),
   /** Tipo de vínculo (Bolsa de Formação 5h/6h, Contrato 5h/6h); as opções dependem do cargo. */
   bond: text("bond"),
+  /** Quando true, ignora o bloqueio de vendas da tabela comisional e paga todas. */
+  forceCommissions: integer("force_commissions", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
 });
 

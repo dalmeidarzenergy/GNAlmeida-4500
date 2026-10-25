@@ -128,6 +128,7 @@ type PersonBlock = {
   kmDeduction: number;
   due: number;
   missingTable: boolean;
+  forceCommissions: boolean;
   lines: DetailLine[];
   chargebackLines: DetailLine[];
   notPaid: { number: string; service: string; status: string; value: number }[];
@@ -363,7 +364,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
   }
 
   const staff = await db
-    .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId })
+    .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId, forceCommissions: employees.forceCommissions })
     .from(employees);
   const cTables = await db.select().from(commissionTables);
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
@@ -488,6 +489,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       kmDeduction: 0,
       due: 0,
       missingTable: !table,
+      forceCommissions: s.forceCommissions ?? false,
       lines: [],
       chargebackLines: [],
       notPaid: (notPaid.get(s.id) ?? []).map((n) => ({ number: n.number, service: serviceLabel(n.service), status: n.status, value: 0 })),
@@ -507,7 +509,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       [...bands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
       null;
 
-    const blocked = table.blockedSales ?? 0;
+    const blocked = (s.forceCommissions) ? 0 : (table.blockedSales ?? 0);
     const ordered = mine.slice();
     const paidSales = ordered.slice(Math.min(blocked, ordered.length));
     const resolved = paidSales.flatMap((e) => split(e, band));
@@ -657,6 +659,7 @@ export const paymentsRoute = {
         penaltyCampaign: p.penaltyCampaign,
         kmDeduction: p.kmDeduction,
         missingTable: p.missingTable,
+        forceCommissions: p.forceCommissions,
         detail: { luz: p.luzCount, gas: p.gasCount, other: 0, chargebackSales: p.chargebackLines.length },
       }));
 
@@ -707,6 +710,17 @@ export const paymentsRoute = {
             }
           : null,
       };
+    }),
+
+  /** Liga/desliga o pagamento forçado de comissões de um comercial (ignora o bloqueio da tabela). */
+  forceCommissionsToggle: requireEdit("pagamentos")
+    .input(z.object({ employeeId: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      const [emp] = await db.select({ forceCommissions: employees.forceCommissions }).from(employees).where(eq(employees.id, input.employeeId));
+      if (!emp) return { found: false as const, forceCommissions: false };
+      const next = !emp.forceCommissions;
+      await db.update(employees).set({ forceCommissions: next }).where(eq(employees.id, input.employeeId));
+      return { found: true as const, employeeId: input.employeeId, forceCommissions: next };
     }),
 
   /**

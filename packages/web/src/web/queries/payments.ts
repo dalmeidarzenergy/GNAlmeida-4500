@@ -38,3 +38,9 @@ export function useAutoPdf() {
   const c = useMutation(orpc.payments.autoPdf.mutationOptions());
   return { generate: c, isPending: c.isPending };
 }
+
+/** Liga/desliga o pagamento forçado de comissões de um comercial. */
+export function useForceCommissionsToggle() {
+  const inv = useInv();
+  return useMutation(orpc.payments.forceCommissionsToggle.mutationOptions({ onSuccess: inv }));
+}

@@ -55,6 +55,7 @@ const employeeInput = z.object({
   /** ETT (empresa de trabalho temporário) e tipo de vínculo; as opções de vínculo vêm do cargo. */
   ett: z.enum(ETTS as [string, ...string[]]).nullable().optional(),
   bond: z.enum(BONDS as [string, ...string[]]).nullable().optional(),
+  forceCommissions: z.boolean().optional(),
 });
 
 const absenceInput = z.object({

@@ -82,6 +82,10 @@ if "category" not in emp:
     c.execute("ALTER TABLE employees ADD COLUMN category text")
     c.commit()
     print("  coluna employees.category adicionada")
+if "force_commissions" not in emp:
+    c.execute("ALTER TABLE employees ADD COLUMN force_commissions integer NOT NULL DEFAULT 0")
+    c.commit()
+    print("  coluna employees.force_commissions adicionada")
 
 tabs = [r[0] for r in c.execute("select name from sqlite_master where type='table'").fetchall()]
 assert "commission_tables" in tabs and "commission_rows" in tabs, "ERRO: tabelas commission_* em falta"
