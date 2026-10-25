@@ -302,7 +302,7 @@ function Finais() {
                         <span>{p.salesCount} vendas</span>
                       </span>
                     </span>
-                    <span className="num text-[12.5px] font-semibold">{fmtEur(p.due)}</span>
+                    <span className="num text-[12.5px] font-semibold">{fmtEur2(p.due)}</span>
                   </button>
                 </li>
               ))}
