@@ -25,6 +25,27 @@ async function downloadImport(id: number, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+/** Descarrega o Excel geral dos autos do mês (uma folha por comercial). */
+async function downloadExcel(month: string) {
+  const token = authClient.managedAuth.getToken();
+  const res = await fetch(`${window.location.origin}/api/iberdrola/export-excel/${month}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Erro ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = window.document.createElement("a");
+  a.href = url;
+  a.download = `Auto_Iberdrola_${month}.xlsx`;
+  window.document.body.appendChild(a);
+  a.click();
+  window.document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 type Tab = "historico" | "finais";
 
 export default function IberdrolaPage() {
@@ -264,6 +285,9 @@ function Finais() {
         <Field label="Mês">
           <input type="month" className="input num w-44" value={month} onChange={(e) => { setMonth(e.target.value); setSelected(null); }} />
         </Field>
+        <button type="button" className="btn btn-ghost" onClick={() => downloadExcel(month).catch((e) => window.alert(errMsg(e)))} title="Exportar Excel geral (uma folha por comercial).">
+          <Download size={15} /> Exportar Excel
+        </button>
       </div>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

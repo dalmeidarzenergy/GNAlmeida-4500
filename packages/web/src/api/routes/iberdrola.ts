@@ -727,4 +727,108 @@ export function iberdrolaRoutes(app: Hono) {
       },
     });
   });
+
+  // Exportar Excel geral dos autos do mês (uma folha por comercial).
+  app.get("/api/iberdrola/export-excel/:month", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    if (!ctx.permissions["auto-iberdrola"]?.view) return c.json({ error: "Sem permissão" }, 403);
+
+    const m = decodeURIComponent(c.req.param("month"));
+    if (!/^\d{4}-\d{2}$/.test(m)) return c.json({ error: "Mês inválido" }, 400);
+
+    const calc = await buildCalc(m);
+    if (!calc.people.length) return c.json({ error: "Sem autos neste mês" }, 404);
+
+    const XLSX = (await import("xlsx")) as unknown as {
+      utils: { aoa_to_sheet: (data: unknown[][]) => unknown; book_new: () => unknown; book_append_sheet: (wb: unknown, ws: unknown, name: string) => void };
+      write: (wb: unknown, opts: unknown) => Buffer;
+    };
+
+    const wb = XLSX.utils.book_new();
+    const maxSheetLen = 31;
+
+    for (const p of calc.people) {
+      const rows: unknown[][] = [];
+
+      rows.push([p.employeeName]);
+      rows.push([`Tabela: ${p.tableName ?? "Sem tabela"}`, "", `Mês: ${m}`]);
+      rows.push(["Escalão", String(p.bandSales), "", "Gross", `${p.gross.toFixed(2)} €`, "", "Devido", `${p.due.toFixed(2)} €`]);
+      rows.push(["Vendas", String(p.salesCount), "", "Chargback", `${p.chargeback.toFixed(2)} €`]);
+      rows.push([]);
+
+      rows.push(["--- ESCALÃO ATINGIDO ---"]);
+      rows.push(["Item", "Valor unitário", "Qtd", "Total"]);
+      if (p.unit) {
+        rows.push(["Luz", `${p.unit.luz.toFixed(2)} €`, p.luzCount, `${(p.unit.luz * p.luzCount).toFixed(2)} €`]);
+        rows.push(["Gás", `${p.unit.gas.toFixed(2)} €`, p.gasCount, `${(p.unit.gas * p.gasCount).toFixed(2)} €`]);
+        if (p.ddCount > 0) rows.push(["Débito Direto", `${p.unit.dd.toFixed(2)} €`, p.ddCount, `${(p.unit.dd * p.ddCount).toFixed(2)} €`]);
+        if (p.feCount > 0) rows.push(["Fatura Eletrónica", `${p.unit.fe.toFixed(2)} €`, p.feCount, `${(p.unit.fe * p.feCount).toFixed(2)} €`]);
+        if (p.pelCount > 0) rows.push(["PEL", `${p.unit.pel.toFixed(2)} €`, p.pelCount, `${(p.unit.pel * p.pelCount).toFixed(2)} €`]);
+      } else {
+        rows.push(["(sem escalão)"]);
+      }
+      rows.push([]);
+
+      if (p.ruleEffects.length > 0) {
+        rows.push(["--- REGRAS APLICADAS ---"]);
+        rows.push(["Regra", "Tipo", "Valor"]);
+        for (const r of p.ruleEffects) {
+          const tipo = r.type === "auto" ? "Automática" : r.type === "unlock" ? "Desbloqueio" : r.type === "vnc" ? "VNC" : "Manual";
+          rows.push([r.name, tipo, `${r.amount.toFixed(2)} €`]);
+        }
+        rows.push([]);
+      }
+
+      if (p.vncs.length > 0) {
+        rows.push(["--- PENALIDADES VNC ---"]);
+        rows.push(["ID Venda", "Valor"]);
+        for (const v of p.vncs) rows.push([v.idVenda, `${v.amount.toFixed(2)} €`]);
+        rows.push([]);
+      }
+
+      if (p.overridesOut.length > 0 || p.overridesIn.length > 0) {
+        rows.push(["--- TROCAS DE VENDA ---"]);
+        rows.push(["ID Venda", "Direção", "Comercial"]);
+        for (const o of p.overridesOut) rows.push([o.idVenda, "Cedida →", o.toName]);
+        for (const o of p.overridesIn) rows.push([o.idVenda, "← Recebida", o.fromName]);
+        rows.push([]);
+      }
+
+      rows.push(["--- VENDAS ---"]);
+      rows.push(["ID venda", "Serviço", "Base (€)", "Déb. Direto", "Fat. Eletrónica", "PEL", "Total"]);
+      for (const l of p.lines) {
+        rows.push([l.idVenda, l.service, l.base.toFixed(2), (l.dd || ""), (l.fe || ""), (l.pel || ""), l.total.toFixed(2)]);
+      }
+      const baseSum = p.lines.reduce((s, l) => s + l.base, 0);
+      const ddSum = p.lines.reduce((s, l) => s + l.dd, 0);
+      const feSum = p.lines.reduce((s, l) => s + l.fe, 0);
+      const pelSum = p.lines.reduce((s, l) => s + l.pel, 0);
+      const totalSum = p.lines.reduce((s, l) => s + l.total, 0);
+      rows.push(["TOTAL", `${p.lines.length} linhas`, baseSum.toFixed(2), ddSum.toFixed(2), feSum.toFixed(2), pelSum.toFixed(2), totalSum.toFixed(2)]);
+      rows.push([]);
+
+      if (p.chargebackLines.length > 0) {
+        rows.push(["--- CHARGBACK ---"]);
+        rows.push(["ID venda", "Serviço", "Base (€)", "Déb. Direto", "Fat. Eletrónica", "PEL", "Total"]);
+        for (const l of p.chargebackLines) {
+          rows.push([l.idVenda, l.service, l.base.toFixed(2), (l.dd || ""), (l.fe || ""), (l.pel || ""), l.total.toFixed(2)]);
+        }
+        const cbSum = p.chargebackLines.reduce((s, l) => s + l.total, 0);
+        rows.push(["TOTAL", `${p.chargebackLines.length} linhas`, "", "", "", "", cbSum.toFixed(2)]);
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const sheetName = p.employeeName.slice(0, maxSheetLen).replace(/[\\/*?:[\]]/g, "_");
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    }
+
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    return new Response(buf as unknown as BodyInit, {
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`Auto_Iberdrola_${m}.xlsx`)}`,
+      },
+    });
+  });
 }
