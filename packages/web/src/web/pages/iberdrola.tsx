@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -404,14 +404,21 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const toggleSwapId = (id: string) =>
     setSwapIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
+  // Destino da troca: TODOS os colaboradores, nao so os que ja tem vendas no mes.
+  const staff = useIberdrolaStaffList(month);
   const otherEmployees = useMemo(() => {
+    const fromStaff = (staff.data ?? []) as Array<{ employeeId: number; employeeName: string }>;
     const calcData = (people as Array<{ employeeId: number; employeeName: string }>);
-    return calcData.filter((x) => x.employeeId !== employeeId).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-  }, [people, employeeId]);
+    const list = fromStaff.length > 0 ? fromStaff : calcData;
+    return list.filter((x) => x.employeeId !== employeeId).sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  }, [staff.data, people, employeeId]);
 
   const currentSales = useMemo(() => {
     if (!p) return [];
-    const ids = new Set(p.lines.map((l) => l.idVenda));
+    // Todas as vendas do comercial no mes, mesmo as bloqueadas pelo objetivo,
+    // senao nao seria possivel trocar uma venda que ainda nao esta a ser paga.
+    const all = (p as { allSaleIds?: string[] }).allSaleIds ?? [];
+    const ids = new Set(all.length > 0 ? all : p.lines.map((l) => l.idVenda));
     return [...ids].sort();
   }, [p]);
   if (!p) return <div className="p-6"><Empty title="Sem dados" text="Não foi possível encontrar este comercial." /></div>;
@@ -503,7 +510,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
               <button
                 type="button"
                 className="btn btn-ghost px-2.5 py-1 text-[12px]"
-                onClick={() => { setSwapStep(1); setSwapSearch(""); setSwapIdVenda(""); setSwapToId(null); setSwapDestSearch(""); setSwapOpen(true); }}
+                onClick={() => { setSwapStep(1); setSwapSearch(""); setSwapIds([]); setSwapToId(null); setSwapDestSearch(""); setSwapOpen(true); }}
                 title="Transferir uma venda deste comercial para outro."
               >
                 <ArrowLeftRight size={13} /> Trocar venda

@@ -52,6 +52,8 @@ type IberdrolaPerson = {
   forceCommissionsPct: number;
   bandSales: number;
   salesCount: number;
+  /** Todas as vendas do comercial no mes (mesmo as bloqueadas pelo objetivo), para a troca de venda. */
+  allSaleIds: string[];
   luzCount: number;
   gasCount: number;
   ddCount: number;
@@ -306,6 +308,7 @@ async function buildCalc(m: string) {
       forceCommissionsPct: emp.forceCommissionsPct ?? 0,
       bandSales: 0,
       salesCount: mine.length,
+      allSaleIds: mine.map((e) => e.idVenda),
       luzCount: 0,
       gasCount: 0,
       ddCount: 0,
@@ -417,6 +420,7 @@ async function buildCalc(m: string) {
       feAmount,
       pelAmount,
       svcAmount: round2(ddAmount + feAmount + pelAmount),
+      allSaleIds: mine.map((e) => e.idVenda),
       unit: band ? { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } : null,
       gross,
       chargeback,
@@ -538,6 +542,16 @@ export const iberdrolaRoute = {
     .handler(async ({ input }) => {
       await db.delete(vncPenalties).where(eq(vncPenalties.id, input.id));
       return { removed: true };
+    }),
+
+  /** Lista todos os colaboradores, para escolher o destino de uma troca de venda. */
+  staffList: requireView("auto-iberdrola")
+    .input(z.object({ month: z.string().optional() }))
+    .handler(async () => {
+      const rows = await db.select({ id: employees.id, name: employees.name }).from(employees);
+      return rows
+        .map((r) => ({ employeeId: r.id, employeeName: r.name }))
+        .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
     }),
 
   /** Lista as trocas de venda (overrides) do mês. */
