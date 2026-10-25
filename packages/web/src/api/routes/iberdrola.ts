@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Hono } from "hono";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -95,7 +95,7 @@ type IberdrolaEntry = {
 type Band = { luz: number | null; gas: number | null; dd: number | null; fe: number | null; pel: number | null };
 
 /** Constrói o "Auto Final" do mês a partir dos ficheiros Iberdrola carregados nesse mês. */
-async function buildCalc(m: string) {
+async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {}) {
   const imports = await db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m));
   const importIds = imports.map((i) => i.id);
 
@@ -286,6 +286,59 @@ async function buildCalc(m: string) {
     if (!bySeller.has(e.employeeId)) bySeller.set(e.employeeId, []);
   }
 
+  // --- Chargeback reconstruído dos autos anteriores ---
+  // A Iberdrola envia apenas o ID da venda (não vem FE/DD); o valor pago
+  // (base + DD + FE + PEL, do escalão desse mês) está no auto onde a venda foi paga.
+  // Mapa "idVenda|serviço" → linha paga no auto anterior e o comercial que a recebeu.
+  const prevPaid = new Map<string, { employeeId: number; base: number; dd: number; fe: number; pel: number; total: number; clientName: string | null }>();
+  if (!opts.skipPrevChargeback) {
+    const prevMonths = await db
+      .select({ month: iberdrolaImports.month })
+      .from(iberdrolaImports)
+      .where(lt(iberdrolaImports.month, m))
+      .groupBy(iberdrolaImports.month)
+      .orderBy(asc(iberdrolaImports.month));
+    for (const { month: pm } of prevMonths) {
+      const pc = await buildCalc(pm, { skipPrevChargeback: true });
+      for (const person of pc.people) {
+        for (const l of person.lines) {
+          prevPaid.set(`${l.idVenda}|${l.service}`, {
+            employeeId: person.employeeId,
+            base: l.base,
+            dd: l.dd,
+            fe: l.fe,
+            pel: l.pel,
+            total: l.total,
+            clientName: l.clientName,
+          });
+        }
+      }
+    }
+  }
+
+  // Distribui o chargeback ao comercial que recebeu a venda no auto anterior;
+  // o que não for encontrado fica para o cálculo com o escalão do mês corrente (fallback).
+  const prevCbBySeller = new Map<number, IberdrolaLine[]>();
+  const resolvedCbKeys = new Set<string>();
+  for (const e of cbEntries) {
+    if (e.employeeId == null) continue;
+    for (const energy of e.energies) {
+      const service = energy === "gas" ? "Gás" : "Luz";
+      const key = `${e.idVenda}|${service}`;
+      if (resolvedCbKeys.has(key)) continue;
+      const prev = prevPaid.get(key);
+      if (!prev) continue;
+      resolvedCbKeys.add(key);
+      const arr = prevCbBySeller.get(prev.employeeId) ?? [];
+      arr.push({ idVenda: e.idVenda, clientName: prev.clientName, service, base: prev.base, dd: prev.dd, fe: prev.fe, pel: prev.pel, total: prev.total });
+      prevCbBySeller.set(prev.employeeId, arr);
+    }
+  }
+  // Comerciais que só aparecem no chargeback (pagador de um auto anterior sem venda no mês corrente).
+  for (const pid of prevCbBySeller.keys()) {
+    if (!bySeller.has(pid)) bySeller.set(pid, []);
+  }
+
   const people: IberdrolaPerson[] = [];
 
   for (const [sellerId, mine] of bySeller) {
@@ -355,8 +408,16 @@ async function buildCalc(m: string) {
     const paidEntries = mine.slice(Math.min(blocked, mine.length));
 
     const lines = paidEntries.flatMap((e) => split(e, band));
+
+    // Chargeback do comercial: as vendas resolvidas no auto anterior (valor real pago)
+    // + as não encontradas, calculadas com o escalão do mês corrente (fallback).
     const cbMine = cbEntries.filter((e) => e.employeeId === sellerId);
-    const cbLines = cbMine.flatMap((e) => split(e, band));
+    const cbFallback = cbMine.flatMap((e) =>
+      e.energies
+        .filter((energy) => !resolvedCbKeys.has(`${e.idVenda}|${energy === "gas" ? "Gás" : "Luz"}`))
+        .map((energy) => ({ ...e, energies: [energy] as ("luz" | "gas")[] })),
+    );
+    const cbLines = [...(prevCbBySeller.get(sellerId) ?? []), ...cbFallback.flatMap((e) => split(e, band))];
 
     const gross = round2(lines.reduce((sum, l) => sum + l.total, 0));
     const chargeback = round2(cbLines.reduce((sum, l) => sum + l.total, 0));
