@@ -55,17 +55,33 @@ export const useSaleHistory = (id: number) => useQuery(orpc.sales.orders.history
 export const useSetHistoryDate = () => useMutation(orpc.sales.orders.setHistoryDate.mutationOptions({ onSuccess: useInv() }));
 export function useToggleAlerts() {
   const qc = useQueryClient();
+  const key = orpc.sales.orders.list.queryOptions().queryKey;
   return useMutation(
     orpc.sales.orders.toggleAlerts.mutationOptions({
-      onSuccess: () => qc.invalidateQueries({ queryKey: orpc.sales.key() }),
+      onMutate: async ({ id, disabled }) => {
+        await qc.cancelQueries({ queryKey: key });
+        const prev = qc.getQueryData(key);
+        qc.setQueryData(key, (old: any) => old?.map((o: any) => (o.id !== id ? o : { ...o, alertsDisabled: disabled })));
+        return { prev };
+      },
+      onError: (_e, _i, ctx) => qc.setQueryData(key, ctx?.prev),
+      onSettled: () => qc.invalidateQueries({ queryKey: orpc.sales.key() }),
     }),
   );
 }
 export function useSetReady() {
   const qc = useQueryClient();
+  const key = orpc.sales.orders.list.queryOptions().queryKey;
   return useMutation(
     orpc.sales.orders.setReady.mutationOptions({
-      onSuccess: () => qc.invalidateQueries({ queryKey: orpc.sales.key() }),
+      onMutate: async ({ id, ready }) => {
+        await qc.cancelQueries({ queryKey: key });
+        const prev = qc.getQueryData(key);
+        qc.setQueryData(key, (old: any) => old?.map((o: any) => (o.id !== id ? o : { ...o, ready })));
+        return { prev };
+      },
+      onError: (_e, _i, ctx) => qc.setQueryData(key, ctx?.prev),
+      onSettled: () => qc.invalidateQueries({ queryKey: orpc.sales.key() }),
     }),
   );
 }

@@ -196,6 +196,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       saleId: saleStatusHistory.saleId,
       status: saleStatusHistory.status,
       on: saleStatusHistory.changedOn,
+      curStatus: sales.status,
       sellerId: sales.sellerId,
       service: sales.service,
       details: sales.details,
@@ -226,6 +227,8 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     service: string | null;
     details: Record<string, unknown> | null;
     clientName: string | null;
+    /** Estado atual da venda (coluna sales.status) — para isentar Baixa/Anulado da penalização de timing. */
+    curStatus: string | null;
     /** Por energia: quando entrou em fornecimento, e todas as baixas/manuais. */
     sup: Record<string, string | null>;
     baixa: Record<string, string[]>;
@@ -247,6 +250,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         service: r.service,
         details: r.details,
         clientName: r.clientName,
+        curStatus: r.curStatus,
         sup: { luz: null, gas: null },
         baixa: { luz: [], gas: [] },
         manual: { luz: [], gas: [] },
@@ -275,6 +279,8 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     service: string | null;
     details: Record<string, unknown> | null;
     clientName: string | null;
+    /** Estado atual da venda (para isentar Baixa/Anulado da penalização de timing). */
+    status: string | null;
     /** Energia que esta linha representa. */
     energy: "luz" | "gas";
     /** Data da assinatura da venda. */
@@ -305,7 +311,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     const list = energiesOf(e.service);
 
     for (const k of list) {
-      const lite: Lite = { saleId, number: contract(e.details), service: e.service, details: e.details, clientName: e.clientName, energy: k, signedOn: e.signedOn, hist: e.hist };
+      const lite: Lite = { saleId, number: contract(e.details), service: e.service, details: e.details, clientName: e.clientName, status: e.curStatus, energy: k, signedOn: e.signedOn, hist: e.hist };
       const suppliedOn = e.sup[k];
       // Baixa/Anulado DESTA energia, em qualquer momento (definitivas).
       const baixas = [...new Set(e.baixa[k])].sort();
@@ -471,6 +477,8 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
 
   /** Penalização de timing de uma venda (positiva = a descontar). Fixa em 10€ por venda. */
   const timingPenalty = (e: Lite) => {
+    // Vendas já em Baixa ou Anuladas não têm penalização de timing de contratação.
+    if (e.status === "Baixa" || e.status === "Anulado") return 0;
     const ctrl = daysToControl(e.hist?.[e.energy] ?? []);
     if (!ctrl || !e.signedOn) return 0;
     const dias = daysBetween(e.signedOn, ctrl);

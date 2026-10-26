@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ShieldAlert, BellOff, BellRing } from "lucide-react";
 import { Link } from "wouter";
 import { useOrders, useToggleAlerts, useSetReady } from "../queries/sales";
 import { useMe } from "../queries/me";
-import { PageHeader, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill } from "../components/ui/kit";
+import { PageHeader, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill, Pagination } from "../components/ui/kit";
 import { MonthYearFilter } from "../components/month-year-filter";
 import { SALE_STATUS } from "../lib/labels";
 import { errMsg, fmtDate, thisMonth } from "../lib/format";
@@ -32,6 +32,7 @@ const vtvColor = (s: string) =>
 
 type Tab = "pendentes" | "ko";
 
+const PAGE_SIZE = 20;
 const MUTABLE_ROLES = new Set(["admin", "diretor", "backoffice"]);
 
 export default function VtvStatusPage() {
@@ -42,6 +43,7 @@ export default function VtvStatusPage() {
   const [tab, setTab] = useState<Tab>("pendentes");
   const [q, setQ] = useState("");
   const [month, setMonth] = useState(thisMonth());
+  const [page, setPage] = useState(1);
 
   const role = me.data?.role ?? "";
   const canMute = MUTABLE_ROLES.has(role);
@@ -78,6 +80,9 @@ export default function VtvStatusPage() {
         (o.details?.contractNumber as string | undefined)?.toLowerCase().includes(s),
     );
   }, [tab, pendentes, ko, q]);
+
+  useEffect(() => setPage(1), [q, tab, month]);
+  const paged = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   if (orders.error) {
     return (
@@ -163,7 +168,7 @@ export default function VtvStatusPage() {
                 </tr>
               </thead>
               <tbody>
-                {list.map(({ o, entries }) => {
+                {paged.map(({ o, entries }) => {
                   const grave = entries.some((e) => isGrave(e.status));
                   const c = SALE_STATUS[o.status]?.color ?? "var(--ink-3)";
                   const muted = o.alertsDisabled;
@@ -221,6 +226,7 @@ export default function VtvStatusPage() {
             </table>
           </div>
         )}
+        <Pagination page={page} total={list.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>
     </div>
   );
