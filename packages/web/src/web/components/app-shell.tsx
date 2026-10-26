@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Zap, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard,
+  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -68,9 +68,7 @@ export function canAccess(path: string, permissions: Permissions) {
 export function Logo() {
   return (
     <div className="flex items-center gap-2.5">
-      <div className="relative flex h-8 w-8 items-center justify-center rounded-[9px] bg-volt text-[var(--bg)] shadow-[0_0_24px_rgba(198,244,50,0.35)]">
-        <Zap size={17} strokeWidth={2.6} fill="currentColor" />
-      </div>
+      <img src="/icons/logo.png" alt="D2D Consulting" className="h-9 w-auto shrink-0 object-contain" />
       <div className="font-display text-[17px] font-bold tracking-tight">
         GN<span className="text-volt">Almeida</span>
       </div>
