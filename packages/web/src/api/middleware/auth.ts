@@ -64,3 +64,22 @@ export const requireEdit = (module: ModuleKey) =>
 // Os perfis continuam a reger o acesso a funcionalidades que dependem do âmbito de dados
 // (gestão de utilizadores, agenda, relatórios). As restantes áreas usam `requireView`/`requireEdit`
 // sobre as permissões efetivas de cada utilizador.
+
+/** Perfis que veem dados de todos os funcionários. Os restantes só veem os seus. */
+const PRIVILEGED_ROLES: Role[] = ["admin", "diretor"];
+
+/**
+ * Devolve o ID do funcionário a filtrar ou `null` quando o utilizador vê tudo.
+ * Utilizadores sem `employeeId` (não-admins) ficam sem acesso efetivo.
+ */
+export function restrictToEmployee(role: Role, employeeId: number | null): number | null {
+  if (PRIVILEGED_ROLES.includes(role)) return null;
+  return employeeId;
+}
+
+/** Lança FORBIDDEN se o `filterId` for definido e não bater certo com o `targetId`. */
+export function assertOwnEmployee(filterId: number | null, targetId: number): void {
+  if (filterId !== null && filterId !== targetId) {
+    throw new ORPCError("FORBIDDEN", { message: "Sem permissão para ver este funcionário" });
+  }
+}

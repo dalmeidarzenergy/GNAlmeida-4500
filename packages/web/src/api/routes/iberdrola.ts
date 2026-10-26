@@ -5,7 +5,8 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import { join } from "node:path";
 import { buildIberdrolaPdf } from "./iberdrola-pdf";
 import { auth } from "../auth";
-import { requireView, requireEdit, type Role } from "../middleware/auth";
+import { requireView, requireEdit, restrictToEmployee, assertOwnEmployee, type Role } from "../middleware/auth";
+import { ORPCError } from "@orpc/server";
 import { db } from "../database";
 import { PUBLIC_DIR } from "../lib/public-files";
 import {
@@ -791,12 +792,29 @@ export const iberdrolaRoute = {
   /** "Autos Finais": cálculo por comercial a partir dos ficheiros do mês. */
   calc: requireView("auto-iberdrola")
     .input(z.object({ month }))
-    .handler(async ({ input }) => buildCalc(input.month)),
+    .handler(async ({ input, context }) => {
+      const result = await buildCalc(input.month);
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      if (filterId !== null) {
+        result.people = result.people.filter((p) => p.employeeId === filterId);
+        result.totals = {
+          gross: round2(result.people.reduce((s, p) => s + p.gross, 0)),
+          chargeback: round2(result.people.reduce((s, p) => s + p.chargeback, 0)),
+          due: round2(result.people.reduce((s, p) => s + p.due, 0)),
+          missingTable: result.people.filter((p) => p.missingTable).length,
+          medemTotal: round2(result.people.reduce((s, p) => s + p.medemTotal, 0)),
+        };
+      }
+      return result;
+    }),
 
   /** Define o desbloqueio de comissões de um comercial: 0 (objetivo) ou 25/50/75/100 (% do 2.º escalão). */
   forceCommissionsSet: requireEdit("auto-iberdrola")
     .input(z.object({ employeeId: z.number().int().positive(), pct: z.number().int().refine((v) => [0, 25, 50, 75, 100].includes(v), "Percentagem inválida.") }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      assertOwnEmployee(filterId, input.employeeId);
+
       const [emp] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, input.employeeId));
       if (!emp) return { found: false as const, forceCommissionsPct: 0 };
       await db.update(employees).set({ forceCommissionsPct: input.pct }).where(eq(employees.id, input.employeeId));
@@ -806,7 +824,10 @@ export const iberdrolaRoute = {
   /** Adiciona uma penalidade VNC a um comercial num mês. */
   vncAdd: requireEdit("auto-iberdrola")
     .input(z.object({ month, employeeId: z.number().int().positive(), idVenda: z.string().trim().min(1), amount: z.number().positive() }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      assertOwnEmployee(filterId, input.employeeId);
+
       const [emp] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, input.employeeId));
       if (!emp) return { found: false as const };
       const [row] = await db.insert(vncPenalties).values({ month: input.month, employeeId: input.employeeId, idVenda: input.idVenda, amount: input.amount }).returning();
@@ -824,7 +845,7 @@ export const iberdrolaRoute = {
   /** Equipas com líder e membros ativos no mês (só as abertas por períodos de atividade). */
   teamList: requireView("auto-iberdrola")
     .input(z.object({ month }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const monthStart = `${input.month}-01`;
       const monthEnd = `${input.month}-31`;
       const allTeams = await db.select().from(teams);
@@ -833,12 +854,25 @@ export const iberdrolaRoute = {
         .where(sql`${teamMemberships.startDate} <= ${monthEnd} AND (${teamMemberships.endDate} IS NULL OR ${teamMemberships.endDate} >= ${monthStart})`);
       const staff = await db.select({ id: employees.id, name: employees.name }).from(employees);
       const names = new Map(staff.map((s) => [s.id, s.name]));
+      const filterId = restrictToEmployee(context.role, context.employeeId);
 
       // Apenas equipas com um período de atividade a sobrepor o mês (abertas).
-      const activeTeams = allTeams.filter((t) => {
+      let activeTeams = allTeams.filter((t) => {
         if (t.leaderId == null) return false;
         return periods.some((p) => p.teamId === t.id && p.startDate <= monthEnd && (p.endDate ?? monthEnd) >= monthStart);
       });
+
+      // Não-admins: só equipas a que pertencem (líder ou membro).
+      if (filterId !== null) {
+        const myTeamIds = new Set<number>();
+        for (const t of activeTeams) {
+          if (t.leaderId === filterId) myTeamIds.add(t.id);
+        }
+        for (const m of memberships) {
+          if (m.employeeId === filterId) myTeamIds.add(m.teamId);
+        }
+        activeTeams = activeTeams.filter((t) => myTeamIds.has(t.id));
+      }
 
       return activeTeams
         .map((t) => {
@@ -866,21 +900,28 @@ export const iberdrolaRoute = {
   /** Lista todos os colaboradores, para escolher o destino de uma troca de venda. */
   staffList: requireView("auto-iberdrola")
     .input(z.object({ month: z.string().optional() }))
-    .handler(async () => {
+    .handler(async ({ context }) => {
       const rows = await db.select({ id: employees.id, name: employees.name }).from(employees);
-      return rows
-        .map((r) => ({ employeeId: r.id, employeeName: r.name }))
-        .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      let result = rows
+        .map((r) => ({ employeeId: r.id, employeeName: r.name }));
+
+      if (filterId !== null) {
+        result = result.filter((r) => r.employeeId === filterId);
+      }
+
+      return result.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
     }),
 
   /** Lista as trocas de venda (overrides) do mês. */
   overrideList: requireView("auto-iberdrola")
     .input(z.object({ month }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const rows = await db.select().from(iberdrolaOverrides).where(eq(iberdrolaOverrides.month, input.month));
       const staff = await db.select({ id: employees.id, name: employees.name }).from(employees);
       const names = new Map(staff.map((s) => [s.id, s.name]));
-      return rows.map((r) => ({
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      let result = rows.map((r) => ({
         id: r.id,
         idVenda: r.idVenda,
         fromEmployeeId: r.fromEmployeeId,
@@ -888,6 +929,10 @@ export const iberdrolaRoute = {
         toEmployeeId: r.toEmployeeId,
         toName: names.get(r.toEmployeeId) ?? `#${r.toEmployeeId}`,
       }));
+      if (filterId !== null) {
+        result = result.filter((r) => r.fromEmployeeId === filterId || r.toEmployeeId === filterId);
+      }
+      return result;
     }),
 
   /** Troca uma venda de um comercial para outro no mês. */
@@ -910,7 +955,10 @@ export const iberdrolaRoute = {
   /** Resumo dos autos de um funcionário, por mês (para a ficha do funcionário). */
   employee: requireView("auto-iberdrola")
     .input(z.object({ employeeId: z.number() }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      assertOwnEmployee(filterId, input.employeeId);
+
       const months = await db.select({ month: iberdrolaImports.month }).from(iberdrolaImports).groupBy(iberdrolaImports.month).orderBy(asc(iberdrolaImports.month));
       const out: { month: string; person: IberdrolaPerson | null }[] = [];
       for (const { month } of months) {
@@ -932,6 +980,7 @@ interface Ctx {
   userId: string;
   name: string;
   role: Role;
+  employeeId: number | null;
   permissions: Permissions;
 }
 
@@ -944,6 +993,7 @@ async function resolveCtx(headers: Headers): Promise<Ctx | null> {
     userId: session.user.id,
     name: session.user.name || session.user.email,
     role,
+    employeeId: r?.employeeId ?? null,
     permissions: effectivePermissions(role, r?.permissions ?? null),
   };
 }
@@ -1072,7 +1122,10 @@ export function iberdrolaRoutes(app: Hono) {
     if (!/^\d{4}-\d{2}$/.test(m)) return c.json({ error: "Mês inválido" }, 400);
 
     const calc = await buildCalc(m);
-    if (!calc.people.length) return c.json({ error: "Sem autos neste mês" }, 404);
+    const filterId = restrictToEmployee(ctx.role, ctx.employeeId);
+    let people = calc.people;
+    if (filterId !== null) people = people.filter((p) => p.employeeId === filterId);
+    if (!people.length) return c.json({ error: "Sem autos neste mês" }, 404);
 
     const XLSX = (await import("xlsx")) as unknown as {
       utils: { aoa_to_sheet: (data: unknown[][]) => unknown; book_new: () => unknown; book_append_sheet: (wb: unknown, ws: unknown, name: string) => void };
@@ -1082,7 +1135,7 @@ export function iberdrolaRoutes(app: Hono) {
     const wb = XLSX.utils.book_new();
     const maxSheetLen = 31;
 
-    for (const p of calc.people) {
+    for (const p of people) {
       const rows: unknown[][] = [];
 
       rows.push([p.employeeName]);
@@ -1186,6 +1239,10 @@ export function iberdrolaRoutes(app: Hono) {
     if (!/^\d{4}-\d{2}$/.test(m)) return c.json({ error: "Mês inválido" }, 400);
     const empId = Number(decodeURIComponent(c.req.param("employeeId")));
     if (!Number.isInteger(empId) || empId <= 0) return c.json({ error: "Funcionário inválido" }, 400);
+
+    // Não-admins só podem ver o seu próprio PDF.
+    const filterId = restrictToEmployee(ctx.role, ctx.employeeId);
+    if (filterId !== null && filterId !== empId) return c.json({ error: "Sem permissão" }, 403);
 
     const calc = await buildCalc(m);
     const p = calc.people.find((x) => x.employeeId === empId);

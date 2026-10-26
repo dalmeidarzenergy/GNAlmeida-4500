@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { requireView, requireEdit } from "../middleware/auth";
+import { ORPCError } from "@orpc/server";
+import { requireView, requireEdit, restrictToEmployee, assertOwnEmployee } from "../middleware/auth";
 import { db } from "../database";
 import { renderAutoPdf } from "../lib/auto-pdf";
 import { writePublic } from "../lib/public-files";
@@ -697,7 +698,8 @@ function applyOverrides(people: PersonBlock[], rows: {
 }
 
 export const paymentsRoute = {
-  list: requireView("pagamentos").handler(async () => {
+  list: requireView("pagamentos").handler(async ({ context }) => {
+    const filterId = restrictToEmployee(context.role, context.employeeId);
     const rows = await db
       .select({
         id: payments.id,
@@ -724,12 +726,19 @@ export const paymentsRoute = {
       .from(payments)
       .leftJoin(employees, eq(employees.id, payments.employeeId))
       .orderBy(desc(payments.month), asc(employees.name));
-    return rows.map((r) => ({ ...r, employeeName: r.employeeName ?? "—" }));
+    let result = rows.map((r) => ({ ...r, employeeName: r.employeeName ?? "—" }));
+    if (filterId !== null) result = result.filter((r) => r.employeeId === filterId);
+    return result;
   }),
 
   save: requireEdit("pagamentos")
     .input(rowInput.extend({ id: z.number().int().positive().optional() }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      if (filterId !== null && input.employeeId !== filterId) {
+        throw new ORPCError("FORBIDDEN", { message: "Sem permissão para editar este funcionário" });
+      }
+
       const data = clean(input);
       if (input.id) {
         await db.update(payments).set(data).where(eq(payments.id, input.id));
@@ -741,7 +750,15 @@ export const paymentsRoute = {
 
   remove: requireEdit("pagamentos")
     .input(z.object({ id: z.number().int().positive() }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      // Não-admins só podem remover os seus próprios pagamentos.
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      if (filterId !== null) {
+        const [row] = await db.select({ employeeId: payments.employeeId }).from(payments).where(eq(payments.id, input.id));
+        if (!row || row.employeeId !== filterId) {
+          throw new ORPCError("FORBIDDEN", { message: "Sem permissão para remover este pagamento" });
+        }
+      }
       await db.delete(payments).where(eq(payments.id, input.id));
       return { ok: true };
     }),
@@ -749,10 +766,13 @@ export const paymentsRoute = {
   /** Cálculo resumido (mantém o formato antigo: rows + totals). */
   calc: requireView("pagamentos")
     .input(z.object({ month }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const b = await buildBreakdown(input.month);
       const saved = await db.select().from(payments).where(eq(payments.month, input.month));
       applyOverrides(b.people, saved);
+
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      if (filterId !== null) b.people = b.people.filter((p) => p.employeeId === filterId);
 
       const rows = b.people.map((p) => ({
         employeeId: p.employeeId,
@@ -785,10 +805,26 @@ export const paymentsRoute = {
   /** Detalhe completo por pessoa/venda — usado no ecrã e no PDF. */
   breakdown: requireView("pagamentos")
     .input(z.object({ month }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const b = await buildBreakdown(input.month);
       const saved = await db.select().from(payments).where(eq(payments.month, input.month));
       applyOverrides(b.people, saved);
+
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      if (filterId !== null) {
+        b.people = b.people.filter((p) => p.employeeId === filterId);
+        b.totals = {
+          due: round2(b.people.reduce((s, r) => s + r.due, 0)),
+          gross: round2(b.people.reduce((s, r) => s + r.gross, 0)),
+          chargeback: round2(b.people.reduce((s, r) => s + r.chargeback, 0)),
+          extras: round2(b.people.reduce((s, r) => s + r.extrasAmount, 0)),
+          missingTable: b.people.filter((r) => r.missingTable).length,
+          pelQty: b.people.reduce((s, r) => s + r.pelQty, 0),
+          ddQty: b.people.reduce((s, r) => s + r.ddQty, 0),
+          feQty: b.people.reduce((s, r) => s + r.feQty, 0),
+        };
+      }
+
       return b;
     }),
 
@@ -805,8 +841,10 @@ export const paymentsRoute = {
    */
   previsao: requireView("pagamentos")
     .input(z.object({ month }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
       const b = await buildBreakdown(input.month);
+
+      const filterId = restrictToEmployee(context.role, context.employeeId);
 
       // Dados de tabelas: o objetivo minimo vem SEMPRE da tabela atribuida.
       const staff = await db
@@ -1013,7 +1051,39 @@ export const paymentsRoute = {
         .filter((x) => x != null)
         .sort((a, z) => z.faltamFornecimento - a.faltamFornecimento || z.registadas - a.registadas);
 
-      return { month: b.month, from: b.from, to: b.to, people: b.people, totals: b.totals, unlock: { sellers: sellerRows, teams: teamRows } };
+      // Filtrar por funcionário quando o utilizador não é admin/diretor.
+      let filteredPeople = b.people;
+      let filteredSellers = sellerRows;
+      let filteredTeams = teamRows;
+      let filteredTotals = b.totals;
+
+      if (filterId !== null) {
+        filteredPeople = b.people.filter((p) => p.employeeId === filterId);
+        filteredSellers = sellerRows.filter((s) => s.employeeId === filterId);
+        // Equipas onde o utilizador é líder ou membro.
+        const myTeamIds = new Set<number>();
+        for (const t of allTeams) {
+          if (t.leaderId === filterId) myTeamIds.add(t.id);
+        }
+        for (const m of memberships) {
+          if (m.employeeId === filterId && m.startDate <= b.to && (m.endDate == null || m.endDate >= b.from)) {
+            myTeamIds.add(m.teamId);
+          }
+        }
+        filteredTeams = teamRows.filter((t) => myTeamIds.has(t.teamId));
+        filteredTotals = {
+          due: round2(filteredPeople.reduce((s, r) => s + r.due, 0)),
+          gross: round2(filteredPeople.reduce((s, r) => s + r.gross, 0)),
+          chargeback: round2(filteredPeople.reduce((s, r) => s + r.chargeback, 0)),
+          extras: round2(filteredPeople.reduce((s, r) => s + r.extrasAmount, 0)),
+          missingTable: filteredPeople.filter((r) => r.missingTable).length,
+          pelQty: filteredPeople.reduce((s, r) => s + r.pelQty, 0),
+          ddQty: filteredPeople.reduce((s, r) => s + r.ddQty, 0),
+          feQty: filteredPeople.reduce((s, r) => s + r.feQty, 0),
+        };
+      }
+
+      return { month: b.month, from: b.from, to: b.to, people: filteredPeople, totals: filteredTotals, unlock: { sellers: filteredSellers, teams: filteredTeams } };
     }),
 
   /**
@@ -1021,7 +1091,10 @@ export const paymentsRoute = {
    */
   autoDetail: requireView("pagamentos")
     .input(z.object({ month, employeeId: z.number().int().positive() }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      assertOwnEmployee(filterId, input.employeeId);
+
       const b = await buildBreakdown(input.month);
       const saved = await db.select().from(payments).where(eq(payments.month, input.month));
       applyOverrides(b.people, saved);
@@ -1049,7 +1122,10 @@ export const paymentsRoute = {
   /** Liga/desliga o pagamento forçado de comissões de um comercial (ignora o bloqueio da tabela). */
   forceCommissionsToggle: requireEdit("pagamentos")
     .input(z.object({ employeeId: z.number().int().positive() }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      assertOwnEmployee(filterId, input.employeeId);
+
       const [emp] = await db.select({ forceCommissions: employees.forceCommissions }).from(employees).where(eq(employees.id, input.employeeId));
       if (!emp) return { found: false as const, forceCommissions: false };
       const next = !emp.forceCommissions;
@@ -1064,13 +1140,27 @@ export const paymentsRoute = {
    */
   autoPdf: requireView("pagamentos")
     .input(z.object({ month, employeeId: z.number().int().positive().optional() }))
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+
+      // Não-admins só podem gerar o seu próprio PDF. Sem employeeId pedido,
+      // força o deles. Com employeeId pedido, rejeita se não for o deles.
+      let effectiveId = input.employeeId;
+      if (filterId !== null) {
+        if (effectiveId !== undefined && effectiveId !== filterId) {
+          throw new ORPCError("FORBIDDEN", { message: "Sem permissão para gerar o PDF deste funcionário" });
+        }
+        effectiveId = filterId;
+      }
+
       const b = await buildBreakdown(input.month);
       const saved = await db.select().from(payments).where(eq(payments.month, input.month));
       applyOverrides(b.people, saved);
 
-      const people = input.employeeId ? b.people.filter((p) => p.employeeId === input.employeeId) : b.people;
-      if (input.employeeId && !people.length) {
+      // Admins/diretores: se nao passou employeeId, gera todos. Caso contrário só o pedido.
+      // Nao-admins: so o seu.
+      const people = effectiveId ? b.people.filter((p) => p.employeeId === effectiveId) : b.people;
+      if (effectiveId && !people.length) {
         return { ok: false as const, reason: "Sem vendas a pagamento para este funcionário no mês.", url: null, name: null, count: 0 };
       }
       if (!people.length) {
