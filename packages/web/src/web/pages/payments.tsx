@@ -254,7 +254,7 @@ function AutoPanel({
 
   const total = person.lines.reduce((s, l) => s + l.luz + l.gas + l.extras, 0);
   return (
-    <div className="card overflow-hidden">
+    <div className="card">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-volt/5 px-5 py-4">
         <div>
           <div className="font-display text-[15px] font-semibold">{person.employeeName}</div>
@@ -265,7 +265,7 @@ function AutoPanel({
       </div>
 
       <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <div>
             <div className="rounded-t-[12px] bg-volt px-4 py-2 text-[11px] font-semibold tracking-wide text-ink">A pagamento (EM FORNECIMENTO)</div>
             <div className="rounded-b-[12px] border border-t-0 border-line">
