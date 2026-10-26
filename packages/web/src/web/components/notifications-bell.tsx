@@ -39,7 +39,7 @@ export function NotificationsBell() {
       </button>
 
       {open && (
-        <div className="absolute bottom-full right-0 z-50 mb-2 w-[320px] overflow-hidden rounded-[14px] border border-line bg-surface shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute top-full right-0 z-50 mt-2 w-[320px] overflow-hidden rounded-[14px] border border-line bg-surface shadow-2xl animate-in fade-in zoom-in-95 duration-100">
           <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
             <span className="text-[13px] font-semibold">Notificações</span>
             {unread > 0 && (

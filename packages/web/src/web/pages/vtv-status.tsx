@@ -66,7 +66,8 @@ export default function VtvStatusPage() {
 
   const pendentes = relevant.filter(({ entries }) => entries.some((e) => e.status === "Pendente") && !entries.some((e) => isKO(e.status)));
   const ko = relevant.filter(({ o, entries }) => entries.some((e) => isKO(e.status)) && (!month || o.date.startsWith(month)));
-  const graves = relevant.filter(({ entries }) => entries.some((e) => isGrave(e.status)));
+  // KO-A/KO-B (gravíssimos) só são assinalados no mês selecionado (por defeito, o mês atual).
+  const graves = relevant.filter(({ o, entries }) => entries.some((e) => isGrave(e.status)) && (!month || o.date.startsWith(month)));
 
   const list = useMemo(() => {
     const src = tab === "pendentes" ? pendentes : ko;
@@ -111,7 +112,7 @@ export default function VtvStatusPage() {
       <PageHeader
         eyebrow="Vendas"
         title="Estado VTV"
-        subtitle="Vendas cujo Estado VTV não está OK. Os estados KO-A e KO-B são gravíssimos, ficam assinalados a vermelho e não desaparecem mesmo após Control/Anulado."
+        subtitle="Vendas cujo Estado VTV não está OK. Os estados KO-A e KO-B são gravíssimos, ficam assinalados a vermelho e não desaparecem mesmo após Control/Anulado — mas apenas no mês selecionado (por defeito, o mês atual)."
       >
         <SearchBox value={q} onChange={setQ} placeholder="Nº, contrato, cliente, vendedor…" />
       </PageHeader>

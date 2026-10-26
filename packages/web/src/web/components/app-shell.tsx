@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert,
+  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -149,7 +149,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="truncate text-[13px] font-medium">{me.data?.name || me.data?.email}</div>
             <div className="text-[11px] text-ink-3">{ROLE_LABEL[role]}</div>
           </div>
-          <NotificationsBell />
           <button className="btn-icon" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo escuro"}>
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
           </button>
@@ -171,11 +170,18 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       )}
       <div className="min-w-0 flex-1 lg:pl-[248px]">
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-bg/85 px-4 backdrop-blur lg:hidden">
-          <button className="btn-icon" onClick={() => setOpen(true)}>
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-line bg-bg/85 px-4 backdrop-blur">
+          <button className="btn-icon lg:hidden" onClick={() => setOpen(true)}>
             <Menu size={18} />
           </button>
-          <Logo />
+          <div className="lg:hidden"><Logo /></div>
+          <div className="flex-1" />
+          {permissions?.["terreno-d2d"]?.view !== false && (
+            <Link to="/terreno-d2d" className="btn-icon" title="Caixa de mensagens (Terreno D2D)">
+              <Mail size={16} />
+            </Link>
+          )}
+          <NotificationsBell />
         </header>
         <main className="mx-auto max-w-[1400px] px-5 py-8 lg:px-8">{children}</main>
       </div>

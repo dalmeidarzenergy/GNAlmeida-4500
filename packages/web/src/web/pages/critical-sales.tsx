@@ -5,6 +5,8 @@ import { useOrders, useToggleAlerts, useSetReady } from "../queries/sales";
 import { useMe } from "../queries/me";
 import { PageHeader, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill, Pagination } from "../components/ui/kit";
 import { MonthYearFilter } from "../components/month-year-filter";
+import { EmployeeFilter } from "../components/employee-filter";
+import { TeamFilter, useTeamIds, useTeamMatcher } from "../components/team-filter";
 import { SALE_STATUS } from "../lib/labels";
 import { errMsg, fmtDate, thisMonth } from "../lib/format";
 
@@ -55,18 +57,22 @@ export default function CriticalSalesPage() {
   const [tab, setTab] = useState<Tab>("tratar");
   const [q, setQ] = useState("");
   const [month, setMonth] = useState(thisMonth());
+  const [seller, setSeller] = useState<number | null>(null);
+  const [team, setTeam] = useState<number | null>(null);
   const [page, setPage] = useState(1);
 
   const role = me.data?.role ?? "";
   const canMute = MUTABLE_ROLES.has(role);
   const privileged = MUTABLE_ROLES.has(role);
+  const teamIds = useTeamIds(team, tab === "criticas" ? month : undefined);
+  const inTeam = useTeamMatcher(team);
 
   const all = orders.data ?? [];
 
   // Vendas por tratar: ainda nos estados pré-Control (desaparecem ao chegar a Control ou Anulado).
   const pending = useMemo(
-    () => all.filter((o) => isPreControl(o.status)),
-    [all],
+    () => all.filter((o) => isPreControl(o.status) && (seller == null || o.sellerId === seller) && (inTeam == null || inTeam(o.sellerId, o.date))),
+    [all, seller, inTeam],
   );
 
   // Vendas críticas: já passaram os 3 dias de contratação (seja ainda em curso, seja já Control).
@@ -75,11 +81,13 @@ export default function CriticalSalesPage() {
     () =>
       all.filter((o) => {
         if (month && !o.date.startsWith(month)) return false;
+        if (seller != null && o.sellerId !== seller) return false;
+        if (inTeam != null && !inTeam(o.sellerId, o.date)) return false;
         if (o.status === "Anulado") return false;
         if (o.ctrlOn) return daysBetween(o.date, o.ctrlOn) > DEADLINE_DAYS;
         return deadineAt(o.date) <= now;
       }),
-    [all, now, month],
+    [all, now, month, seller, inTeam],
   );
 
   const list = useMemo(() => {
@@ -95,7 +103,7 @@ export default function CriticalSalesPage() {
     );
   }, [tab, pending, critical, q]);
 
-  useEffect(() => setPage(1), [q, tab, month]);
+  useEffect(() => setPage(1), [q, tab, month, seller, team]);
   const paged = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   if (orders.error) {
@@ -169,12 +177,16 @@ export default function CriticalSalesPage() {
           { key: "tratar", label: "Vendas por Tratar", count: pending.length },
           { key: "criticas", label: "Vendas Críticas", count: critical.length },
         ]} />
-        {tab === "criticas" && (
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-[12px] text-ink-3">Mês</span>
-            <MonthYearFilter value={month} onChange={setMonth} />
-          </div>
-        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {privileged && <TeamFilter value={team} onChange={setTeam} month={tab === "criticas" ? month : undefined} />}
+          {privileged && <EmployeeFilter month={month} value={seller} onChange={setSeller} onlyIds={teamIds} />}
+          {tab === "criticas" && (
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-ink-3">Mês</span>
+              <MonthYearFilter value={month} onChange={setMonth} />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="card overflow-hidden">
