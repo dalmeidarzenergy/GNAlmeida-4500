@@ -517,7 +517,8 @@ export const reports = {
       return evolutionReport(input.granularity, input.month, await resolveScope(context, input.sellerId, input.teamId), input.services);
     }),
   dashboard: authed.input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), months: z.number().int().min(0).max(240).optional(), sellerId: z.number().nullable().optional(), teamId: z.number().nullable().optional(), services: servicesInput }).optional()).handler(async ({ input, context }) => {
-    const month = input?.month ?? new Date().toISOString().slice(0, 7);
+    const all = !input?.month;
+    const month = input?.month || new Date().toISOString().slice(0, 7);
     const showSales = context.role !== "rh";
     const showHr = context.role !== "vendedor";
     let salesData = null;
@@ -525,8 +526,9 @@ export const reports = {
     let target = 0;
     if (showSales) {
       const sellerId = await resolveScope(context, input?.sellerId, input?.teamId);
-      salesData = await salesReport(input?.months ?? 6, sellerId, month, input?.services);
-      monthData = await salesReport(1, sellerId, month, input?.services);
+      // Sem mês escolhido: o período do gráfico passa a ser o histórico completo.
+      salesData = await salesReport(all ? 0 : (input?.months ?? 6), sellerId, month, input?.services);
+      monthData = all ? salesData : await salesReport(1, sellerId, month, input?.services);
       const t = await db
         .select({ total: sql<number>`coalesce(sum(${salesTargets.target}),0)` })
         .from(salesTargets)
@@ -534,11 +536,13 @@ export const reports = {
       target = Number(t[0]?.total ?? 0);
     }
     // Contagem de vendas "Em Fornecimento" (as metas são por número de vendas).
-    const monthTotal = salesData?.byMonth.find((m) => m.month === month)?.orders ?? 0;
-    const prevMonth = salesData?.byMonth.at(-2)?.orders ?? 0;
+    // Com "todos os meses" o total é o do período inteiro, não o de um mês.
+    const monthTotal = all ? (salesData?.orders ?? 0) : (salesData?.byMonth.find((m) => m.month === month)?.orders ?? 0);
+    const prevMonth = all ? 0 : (salesData?.byMonth.at(-2)?.orders ?? 0);
     return {
       role: context.role,
       month,
+      all,
       sales: salesData && monthData ? { ...salesData, monthTotal, prevMonth, target, month: monthData } : null,
       hr: showHr ? await hrReport() : null,
     };

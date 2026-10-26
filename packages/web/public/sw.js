@@ -1,10 +1,10 @@
-// Service Worker do CRM GNAlmeida — cache básica.
+// Service Worker do CRM D2D Consulting — cache básica.
 // Estratégia:
 //   - Navegação (HTML): rede primeiro, fallback para a shell em cache (modo offline).
 //   - Assets estáticos: cache primeiro (os ficheiros do build têm nomes com hash).
 //   - API e autenticação (/api/): sempre pela rede, nunca em cache.
 
-const CACHE_NAME = "gnalmeida-v1";
+const CACHE_NAME = "d2dconsulting-v1";
 const SHELL = [
   "/",
   "/manifest.json",

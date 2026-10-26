@@ -115,7 +115,7 @@ export default function SignInPage() {
 
           <form onSubmit={submit} className="space-y-4">
             <Field label="Email">
-              <input aria-label="Email" className="input h-11" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nome@gnalmeida.pt" required />
+              <input aria-label="Email" className="input h-11" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nome@d2dconsulting.pt" required />
             </Field>
             <Field label="Palavra-passe">
               <input aria-label="Palavra-passe" className="input h-11" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" minLength={8} required />

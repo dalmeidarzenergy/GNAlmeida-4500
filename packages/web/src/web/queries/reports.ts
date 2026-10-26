@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { orpc } from "../lib/api";
 
 export const useDashboard = (month: string, sellerId: number | null = null, services?: string[], teamId: number | null = null, months = 6) =>
-  useQuery(orpc.reports.dashboard.queryOptions({ input: { month, months, sellerId, teamId, services }, placeholderData: (prev) => prev }));
+  useQuery(orpc.reports.dashboard.queryOptions({ input: { month: month || undefined, months, sellerId, teamId, services }, placeholderData: (prev) => prev }));
 export const useSalesReport = (
   months: number,
   month: string,

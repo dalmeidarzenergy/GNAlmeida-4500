@@ -13,5 +13,5 @@ export function WebShell({ url }: { url: string }) {
     position: "absolute",
     inset: 0,
   };
-  return createElement("iframe", { src: url, title: "GNAlmeida", style });
+  return createElement("iframe", { src: url, title: "D2D Consulting", style });
 }

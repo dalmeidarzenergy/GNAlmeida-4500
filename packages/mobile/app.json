@@ -2,7 +2,7 @@
   "expo": {
     "icon": "./assets/icon.png",
     "android": {
-      "package": "com.gnalmeida_x7k2.runable",
+      "package": "com.d2dconsulting_x7k2.runable",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"
@@ -19,7 +19,7 @@
       }
     },
     "ios": {
-      "bundleIdentifier": "com.gnalmeida_x7k2.runable",
+      "bundleIdentifier": "com.d2dconsulting_x7k2.runable",
       "supportsTablet": true
     },
     "splash": {
@@ -27,8 +27,8 @@
       "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
-    "name": "GNAlmeida",
-    "slug": "gnalmeida",
+    "name": "D2D Consulting",
+    "slug": "d2dconsulting",
     "version": "1.0.0",
     "scheme": "runable-rzenerg-ak5tvb9",
     "orientation": "portrait",

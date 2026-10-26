@@ -32,8 +32,7 @@ export default function Dashboard() {
   const teamIds = useTeamIds(team, selMonth);
   const [services, setServices] = useState<string[]>(DASHBOARD_SERVICES);
   const [aggMonths, setAggMonths] = useState<"3" | "6" | "12" | "0">("6");
-  const q = useDashboard(selMonth, seller, services, team, Number(aggMonths));
-  const firstName = (me.data?.name || "").split(" ")[0];
+  const q = useDashboard(selMonth, seller, services, team, Number(aggMonths));  const firstName = (me.data?.name || "").split(" ")[0];
   const hour = new Date().getHours();
   const greet = hour < 12 ? "Bom dia" : hour < 20 ? "Boa tarde" : "Boa noite";
 
@@ -52,6 +51,7 @@ export default function Dashboard() {
   }
   const { sales, hr, month } = q.data;
   const unlinked = me.data?.role === "vendedor" && !me.data.employeeId;
+  const allMonths = !selMonth;
   const aggLabel = aggMonths === "0" ? "Todos os meses" : `${aggMonths} meses`;
 
   return (
@@ -60,7 +60,7 @@ export default function Dashboard() {
         {sales && <ServiceFilter value={services} onChange={setServices} />}
         {sales && (me.data?.role === "admin" || me.data?.role === "rh") && <TeamFilter value={team} onChange={setTeam} month={selMonth} />}
         {sales && (me.data?.role === "admin" || me.data?.role === "rh") && <EmployeeFilter month={selMonth} value={seller} onChange={setSeller} onlyIds={teamIds} />}
-        {sales && <MonthYearFilter value={selMonth} onChange={setSelMonth} />}
+        {sales && <MonthYearFilter value={selMonth} onChange={setSelMonth} allowAll />}
         {sales && (
           <Link to="/vendas" className="btn btn-primary">
             <ShoppingCart size={15} /> Nova venda
@@ -81,21 +81,25 @@ export default function Dashboard() {
       {sales && !unlinked && (
         <>
           <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <Stat delay={0} label={`Em Fornecimento · ${monthLabel(month)}`} value={sales.monthTotal} accent="var(--volt)" icon={<Zap size={16} />} sub={<Delta cur={sales.monthTotal} prev={sales.prevMonth} />} />
+            <Stat delay={0} label={allMonths ? "Em Fornecimento · histórico" : `Em Fornecimento · ${monthLabel(month)}`} value={sales.monthTotal} accent="var(--volt)" icon={<Zap size={16} />} sub={allMonths ? "todos os meses registados" : <Delta cur={sales.monthTotal} prev={sales.prevMonth} />} />
             <Stat
               delay={40}
-              label="Meta do mês"
+              label={allMonths ? "Meta do mês (referência)" : "Meta do mês"}
               value={sales.target ? fmtPct(sales.monthTotal / sales.target) : "—"}
               icon={<Target size={16} />}
               sub={
                 <div className="space-y-2">
                   <Progress value={sales.target ? sales.monthTotal / sales.target : 0} />
-                  <div>{sales.monthTotal} de {sales.target} vendas</div>
+                  <div>
+                    {allMonths
+                      ? sales.monthTotal + " vendas no total · meta de " + sales.target + " para " + monthLabel(month)
+                      : sales.monthTotal + " de " + sales.target + " vendas"}
+                  </div>
                 </div>
               }
             />
-            <Stat delay={80} label="Vendas registadas (mês)" value={sales.month.byStatus.reduce((s, x) => s + x.count, 0)} icon={<Receipt size={16} />} sub="todos os estados" />
-            <Stat delay={120} label={`Em Fornecimento (${aggLabel.toLowerCase()})`} value={sales.orders} icon={<ShoppingCart size={16} />} sub={`até ${monthLabel(month)}`} />
+            <Stat delay={80} label={allMonths ? "Vendas registadas (histórico)" : "Vendas registadas (mês)"} value={sales.month.byStatus.reduce((s, x) => s + x.count, 0)} icon={<Receipt size={16} />} sub="todos os estados" />
+            <Stat delay={120} label={allMonths ? "Em Fornecimento (histórico)" : `Em Fornecimento (${aggLabel.toLowerCase()})`} value={sales.orders} icon={<ShoppingCart size={16} />} sub={allMonths ? "todos os meses registados" : `até ${monthLabel(month)}`} />
           </div>
 
           <div className="mt-4 grid gap-4 xl:grid-cols-[1.7fr_1fr]">
@@ -103,7 +107,7 @@ export default function Dashboard() {
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="label-mono">Vendas em fornecimento</div>
-                  <div className="mt-1 font-display text-[17px] font-semibold">{aggLabel} até {monthLabel(month)}</div>
+                  <div className="mt-1 font-display text-[17px] font-semibold">{allMonths ? "Todo o histórico" : `${aggLabel} até ${monthLabel(month)}`}</div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Tabs value={aggMonths} onChange={setAggMonths} items={[{ key: "3", label: "3 meses" }, { key: "6", label: "6 meses" }, { key: "12", label: "12 meses" }, { key: "0", label: "Todos" }]} />
@@ -113,7 +117,7 @@ export default function Dashboard() {
               <TrendChart data={sales.byMonth} dataKey="orders" money={false} height={250} />
             </div>
             <div className="card rise p-5" style={{ animationDelay: "200ms" }}>
-              <div className="label-mono">Ranking · {monthLabel(month)}</div>
+              <div className="label-mono">Ranking · {allMonths ? "histórico" : monthLabel(month)}</div>
               <div className="mb-4 mt-1 font-display text-[17px] font-semibold">{me.data?.role === "vendedor" ? "Os meus melhores clientes" : me.data?.role === "chefe" ? "Vendedores da minha equipa" : "Vendedores"}</div>
               <div className="space-y-3.5">
                 {(me.data?.role === "vendedor" ? sales.month.topClients : me.data?.role === "chefe" ? sales.month.bySeller : sales.month.bySeller).slice(0, 6).map((s, i, arr) => (
@@ -140,7 +144,7 @@ export default function Dashboard() {
             <div className="card rise mt-4 p-5" style={{ animationDelay: "210ms" }}>
               <div className="flex items-baseline justify-between gap-3">
                 <div>
-                  <div className="label-mono">Ranking · {monthLabel(month)}</div>
+                  <div className="label-mono">Ranking · {allMonths ? "histórico" : monthLabel(month)}</div>
                   <div className="mb-4 mt-1 font-display text-[17px] font-semibold">Chefes de equipa</div>
                 </div>
                 <span className="text-[11.5px] text-ink-3">vendas em fornecimento da equipa (membros + chefe)</span>
@@ -176,8 +180,8 @@ export default function Dashboard() {
           )}
 
           <div className="card rise mt-4 p-5" style={{ animationDelay: "220ms" }}>
-            <div className="label-mono">Relatório do mês</div>
-            <div className="mb-4 mt-1 font-display text-[17px] font-semibold">Vendas por estado · {monthLabel(month)}</div>
+            <div className="label-mono">{allMonths ? "Relatório histórico" : "Relatório do mês"}</div>
+            <div className="mb-4 mt-1 font-display text-[17px] font-semibold">Vendas por estado · {allMonths ? "histórico" : monthLabel(month)}</div>
             {sales.month.byStatus.length === 0 ? (
               <div className="text-[13px] text-ink-3">Sem vendas registadas neste mês.</div>
             ) : (

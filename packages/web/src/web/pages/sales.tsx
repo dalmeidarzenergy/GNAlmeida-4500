@@ -55,6 +55,12 @@ function StatusSelect({ value, onChange, label }: { value: string; onChange: (v:
 
 const PAGE_SIZE = 20;
 
+/** Nº de contrato guardado em `details` (campo opcional, texto livre). */
+function contractNo(o: Order) {
+  const v = o.details?.contractNumber;
+  return typeof v === "string" ? v.toLowerCase() : "";
+}
+
 export default function SalesPage() {
   const me = useMe();
   const orders = useOrders();
@@ -82,7 +88,7 @@ export default function SalesPage() {
     return scoped.filter(
       (o) =>
         (tab === "todas" || inGroup(tab, o.status)) &&
-        (!s || o.number.toLowerCase().includes(s) || o.clientName.toLowerCase().includes(s) || (o.sellerName ?? "").toLowerCase().includes(s) || (o.clientNif ?? "").includes(s) || (o.service ?? "").toLowerCase().includes(s)),
+        (!s || o.number.toLowerCase().includes(s) || o.clientName.toLowerCase().includes(s) || (o.sellerName ?? "").toLowerCase().includes(s) || (o.clientNif ?? "").includes(s) || (o.service ?? "").toLowerCase().includes(s) || contractNo(o).includes(s)),
     );
   }, [scoped, q, tab]);
   useEffect(() => setPage(1), [q, tab, month, seller, team, services]);
@@ -129,7 +135,7 @@ export default function SalesPage() {
           {isAdmin && <TeamFilter value={team} onChange={setTeam} month={month || undefined} />}
           {isAdmin && <EmployeeFilter month={month} value={seller} onChange={setSeller} onlyIds={teamIds} />}
           <MonthYearFilter value={month} onChange={setMonth} allowAll />
-          <SearchBox value={q} onChange={setQ} placeholder="Nº, cliente, NIF, vendedor…" />
+          <SearchBox value={q} onChange={setQ} placeholder="Nº, contrato, cliente, NIF, vendedor…" />
         </div>
       </div>
 
@@ -147,7 +153,7 @@ export default function SalesPage() {
                   <tr key={o.id} className={sel.has(o.id) ? "bg-volt/5" : undefined}>
                     {isAdmin && <td className="w-10"><RowBox label={`Selecionar ${o.number}`} checked={sel.has(o.id)} onChange={() => sel.toggle(o.id)} /></td>}
                     <td className="num text-[12.5px] text-ink-2">{o.number}</td>
-                    <td className="num text-[12.5px] text-ink-2">{typeof o.details?.contractNumber === "string" && o.details.contractNumber ? o.details.contractNumber : "—"}</td>
+                    <td className="num text-[12.5px] text-ink-2">{contractNo(o) ? o.details?.contractNumber as string : "—"}</td>
                     <td className="num whitespace-nowrap text-[12.5px]">{fmtDate(o.date)}</td>
                     <td><div className="font-medium">{o.clientName}</div>{o.clientNif && <div className="num text-[11px] text-ink-3">{o.clientNif}</div>}</td>
                     <td className="text-[12.5px] text-ink-2">{[o.supplier, o.service].filter(Boolean).join(" · ") || "—"}</td>

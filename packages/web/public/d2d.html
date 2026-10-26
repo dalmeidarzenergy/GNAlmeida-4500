@@ -92,14 +92,14 @@ nav button{position:relative}nav button.on::after{content:"";position:absolute;l
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 nav.six button{font-size:13px;padding:10px 12px}
 .syncb{font-size:12px;padding:4px 10px;border-radius:999px;color:var(--mu);white-space:nowrap}
-.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:4px}.brand i{font-style:normal;background:var(--ac);color:var(--act);border-radius:8px;width:24px;height:24px;display:grid;place-items:center;font-size:13px}.brand b{color:var(--ac);font-weight:700}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:4px}.brand img{width:26px;height:26px;border-radius:7px;display:block;object-fit:contain}.brand b{color:var(--ac);font-weight:700}
 h1{letter-spacing:-.01em}.card{background:var(--card)}
 </style>
 </head>
 <body>
 <div id="toast" role="status"></div>
 <main>
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div class="brand"><i>⚡</i>GN<b>Almeida</b></div><h1>Terreno D2D</h1></div><button id="sync" class="syncb" aria-label="Estado da sincronização"></button></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><div class="brand"><img src="/icons/logo.png" alt="D2D Consulting">D2D <b>Consulting</b></div><h1>Terreno D2D</h1></div><button id="sync" class="syncb" aria-label="Estado da sincronização"></button></div>
   <p class="sub" id="sub">Gestão de porta a porta</p>
 
   <div class="cb hide" id="closeBanner" role="alert"><div style="flex:1"><b>⏰ Fechar o dia</b><div class="tag" id="cbTxt"></div></div><button class="pri" style="width:auto;margin:0" id="btnClose">Fechar dia</button></div>
