@@ -141,7 +141,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
       <div className="border-t border-line p-3">
         <div className="flex items-center gap-3 rounded-[10px] p-2">
-          <Avatar name={me.data?.name || me.data?.email || "?"} />
+          <Avatar name={me.data?.name || me.data?.email || "?"} src={me.data?.image} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium">{me.data?.name || me.data?.email}</div>
             <div className="text-[11px] text-ink-3">{ROLE_LABEL[role]}</div>
