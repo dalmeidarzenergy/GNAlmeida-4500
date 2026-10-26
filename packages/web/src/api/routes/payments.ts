@@ -327,32 +327,34 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       const signedMonth = e.signedOn ? e.signedOn.slice(0, 7) : "";
       const dentroChargeback = signedMonth ? deltaMonths(signedMonth, m) <= 3 : false;
 
-      // Anulada: so aparece em transito (assinada no mes) ou em
-      // "nao vem a pagamento" (anulada no mes). Fora disso, nao aparece.
+      // Anulada: so aparece em "nao vem a pagamento" (venda assinada e anulada
+      // que entra no mes). Nunca em transito, nunca a pagamento.
       if (firstAnulado) {
         const signedThisMonth = e.signedOn != null && e.signedOn >= from && e.signedOn <= to;
-        if (!signedThisMonth) continue;
-        // signed this month — fall through to transit
-      } else {
-
-        if (foiPaga && baixouAgora && dentroChargeback) {
-          const l = chargeback.get(e.sellerId) ?? [];
-          l.push(lite);
-          chargeback.set(e.sellerId, l);
-          continue;
+        if (signedThisMonth) {
+          const l = notPaid.get(e.sellerId) ?? [];
+          l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: "Anulado", energy: k });
+          notPaid.set(e.sellerId, l);
         }
+        continue;
+      }
 
-        // Vem a pagamento: entrou em fornecimento neste mes, foi assinada neste
-        // mes, e nao tem Baixa nem Manual no proprio mes de fornecimento.
-        // Baixa num mes futuro nao impede o pagamento — sera tratada como
-        // chargeback nesse mes.
-        if (suppliedOn && suppliedOn >= from && suppliedOn <= to && e.signedOn && e.signedOn >= from && e.signedOn <= to && !baixaNoMesSup && !manual) {
-          const l = valid.get(e.sellerId) ?? [];
-          l.push(lite);
-          valid.set(e.sellerId, l);
-          continue;
-        }
+      if (foiPaga && baixouAgora && dentroChargeback) {
+        const l = chargeback.get(e.sellerId) ?? [];
+        l.push(lite);
+        chargeback.set(e.sellerId, l);
+        continue;
+      }
 
+      // Vem a pagamento: entrou em fornecimento neste mes, foi assinada neste
+      // mes, e nao tem Baixa nem Manual no proprio mes de fornecimento.
+      // Baixa num mes futuro nao impede o pagamento — sera tratada como
+      // chargeback nesse mes.
+      if (suppliedOn && suppliedOn >= from && suppliedOn <= to && e.signedOn && e.signedOn >= from && e.signedOn <= to && !baixaNoMesSup && !manual) {
+        const l = valid.get(e.sellerId) ?? [];
+        l.push(lite);
+        valid.set(e.sellerId, l);
+        continue;
       }
 
       // Nao vem a pagamento: so aparece com movimento NESTE mes, e so para
@@ -361,7 +363,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       const anulouNeste = anulados.some((d) => d >= from && d <= to);
       const manualNeste = e.manual[k].some((d) => d >= from && d <= to);
       const signedThisMonth = e.signedOn != null && e.signedOn >= from && e.signedOn <= to;
-      if (signedThisMonth && (baixouNeste || anulouNeste || (manualNeste && !firstBaixa && !firstAnulado))) {
+      if (signedThisMonth && (baixouNeste || anulouNeste || manualNeste)) {
         const l = notPaid.get(e.sellerId) ?? [];
         const st = statusLabel(baixouNeste ? "Baixa" : anulouNeste ? "Anulado" : "Manual");
         l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st, energy: k });
@@ -370,12 +372,12 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       }
 
       // Vendas em transito: vendas assinadas neste mes que ainda nao chegaram
-      // a fornecimento (ou foram anuladas). So aparecem no mes de assinatura.
+      // a fornecimento. So aparecem no mes de assinatura.
       if (!suppliedOn && !firstBaixa) {
         const evts = [...e.hist[k]].sort((a, b) => a.on.localeCompare(b.on));
         const actual = evts.length ? evts[evts.length - 1].status : "";
         const startMonth = (e.signedOn ?? evts[0]?.on ?? "").slice(0, 7);
-        if (startMonth && startMonth === m && (TRANSIT.has(actual) || actual === "Anulado")) {
+        if (startMonth && startMonth === m && TRANSIT.has(actual)) {
           const l = inTransit.get(e.sellerId) ?? [];
           l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: actual, signedOn: e.signedOn, energy: k });
           inTransit.set(e.sellerId, l);
@@ -956,7 +958,11 @@ export const paymentsRoute = {
           // A tabela e o objetivo valem mesmo sem vendas no mes (aparece a 0).
           const table = commissionTableOf(s.id, s.commissionTableId);
           const min = table ? firstCommissionMin(table.id) : 0;
-          const isChief = allTeams.some((t) => t.leaderId === s.id);
+          const isChief = allTeams.some((t) => {
+            if (t.leaderId !== s.id) return false;
+            const led = memberships.filter((m) => m.teamId === t.id);
+            return led.some((m) => m.startDate <= b.to && (m.endDate == null || m.endDate >= b.from));
+          });
           return {
             employeeId: s.id,
             name: s.name,

@@ -176,7 +176,6 @@ function personBlock(doc: PDFKit.PDFDocument, p: PdfPerson, month: string) {
     ["Chargeback a descontar", p.chargeback ? `-${eur(p.chargeback)}` : "-"],
     ["Penalização de timing", p.penaltyTiming ? `-${eur(p.penaltyTiming)}` : "-"],
     ["Penalização de campanha", p.penaltyCampaign ? `-${eur(p.penaltyCampaign)}` : "-"],
-    ["Desconto folha de km", p.kmDeduction ? `-${eur(p.kmDeduction)}` : "-"],
   ];
   for (let i = 0; i < rows.length; i++) {
     const y = doc.y;

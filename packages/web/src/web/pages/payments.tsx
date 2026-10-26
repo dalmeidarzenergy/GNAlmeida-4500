@@ -69,7 +69,6 @@ function PaymentForm({ initial, onClose, defaultMonth }: { initial: PayRow | nul
   const [grossAmount, setGrossAmount] = useState(initial ? String(initial.grossAmount) : "");
   const [penaltyTiming, setPenaltyTiming] = useState(initial ? String(initial.penaltyTiming) : "");
   const [penaltyCampaign, setPenaltyCampaign] = useState(initial ? String(initial.penaltyCampaign) : "");
-  const [kmDeduction, setKmDeduction] = useState(initial ? String(initial.kmDeduction) : "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
 
@@ -96,7 +95,6 @@ function PaymentForm({ initial, onClose, defaultMonth }: { initial: PayRow | nul
           grossAmount: num(grossAmount),
           penaltyTiming: num(penaltyTiming),
           penaltyCampaign: num(penaltyCampaign),
-          kmDeduction: num(kmDeduction),
           notes: notes || null,
         };
         try {
@@ -133,7 +131,6 @@ function PaymentForm({ initial, onClose, defaultMonth }: { initial: PayRow | nul
           <Field label="FE (nº)"><input className="input num" placeholder="0" value={feQty} onChange={(e) => setFeQty(e.target.value)} /></Field>
           <Field label="Extras (EUR)"><input className="input num" placeholder="0" value={extrasAmount} onChange={(e) => setExtrasAmount(e.target.value)} /></Field>
           <Field label="Base antes de descontos (EUR)"><input className="input num" placeholder="0" value={grossAmount} onChange={(e) => setGrossAmount(e.target.value)} /></Field>
-          <Field label="Desconto folha de km (EUR)"><input className="input num" placeholder="0" value={kmDeduction} onChange={(e) => setKmDeduction(e.target.value)} /></Field>
           <Field label="Penalizacao de timing (EUR)"><input className="input num" placeholder="0" value={penaltyTiming} onChange={(e) => setPenaltyTiming(e.target.value)} /></Field>
           <Field label="Penalizacao de campanha (EUR)"><input className="input num" placeholder="0" value={penaltyCampaign} onChange={(e) => setPenaltyCampaign(e.target.value)} /></Field>
         </div>
@@ -211,7 +208,6 @@ function AutoResumo({ p }: { p: AutoPerson }) {
     ["Chargeback a descontar", p.chargeback ? `-${fmtEur(p.chargeback)}` : "-"],
     ["Penalizacao de timing", p.penaltyTiming ? `-${fmtEur(p.penaltyTiming)}` : "-"],
     ["Penalizacao de campanha", p.penaltyCampaign ? `-${fmtEur(p.penaltyCampaign)}` : "-"],
-    ["Desconto folha de km", p.kmDeduction ? `-${fmtEur(p.kmDeduction)}` : "-"],
   ];
   return (
     <div className="overflow-hidden rounded-[12px] border border-line">
