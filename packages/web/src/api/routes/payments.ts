@@ -347,16 +347,13 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         continue;
       }
 
-      // Nao vem a pagamento: so aparece com movimento NESTE mes.
-      // - Baixa neste mes: aparece no mes da baixa e nunca mais (definitiva).
-      // - Anulado neste mes: idem — nunca paga nem da chargeback.
-      // - Manual (ou outro estado != "Em Fornecimento") neste mes: aparece agora e
-      //   continua a arrastar nos meses seguintes ate dar baixa.
-      // Estados que ocorreram em meses futuros nao aparecem neste mes.
+      // Nao vem a pagamento: so aparece com movimento NESTE mes, e so para
+      // vendas assinadas neste mes (mesma regra do pagamento).
       const baixouNeste = baixas.some((d) => d >= from && d <= to);
       const anulouNeste = anulados.some((d) => d >= from && d <= to);
       const manualNeste = e.manual[k].some((d) => d >= from && d <= to);
-      if (baixouNeste || anulouNeste || (manualNeste && !firstBaixa && !firstAnulado)) {
+      const signedThisMonth = e.signedOn != null && e.signedOn >= from && e.signedOn <= to;
+      if (signedThisMonth && (baixouNeste || anulouNeste || (manualNeste && !firstBaixa && !firstAnulado))) {
         const l = notPaid.get(e.sellerId) ?? [];
         const st = statusLabel(baixouNeste ? "Baixa" : anulouNeste ? "Anulado" : "Manual");
         l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: st, energy: k });
@@ -364,14 +361,13 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
         continue;
       }
 
-      // Vendas em transito: desde o mes da assinatura (ou do primeiro estado) ate
-      // chegarem a fornecimento. Sem pe até ao mes seguinte— a venda aparece em
-      // todos os meses enquanto o estado atual continuar a ser um estado de transito.
+      // Vendas em transito: desde o mes da assinatura ate chegarem a
+      // fornecimento. So aparecem se foram assinadas neste mes.
       if (!suppliedOn && !firstBaixa && !firstAnulado) {
         const evts = [...e.hist[k]].sort((a, b) => a.on.localeCompare(b.on));
         const actual = evts.length ? evts[evts.length - 1].status : "";
         const startMonth = (e.signedOn ?? evts[0]?.on ?? "").slice(0, 7);
-        if (startMonth && startMonth <= m && TRANSIT.has(actual)) {
+        if (startMonth && startMonth === m && TRANSIT.has(actual)) {
           const l = inTransit.get(e.sellerId) ?? [];
           l.push({ saleId, number: contract(e.details), service: e.service, details: e.details, status: actual, signedOn: e.signedOn, energy: k });
           inTransit.set(e.sellerId, l);
