@@ -76,6 +76,20 @@ export default function SaleSummaryPage() {
   const mutable = MUTABLE_ROLES.has(me.data?.role ?? "");
   const isAdmin = me.data?.role === "admin";
 
+  // "Voltar" regressa ao menu de onde se veio (passado em ?from=… nos links das
+  // listas) — o `navigate(-1)` do wouter é tratado como caminho literal
+  // "/venda/-1", o que produzia "venda não encontrada".
+  const goBack = () => {
+    const from = new URLSearchParams(window.location.search).get("from");
+    if (from && from.startsWith("/") && !from.includes("//")) {
+      navigate(from);
+    } else if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      navigate("/vendas");
+    }
+  };
+
   if (orders.isLoading || me.isLoading) {
     return <div><PageHeader eyebrow="Vendas" title="Resumo da venda" /><div className="card"><TableSkeleton cols={4} /></div></div>;
   }
@@ -86,7 +100,7 @@ export default function SaleSummaryPage() {
   return (
     <div>
       <PageHeader eyebrow="Vendas" title={`Venda ${sale.number}`} subtitle={sale.clientName}>
-        <button type="button" className="btn btn-ghost" onClick={() => navigate(-1)}><ArrowLeft size={15} /> Voltar</button>
+        <button type="button" className="btn btn-ghost" onClick={goBack}><ArrowLeft size={15} /> Voltar</button>
       </PageHeader>
 
       {mutable ? (
@@ -107,7 +121,7 @@ export default function SaleSummaryPage() {
               sellerId: sale.sellerId ?? null,
               sellerName: sale.sellerName ?? null,
             }}
-            onClose={() => navigate(-1)}
+            onClose={goBack}
             isAdmin={isAdmin}
           />
         </div>

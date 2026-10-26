@@ -230,7 +230,7 @@ export default function CriticalSalesPage() {
                       <td className="w-40 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {headerBtn(o)}
-                          <Link href={`/venda/${o.id}`} className="btn btn-ghost h-8 text-[12px]">Abrir</Link>
+                          <Link href={`/venda/${o.id}?from=/vendas-criticas`} className="btn btn-ghost h-8 text-[12px]">Abrir</Link>
                         </div>
                       </td>
                     </tr>
