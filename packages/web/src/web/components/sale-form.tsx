@@ -83,6 +83,24 @@ function CampaignSelect({ label, current, list, onChange }: { label: string; cur
   );
 }
 
+/** Caixa +AMIGO ao lado do campo de campanha (penaliza 62,5% do valor da luz na previsão). */
+function AmigoCheckbox({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <Field label="+AMIGO" className="shrink-0">
+      <div className="flex h-10 items-center gap-2">
+        <input
+          type="checkbox"
+          aria-label="+AMIGO"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="h-[18px] w-[18px] accent-volt"
+        />
+        <span className="text-[13px] text-ink-2">Ativo</span>
+      </div>
+    </Field>
+  );
+}
+
 function ServicePicker({ onPick }: { onPick: (s: string) => void }) {
   return (
     <div>
@@ -204,13 +222,28 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
       </div>
       {known && <p className="mb-4 rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] text-ink-2">Cliente já registado: <strong className="text-ink">{known}</strong>. A venda fica associada a esta ficha.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
-        {form.map((def) =>
-          CAMPAIGN_FIELDS[def.key] && campaigns.data?.length ? (
+        {form.map((def) => {
+          // A caixa +AMIGO aparece ao lado do campo de campanha de eletricidade.
+          if (def.key === "campaign") {
+            return (
+              <div key={def.key} className="flex items-end gap-3">
+                <div className="min-w-0 flex-1">
+                  {CAMPAIGN_FIELDS[def.key] && campaigns.data?.length ? (
+                    <CampaignSelect label={def.label} {...campaignOptions(def.key)} onChange={(v) => change(def.key, v)} />
+                  ) : (
+                    <DynamicField def={def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
+                  )}
+                </div>
+                <AmigoCheckbox checked={d.amigo === true} onChange={(v) => change("amigo", v)} />
+              </div>
+            );
+          }
+          return CAMPAIGN_FIELDS[def.key] && campaigns.data?.length ? (
             <CampaignSelect key={def.key} label={def.label} {...campaignOptions(def.key)} onChange={(v) => change(def.key, v)} />
           ) : (
             <DynamicField key={def.key} def={def.kind === "select" && def.optionsFrom ? { ...def, options: fieldOptions(def, d) } : def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
-          ),
-        )}
+          );
+        })}
         <div className="rounded-[12px] border border-line bg-bg p-4 sm:col-span-2">
           {isAdmin ? (
             <Field label="Gestor do cliente *">

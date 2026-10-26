@@ -154,7 +154,10 @@ function splitSaleForm(service: string, details: Details) {
     delete values[k];
   }
   const allowed = new Set(form.map((f) => f.key));
+  // A caixa +AMIGO vive ao lado do campo de campanha, mas não é um campo do formulário.
+  allowed.add("amigo");
   for (const k of Object.keys(values)) if (!allowed.has(k)) delete values[k];
+  if (typeof values.amigo !== "boolean") delete values.amigo;
   const status = typeof values.saleStatus === "string" && SALE_STATUS.includes(values.saleStatus) ? values.saleStatus : DEFAULT_SALE_STATUS;
   values.saleStatus = status;
   if (service === "DUAL") {

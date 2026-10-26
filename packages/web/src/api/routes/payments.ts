@@ -88,6 +88,8 @@ type Resolved = {
   clientName: string | null;
   service: string | null;
   campaign: string | null;
+  /** Venda com a caixa +AMIGO ativa — penaliza 62,5% do valor da luz. */
+  amigo: boolean;
   luz: number;
   gas: number;
   extras: number;
@@ -419,13 +421,15 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     const extras = (dd ? band?.dd ?? 0 : 0) + (fe ? band?.fe ?? 0 : 0) + (pel ? band?.pel ?? 0 : 0);
     const luzCampaign = typeof d.campaign === "string" && d.campaign.trim() !== "" ? d.campaign : null;
     const gasCampaign = typeof d.campaignGas === "string" && d.campaignGas.trim() !== "" ? d.campaignGas : null;
+    const amigo = yes(d.amigo);
     const base = { saleId: e.saleId, number: contract(d), clientName: e.clientName, extras, dd, fe, pel };
     // A energia vem da historia (venda+energia), nao do servico da venda:
     // numa DUAL a Luz e o Gas sao linhas independentes.
+    // O +AMIGO so penaliza a luz; a linha de gas nunca leva o visto.
     if (e.energy === "gas") {
-      return [{ ...base, service: "Gás", campaign: gasCampaign ?? luzCampaign, luz: 0, gas: band?.gas ?? 0, total: (band?.gas ?? 0) + extras }];
+      return [{ ...base, service: "Gás", campaign: gasCampaign ?? luzCampaign, amigo: false, luz: 0, gas: band?.gas ?? 0, total: (band?.gas ?? 0) + extras }];
     }
-    return [{ ...base, service: "Luz", campaign: luzCampaign, luz: band?.luz ?? 0, gas: 0, total: (band?.luz ?? 0) + extras }];
+    return [{ ...base, service: "Luz", campaign: luzCampaign, amigo, luz: band?.luz ?? 0, gas: 0, total: (band?.luz ?? 0) + extras }];
   };
 
   const toLine = (r: Resolved): DetailLine => ({
@@ -496,6 +500,8 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
 
   /** Penalização de campanha de uma venda (positiva = a descontar). */
   const campaignPenalty = (r: Resolved) => {
+    // +AMIGO: caixa ativa na venda penaliza 62,5% do valor da luz.
+    if (r.amigo) return round2(0.625 * r.luz);
     const rule = campaignRuleFor(r.campaign);
     if (!rule) return 0;
     const lz = r.luz;
