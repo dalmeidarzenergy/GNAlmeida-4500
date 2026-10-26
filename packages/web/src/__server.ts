@@ -5,6 +5,55 @@ const port = Number(process.env.PORT ?? 3000);
 const distDir = `${import.meta.dirname}/../dist`;
 const indexPath = `${distDir}/index.html`;
 
+/** Extensões comprimíveis (texto). Imagens/PDF já são comprimidas. */
+const COMPRESSIBLE = /\.(js|css|html|json|svg|xml|txt|map|webmanifest|ico)$/i;
+/** Ficheiros com nome hasheado (assets do Vite) — imutáveis, cache agressivo. */
+const IMMUTABLE = /^\/assets\//;
+
+/** Cache em memória dos ficheiros estáticos já comprimidos (evita re-gerar gzip). */
+const gzipCache = new Map<string, { mtime: number; buf: Uint8Array<ArrayBuffer> }>();
+
+function getStaticFilePath(pathname: string) {
+  const cleanPath = decodeURIComponent(pathname).replace(/^\/+/, "").replaceAll("..", "");
+  return cleanPath ? `${distDir}/${cleanPath}` : indexPath;
+}
+
+async function serveStatic(filePath: string, request: Request): Promise<Response | null> {
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) return null;
+
+  const pathname = new URL(request.url).pathname;
+  const acceptsGzip = /\bgzip\b/.test(request.headers.get("Accept-Encoding") ?? "");
+  const headers = new Headers();
+
+  if (IMMUTABLE.test(pathname)) {
+    // Nome com hash → o conteúdo nunca muda, guardar 1 ano.
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  } else if (filePath.endsWith(".html")) {
+    headers.set("Cache-Control", "no-cache");
+  }
+
+  const compressible = COMPRESSIBLE.test(pathname);
+  if (compressible && acceptsGzip) {
+    const stat = await file.stat();
+    const key = filePath;
+    const cached = gzipCache.get(key);
+    let buf: Uint8Array<ArrayBuffer>;
+    if (cached && cached.mtime === stat.mtimeMs) {
+      buf = cached.buf;
+    } else {
+      buf = Bun.gzipSync(new Uint8Array(await file.arrayBuffer()));
+      gzipCache.set(key, { mtime: stat.mtimeMs, buf });
+    }
+    headers.set("Content-Type", file.type || "application/octet-stream");
+    headers.set("Content-Encoding", "gzip");
+    headers.set("Vary", "Accept-Encoding");
+    return new Response(new Uint8Array(buf), { headers });
+  }
+
+  return new Response(file, { headers });
+}
+
 const server = Bun.serve({
   port,
   async fetch(request) {
@@ -14,12 +63,8 @@ const server = Bun.serve({
       return app.fetch(request);
     }
 
-    const filePath = getStaticFilePath(url.pathname);
-    const file = Bun.file(filePath);
-
-    if (await file.exists()) {
-      return new Response(file);
-    }
+    const staticRes = await serveStatic(getStaticFilePath(url.pathname), request);
+    if (staticRes) return staticRes;
 
     // Ficheiros gerados em runtime (ex.: autos de pagamento em PDF) vivem em
     // public/uploads e nao sao copiados para dist pelo build: servir do repo.
@@ -35,7 +80,10 @@ const server = Bun.serve({
     const index = Bun.file(indexPath);
     if (await index.exists()) {
       return new Response(index, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache",
+        },
       });
     }
 
@@ -47,9 +95,3 @@ const server = Bun.serve({
 });
 
 console.log(`Web server listening on http://localhost:${server.port}`);
-
-function getStaticFilePath(pathname: string) {
-  const cleanPath = decodeURIComponent(pathname).replace(/^\/+/, "").replaceAll("..", "");
-
-  return cleanPath ? `${distDir}/${cleanPath}` : indexPath;
-}

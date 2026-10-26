@@ -1,6 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Evita refetch em cada mudança de foco/aba e dá 30s de frescura — a UI fica
+      // muito mais responsiva; os dados continuam a invalidar-se nas mutações.
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 interface ProviderProps {
   children: React.ReactNode;
