@@ -177,7 +177,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="lg:hidden"><Logo /></div>
           <div className="flex-1" />
           {permissions?.["terreno-d2d"]?.view !== false && (
-            <Link to="/terreno-d2d" className="btn-icon" title="Caixa de mensagens (Terreno D2D)">
+            <Link to="/terreno-d2d?view=caixa" className="btn-icon" title="Caixa de mensagens (Terreno D2D)">
               <Mail size={16} />
             </Link>
           )}
