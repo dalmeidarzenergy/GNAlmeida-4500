@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, lt, inArray, not, sql, type SQL } from "drizzle-orm";
+import { eq, and, gte, lte, lt, ne, inArray, not, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { ORPCError, os } from "@orpc/server";
 import { authed } from "../middleware/auth";
@@ -68,6 +68,8 @@ function saleMatchesPillar(details: Record<string, string | boolean | null> | nu
 function eligibleWhere(rules: IncentiveRules, startDate: string, endDate: string): (SQL | undefined)[] {
   const conds: (SQL | undefined)[] = [
     inArray(sales.status, SALE_COUNTED),
+    // Só contam vendas em fornecimento de eletricidade — exclui MEDEM (Propostas à Medida).
+    ne(sales.service, "MEDEM"),
     gte(sales.date, startDate),
     lte(sales.date, endDate),
   ];
@@ -183,19 +185,17 @@ export const incentivesRoutes = {
       const isEligible = (s: typeof allSales[number]) => {
         const d = s.details as Record<string, string | boolean | null> | null;
         if (!d) return false;
+        // Só contam vendas BTN (eletricidade de baixa tensão normal).
+        const vl = String(d.voltageLevel ?? "");
+        if (vl !== "BTN") return false;
         // Service
         if (rules.eligibleServices.length && s.service && !rules.eligibleServices.includes(s.service)) return false;
-        // Voltage
-        const vl = String(d.voltageLevel ?? "");
-        if (rules.eligibleVoltages.length && !rules.eligibleVoltages.includes(vl)) return false;
         // Power
         const pw = String(d.power ?? "");
         if (rules.eligiblePowers.length && !rules.eligiblePowers.includes(pw)) return false;
         // Exclude offers
         const offer = String(d.campaign ?? "");
         if (rules.excludeOffers.length && rules.excludeOffers.some((o) => offer.toLowerCase().includes(o.toLowerCase()))) return false;
-        // Segment (via NIF — NIF não está em details, mas podemos inferir de clientType ou do campo nif em details)
-        // Para simplificar, usamos o campo "segment" se existir, senão assumimos elegível
         return true;
       };
 

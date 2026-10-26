@@ -21,7 +21,6 @@ import type { IncentivePillar, IncentiveRules } from "../../api/database/schema"
 
 const SERVICES = ["LUZ", "GÁS", "DUAL", "SOLAR"];
 const SEGMENTS = ["particular", "empresa"];
-const VOLTAGES = ["BTN", "BTE", "MT"];
 
 export default function IncentivosPage() {
   const me = useMe();
@@ -245,8 +244,10 @@ function IncentiveForm({ data, onClose, canEdit }: { data?: NonNullable<ReturnTy
           <div className="grid gap-4 sm:grid-cols-2">
             <ChipGroup label="Serviços" options={SERVICES} selected={rules.eligibleServices} onChange={(v) => setRules({ ...rules, eligibleServices: toggleArr(rules.eligibleServices, v) })} />
             <ChipGroup label="Segmento" options={SEGMENTS} selected={rules.eligibleSegments} onChange={(v) => setRules({ ...rules, eligibleSegments: toggleArr(rules.eligibleSegments, v) })} />
-            <ChipGroup label="Nível de tensão" options={VOLTAGES} selected={rules.eligibleVoltages} onChange={(v) => setRules({ ...rules, eligibleVoltages: toggleArr(rules.eligibleVoltages, v) })} />
             <ChipGroup label="Potência (kVA)" options={POWERS_KVA} selected={rules.eligiblePowers} onChange={(v) => setRules({ ...rules, eligiblePowers: toggleArr(rules.eligiblePowers, v) })} />
+          </div>
+          <div className="mt-2 text-[12px] text-ink-3">
+            Só contam vendas <b>BTN em fornecimento</b> (eletricidade, exceto MEDEM).
           </div>
           <div className="mt-3">
             <Field label="Antigos comercializadores elegíveis">
@@ -526,11 +527,11 @@ function IncentiveDetail({ id, onBack, canEdit, onEdit }: { id: number; onBack: 
         <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-[10px] border border-line p-3">
             <div className="text-[11px] text-ink-3">Serviços</div>
-            <div className="mt-1 text-[13px] font-medium">{rules.eligibleServices.length ? rules.eligibleServices.join(", ") : "Todos"}</div>
+            <div className="mt-1 text-[13px] font-medium">{rules.eligibleServices.length ? rules.eligibleServices.join(", ") : "Eletricidade (exceto MEDEM)"}</div>
           </div>
           <div className="rounded-[10px] border border-line p-3">
             <div className="text-[11px] text-ink-3">Nível de tensão</div>
-            <div className="mt-1 text-[13px] font-medium">{rules.eligibleVoltages.length ? rules.eligibleVoltages.join(", ") : "Todos"}</div>
+            <div className="mt-1 text-[13px] font-medium">BTN</div>
           </div>
           <div className="rounded-[10px] border border-line p-3">
             <div className="text-[11px] text-ink-3">Comercializadores</div>
