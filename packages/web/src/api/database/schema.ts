@@ -160,6 +160,8 @@ export const sales = sqliteTable("sales", {
   notes: text("notes"),
   /** Quando true, o comercial deixa de receber alertas (Vendas Críticas / Estado VTV) para esta venda. */
   alertsDisabled: integer("alerts_disabled", { mode: "boolean" }).notNull().default(false),
+  /** Caixa do comercial: a venda pode ser tratada neste momento (notifica admin/diretor). */
+  ready: integer("ready", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
 }, (t) => [
   index("idx_sales_date").on(t.date),

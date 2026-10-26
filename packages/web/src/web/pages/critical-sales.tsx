@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Timer, AlertTriangle, BellOff, BellRing } from "lucide-react";
 import { Link } from "wouter";
-import { useOrders, useToggleAlerts } from "../queries/sales";
+import { useOrders, useToggleAlerts, useSetReady } from "../queries/sales";
 import { useMe } from "../queries/me";
 import { PageHeader, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill } from "../components/ui/kit";
+import { MonthYearFilter } from "../components/month-year-filter";
 import { SALE_STATUS } from "../lib/labels";
-import { errMsg, fmtDate } from "../lib/format";
+import { errMsg, fmtDate, thisMonth } from "../lib/format";
 
 type Order = NonNullable<ReturnType<typeof useOrders>["data"]>[number];
 
@@ -48,11 +49,15 @@ export default function CriticalSalesPage() {
   const me = useMe();
   const orders = useOrders();
   const toggleAlerts = useToggleAlerts();
+  const setReady = useSetReady();
   const now = useNow();
   const [tab, setTab] = useState<Tab>("tratar");
   const [q, setQ] = useState("");
+  const [month, setMonth] = useState(thisMonth());
 
-  const canMute = MUTABLE_ROLES.has(me.data?.role ?? "");
+  const role = me.data?.role ?? "";
+  const canMute = MUTABLE_ROLES.has(role);
+  const privileged = MUTABLE_ROLES.has(role);
 
   const all = orders.data ?? [];
 
@@ -63,14 +68,16 @@ export default function CriticalSalesPage() {
   );
 
   // Vendas críticas: já passaram os 3 dias de contratação (seja ainda em curso, seja já Control).
+  // Filtradas pelo mês selecionado (por defeito o mês atual); "Por Tratar" mostra todas.
   const critical = useMemo(
     () =>
       all.filter((o) => {
+        if (month && !o.date.startsWith(month)) return false;
         if (o.status === "Anulado") return false;
         if (o.ctrlOn) return daysBetween(o.date, o.ctrlOn) > DEADLINE_DAYS;
         return deadineAt(o.date) <= now;
       }),
-    [all, now],
+    [all, now, month],
   );
 
   const list = useMemo(() => {
@@ -157,6 +164,12 @@ export default function CriticalSalesPage() {
           { key: "tratar", label: "Vendas por Tratar", count: pending.length },
           { key: "criticas", label: "Vendas Críticas", count: critical.length },
         ]} />
+        {tab === "criticas" && (
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[12px] text-ink-3">Mês</span>
+            <MonthYearFilter value={month} onChange={setMonth} />
+          </div>
+        )}
       </div>
 
       <div className="card overflow-hidden">
@@ -169,6 +182,7 @@ export default function CriticalSalesPage() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="w-10" aria-label="Pronta a tratar" />
                   <th>Nº</th>
                   <th>Nº Contrato</th>
                   <th>Data</th>
@@ -176,6 +190,7 @@ export default function CriticalSalesPage() {
                   <th>Serviço</th>
                   <th>Vendedor</th>
                   <th>Estado</th>
+                  <th>Observações</th>
                   <th>{tab === "tratar" ? "Prazo" : "Cronómetro"}</th>
                   <th>Penalidade</th>
                   <th aria-label="Ações" />
@@ -186,8 +201,20 @@ export default function CriticalSalesPage() {
                   const c = SALE_STATUS[o.status]?.color ?? "var(--ink-3)";
                   const penalized = tab === "criticas";
                   const muted = o.alertsDisabled;
+                  const canToggleReady = privileged || (role === "vendedor" && me.data?.employeeId != null && me.data.employeeId === o.sellerId);
                   return (
                     <tr key={o.id} className={muted ? "opacity-60" : undefined}>
+                      <td className="w-10">
+                        <input
+                          type="checkbox"
+                          aria-label={`Marcar ${o.number} pronta a tratar`}
+                          title={canToggleReady ? (o.ready ? "Venda marcada como tratável agora" : "Marcar venda como tratável agora (notifica administração)") : "Só o comercial desta venda a pode marcar"}
+                          checked={o.ready}
+                          disabled={!canToggleReady}
+                          onChange={() => setReady.mutate({ id: o.id, ready: !o.ready })}
+                          className="h-[18px] w-[18px] cursor-pointer accent-volt disabled:cursor-default disabled:opacity-40"
+                        />
+                      </td>
                       <td className="num text-[12.5px] text-ink-2">{o.number}</td>
                       <td className="num text-[12.5px] text-ink-2">{(o.details?.contractNumber as string) || "—"}</td>
                       <td className="num whitespace-nowrap text-[12.5px]">{fmtDate(o.date)}</td>
@@ -195,12 +222,15 @@ export default function CriticalSalesPage() {
                       <td className="text-[12.5px] text-ink-2">{o.service ?? "—"}</td>
                       <td className="text-ink-2">{o.sellerName ?? "—"}</td>
                       <td><Pill color={c}>{o.status}</Pill></td>
+                      <td className="max-w-[240px] whitespace-normal text-[12.5px] text-ink-2">
+                        {typeof o.details?.notes === "string" && (o.details.notes as string).trim() ? (o.details.notes as string) : <span className="text-ink-3">—</span>}
+                      </td>
                       <td>{timerCell(o)}</td>
                       <td>{penalized ? <Pill tone="red" label={`−${PENALTY}€`} /> : <span className="text-ink-3">—</span>}</td>
                       <td className="w-40 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {headerBtn(o)}
-                          <Link href={`/vendas`} className="btn btn-ghost h-8 text-[12px]">Abrir</Link>
+                          <Link href={`/venda/${o.id}`} className="btn btn-ghost h-8 text-[12px]">Abrir</Link>
                         </div>
                       </td>
                     </tr>

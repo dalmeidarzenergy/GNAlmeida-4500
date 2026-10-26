@@ -91,6 +91,8 @@ function main() {
 
   for (const s of rows) {
     if (s.sellerId == null) continue;
+    // Só vendas do mês corrente; as de meses anteriores não geram alertas.
+    if ((s.date ?? "").slice(0, 7) !== today.slice(0, 7)) continue;
     const items: Item[] = [];
     let grave = false;
 

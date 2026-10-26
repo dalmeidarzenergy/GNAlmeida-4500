@@ -18,6 +18,7 @@ import { db } from "../database";
 import { clients, employees, saleStatusHistory, sales as salesTbl, salesTargets, teamMemberships, teams, user } from "../database/schema";
 import { localPhotoUrl } from "../lib/s3";
 import { activeInMonth } from "../shared/hierarchy";
+import { notifySaleImmediate, notifyAdminsSaleReady } from "../lib/notify";
 
 /** Cliente = só os dados principais: nome, telemóvel, NIF e gestor. */
 const clientInput = z.object({
@@ -271,6 +272,7 @@ export const sales = {
           date: salesTbl.date,
           status: salesTbl.status,
           alertsDisabled: salesTbl.alertsDisabled,
+          ready: salesTbl.ready,
           /** Data em que a venda chegou ao estado Control (energia luz — o estado principal). */
           ctrlOn: sql<string | null>`(select min(${saleStatusHistory.changedOn}) from ${saleStatusHistory} where ${saleStatusHistory.saleId} = ${salesTbl.id} and ${saleStatusHistory.energy} = 'luz' and ${saleStatusHistory.status} = 'Control')`,
         })
@@ -292,6 +294,7 @@ export const sales = {
         .returning();
       await logStatus(row.id, "luz", status, null, context.user.id);
       if (input.service === "DUAL") await logStatus(row.id, "gas", gasStatus(details), null, context.user.id);
+      await notifySaleImmediate(row.id);
       return row;
     }),
     update: requireEdit("vendas").input(saleFormInput.extend({ id: z.number() })).handler(async ({ input, context }) => {
@@ -310,6 +313,7 @@ export const sales = {
       await db.update(salesTbl).set({ service: input.service, details, status, date, sellerId: ownerId }).where(eq(salesTbl.id, input.id));
       await logStatus(input.id, "luz", status, existing.status, context.user.id);
       if (input.service === "DUAL") await logStatus(input.id, "gas", gasStatus(details), gasStatus(existing.details), context.user.id);
+      await notifySaleImmediate(input.id);
       return { ok: true };
     }),
     setStatus: requireEdit("vendas")
@@ -323,10 +327,12 @@ export const sales = {
           if (sale.service !== "DUAL") throw new ORPCError("BAD_REQUEST", { message: "Só as vendas DUAL têm estado do gás." });
           await db.update(salesTbl).set({ details: { ...sale.details, saleStatusGas: input.status } }).where(where);
           await logStatus(input.id, "gas", input.status, gasStatus(sale.details), context.user.id);
+          await notifySaleImmediate(input.id);
           return { ok: true };
         }
         await db.update(salesTbl).set({ status: input.status, details: { ...sale.details, saleStatus: input.status } }).where(where);
         await logStatus(input.id, "luz", input.status, sale.status, context.user.id);
+        await notifySaleImmediate(input.id);
         return { ok: true };
       }),
     /**
@@ -339,6 +345,31 @@ export const sales = {
         const [row] = await db.update(salesTbl).set({ alertsDisabled: input.disabled }).where(eq(salesTbl.id, input.id)).returning({ id: salesTbl.id, alertsDisabled: salesTbl.alertsDisabled });
         if (!row) throw new ORPCError("NOT_FOUND", { message: "Venda não encontrada" });
         return { ok: true, disabled: row.alertsDisabled };
+      }),
+    /**
+     * Caixa do comercial: marca a venda como "tratável agora". Ao ativar, notifica
+     * os administradores/diretores. O comercial só pode marcar as suas próprias vendas.
+     */
+    setReady: requireView("vendas")
+      .input(z.object({ id: z.number(), ready: z.boolean() }))
+      .handler(async ({ input, context }) => {
+        const privileged = ["admin", "diretor", "backoffice"].includes(context.role);
+        const own = scopeSeller(context);
+        const where = privileged ? eq(salesTbl.id, input.id) : own ? and(eq(salesTbl.id, input.id), eq(salesTbl.sellerId, own)) : undefined;
+        if (!where) throw new ORPCError("FORBIDDEN", { message: "Sem permissão para esta ação" });
+        const [sale] = await db
+          .select({ id: salesTbl.id, ready: salesTbl.ready, sellerName: employees.name })
+          .from(salesTbl)
+          .leftJoin(employees, eq(employees.id, salesTbl.sellerId))
+          .where(where);
+        if (!sale) throw new ORPCError("NOT_FOUND", { message: "Venda não encontrada" });
+        const [row] = await db
+          .update(salesTbl)
+          .set({ ready: input.ready })
+          .where(eq(salesTbl.id, input.id))
+          .returning({ id: salesTbl.id, ready: salesTbl.ready });
+        if (input.ready && !sale.ready) await notifyAdminsSaleReady(input.id, sale.sellerName);
+        return { ok: true, ready: row.ready };
       }),
     /** Histórico de estados de uma venda (mais recente primeiro). */
     history: requireView("vendas").input(z.object({ id: z.number() })).handler(async ({ input, context }) => {

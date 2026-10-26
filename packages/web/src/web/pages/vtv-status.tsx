@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, ShieldAlert, BellOff, BellRing } from "lucide-react";
-import { useOrders, useToggleAlerts } from "../queries/sales";
+import { Link } from "wouter";
+import { useOrders, useToggleAlerts, useSetReady } from "../queries/sales";
 import { useMe } from "../queries/me";
 import { PageHeader, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill } from "../components/ui/kit";
+import { MonthYearFilter } from "../components/month-year-filter";
 import { SALE_STATUS } from "../lib/labels";
-import { errMsg, fmtDate } from "../lib/format";
+import { errMsg, fmtDate, thisMonth } from "../lib/format";
 
 type Order = NonNullable<ReturnType<typeof useOrders>["data"]>[number];
 
@@ -36,10 +38,13 @@ export default function VtvStatusPage() {
   const me = useMe();
   const orders = useOrders();
   const toggleAlerts = useToggleAlerts();
+  const setReady = useSetReady();
   const [tab, setTab] = useState<Tab>("pendentes");
   const [q, setQ] = useState("");
+  const [month, setMonth] = useState(thisMonth());
 
-  const canMute = MUTABLE_ROLES.has(me.data?.role ?? "");
+  const role = me.data?.role ?? "";
+  const canMute = MUTABLE_ROLES.has(role);
 
   const relevant = useMemo(
     () =>
@@ -58,7 +63,7 @@ export default function VtvStatusPage() {
   );
 
   const pendentes = relevant.filter(({ entries }) => entries.some((e) => e.status === "Pendente") && !entries.some((e) => isKO(e.status)));
-  const ko = relevant.filter(({ entries }) => entries.some((e) => isKO(e.status)));
+  const ko = relevant.filter(({ o, entries }) => entries.some((e) => isKO(e.status)) && (!month || o.date.startsWith(month)));
   const graves = relevant.filter(({ entries }) => entries.some((e) => isGrave(e.status)));
 
   const list = useMemo(() => {
@@ -126,11 +131,17 @@ export default function VtvStatusPage() {
           { key: "pendentes", label: "Estados Pendentes", count: pendentes.length },
           { key: "ko", label: "Estados KO", count: ko.length },
         ]} />
+        {tab === "ko" && (
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[12px] text-ink-3">Mês</span>
+            <MonthYearFilter value={month} onChange={setMonth} />
+          </div>
+        )}
       </div>
 
       <div className="card overflow-hidden">
         {orders.isLoading ? (
-          <TableSkeleton cols={7} />
+          <TableSkeleton cols={11} />
         ) : !list.length ? (
           <Empty title={tab === "pendentes" ? "Sem estados pendentes" : "Sem estados KO"} text={tab === "pendentes" ? "Nenhuma venda tem Estado VTV pendente." : "Nenhuma venda tem Estado VTV em KO."} />
         ) : (
@@ -138,6 +149,7 @@ export default function VtvStatusPage() {
             <table className="tbl">
               <thead>
                 <tr>
+                  <th className="w-10" aria-label="Pronta a tratar" />
                   <th>Nº</th>
                   <th>Nº Contrato</th>
                   <th>Data</th>
@@ -155,8 +167,20 @@ export default function VtvStatusPage() {
                   const grave = entries.some((e) => isGrave(e.status));
                   const c = SALE_STATUS[o.status]?.color ?? "var(--ink-3)";
                   const muted = o.alertsDisabled;
+                  const canToggleReady = canMute || (role === "vendedor" && me.data?.employeeId != null && me.data.employeeId === o.sellerId);
                   return (
                     <tr key={o.id} className={muted ? "opacity-60" : undefined} style={grave ? { background: "color-mix(in srgb, var(--danger) 10%, transparent)", boxShadow: "inset 3px 0 0 var(--danger)" } : undefined}>
+                      <td className="w-10">
+                        <input
+                          type="checkbox"
+                          aria-label={`Marcar ${o.number} pronta a tratar`}
+                          title={canToggleReady ? (o.ready ? "Venda marcada como tratável agora" : "Marcar venda como tratável agora (notifica administração)") : "Só o comercial desta venda a pode marcar"}
+                          checked={o.ready}
+                          disabled={!canToggleReady}
+                          onChange={() => setReady.mutate({ id: o.id, ready: !o.ready })}
+                          className="h-[18px] w-[18px] cursor-pointer accent-volt disabled:cursor-default disabled:opacity-40"
+                        />
+                      </td>
                       <td className="num text-[12.5px] text-ink-2">{o.number}</td>
                       <td className="num text-[12.5px] text-ink-2">{(o.details?.contractNumber as string) || "—"}</td>
                       <td className="num whitespace-nowrap text-[12.5px]">{fmtDate(o.date)}</td>
@@ -177,17 +201,19 @@ export default function VtvStatusPage() {
                       </td>
                       <td className="max-w-[260px] whitespace-normal">
                         {entries.some((e) => isKO(e.status)) ? (
-                          <div className="text-[12.5px]">
-                            <span className="font-medium text-danger">{entries.filter((e) => isKO(e.status)).map((e) => e.status).join(" · ")}</span>
-                            {typeof o.details?.koReason === "string" && (o.details.koReason as string).trim() && (
-                              <div className="mt-1 text-[12px] text-ink-2">{o.details.koReason as string}</div>
-                            )}
+                          <div className="text-[12.5px] text-ink-2">
+                            {(typeof o.details?.koReason === "string" && (o.details.koReason as string).trim()) || "—"}
                           </div>
                         ) : (
                           <span className="text-[12.5px] text-ink-3">A aguardar validação</span>
                         )}
                       </td>
-                      <td className="w-32 whitespace-nowrap">{headerBtn(o)}</td>
+                      <td className="w-40 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {headerBtn(o)}
+                          <Link href={`/venda/${o.id}`} className="btn btn-ghost h-8 text-[12px]">Abrir</Link>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}

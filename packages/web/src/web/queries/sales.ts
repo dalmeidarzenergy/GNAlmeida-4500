@@ -61,4 +61,12 @@ export function useToggleAlerts() {
     }),
   );
 }
+export function useSetReady() {
+  const qc = useQueryClient();
+  return useMutation(
+    orpc.sales.orders.setReady.mutationOptions({
+      onSuccess: () => qc.invalidateQueries({ queryKey: orpc.sales.key() }),
+    }),
+  );
+}
 export const useImportSales = () => useMutation(orpc.sales.orders.importMany.mutationOptions({ onSuccess: useInv() }));
