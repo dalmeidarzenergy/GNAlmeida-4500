@@ -715,7 +715,9 @@ export const iberdrolaOverrides = sqliteTable("iberdrola_overrides", {
 /** Incentivos comerciais com regras configuráveis. */
 export type IncentivePillar =
   | { type: "per_sale"; name: string; amount: number; conditionKey: string; conditionValues: string[] }
-  | { type: "tiered_mix"; name: string; percentageOf: string; percentageOfValues: string[]; baseRate: number; tiers: { pct: number; label: string; amount: number }[] };
+  | { type: "tiered_mix"; name: string; percentageOf: string; percentageOfValues: string[]; baseRate: number; tiers: { pct: number; label: string; amount: number }[] }
+  | { type: "weekly_top"; name: string; amount: number; topN: number; eligibilityMin: number }
+  | { type: "rookie_best"; name: string; amount: number; eligibilityMin: number };
 
 export type IncentiveRules = {
   eligibleServices: string[];

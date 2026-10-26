@@ -38,6 +38,30 @@ export default function IncentivosPage() {
   // Detail / calc
   const [detailId, setDetailId] = useState<number | null>(null);
 
+  // Filter (por data)
+  const [periodFilter, setPeriodFilter] = useState<"todos" | "ativos" | "passados" | "futuros">("todos");
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const filtered = useMemo(() => {
+    if (!incentives) return [];
+    return incentives.filter((inc) => {
+      if (periodFilter === "todos") return true;
+      if (periodFilter === "passados") return inc.endDate < todayStr;
+      if (periodFilter === "futuros") return inc.startDate > todayStr;
+      return inc.startDate <= todayStr && inc.endDate >= todayStr;
+    });
+  }, [incentives, periodFilter, todayStr]);
+
+  const countsByPeriod = useMemo(() => {
+    if (!incentives) return { todos: 0, ativos: 0, passados: 0, futuros: 0 };
+    return {
+      todos: incentives.length,
+      ativos: incentives.filter((i) => i.startDate <= todayStr && i.endDate >= todayStr).length,
+      passados: incentives.filter((i) => i.endDate < todayStr).length,
+      futuros: incentives.filter((i) => i.startDate > todayStr).length,
+    };
+  }, [incentives, todayStr]);
+
   if (isLoading) {
     return <div className="p-5 lg:p-7"><div className="skeleton mb-8 h-14 w-72" /><div className="card"><div className="skeleton h-64 rounded-[14px]" /></div></div>;
   }
@@ -65,11 +89,26 @@ export default function IncentivosPage() {
         />
       ) : (
         <>
+          <div className="mb-4">
+            <Tabs
+              value={periodFilter}
+              onChange={setPeriodFilter}
+              items={[
+                { key: "todos", label: "Todos", count: countsByPeriod.todos },
+                { key: "ativos", label: "Em vigor", count: countsByPeriod.ativos },
+                { key: "futuros", label: "Futuros", count: countsByPeriod.futuros },
+                { key: "passados", label: "Passados", count: countsByPeriod.passados },
+              ]}
+            />
+          </div>
+
           {!incentives?.length ? (
             <div className="card"><Empty title="Ainda sem incentivos" text={canEdit ? "Crie o primeiro incentivo para começar." : "Ainda não há incentivos definidos."} /></div>
+          ) : filtered.length === 0 ? (
+            <div className="card"><Empty title="Nenhum incentivo" text="Não há incentivos nesta categoria." /></div>
           ) : (
             <div className="space-y-3">
-              {incentives.map((inc) => (
+              {filtered.map((inc) => (
                 <div key={inc.id} className="card rise flex items-center justify-between p-4 cursor-pointer" onClick={() => setDetailId(inc.id)}>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -157,10 +196,14 @@ function IncentiveForm({ data, onClose, canEdit }: { data?: NonNullable<ReturnTy
   const toggleArr = (arr: string[], val: string) =>
     arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val];
 
-  const addPillar = (type: "per_sale" | "tiered_mix") => {
+  const addPillar = (type: "per_sale" | "tiered_mix" | "weekly_top" | "rookie_best") => {
     const p: IncentivePillar = type === "per_sale"
       ? { type: "per_sale", name: "", amount: 0, conditionKey: "", conditionValues: [] }
-      : { type: "tiered_mix", name: "", percentageOf: "", percentageOfValues: [], baseRate: 0, tiers: [] };
+      : type === "tiered_mix"
+        ? { type: "tiered_mix", name: "", percentageOf: "", percentageOfValues: [], baseRate: 0, tiers: [] }
+        : type === "weekly_top"
+          ? { type: "weekly_top", name: "", amount: 50, topN: 3, eligibilityMin: 20 }
+          : { type: "rookie_best", name: "", amount: 100, eligibilityMin: 15 };
     setRules({ ...rules, pillars: [...rules.pillars, p] });
   };
 
@@ -236,6 +279,8 @@ function IncentiveForm({ data, onClose, canEdit }: { data?: NonNullable<ReturnTy
             <div className="flex gap-2">
               <button className="btn btn-sm btn-outline" onClick={() => addPillar("per_sale")}><Plus size={13} /> Por venda</button>
               <button className="btn btn-sm btn-outline" onClick={() => addPillar("tiered_mix")}><Plus size={13} /> Mix escalonado</button>
+              <button className="btn btn-sm btn-outline" onClick={() => addPillar("weekly_top")}><Plus size={13} /> Líderes da semana</button>
+              <button className="btn btn-sm btn-outline" onClick={() => addPillar("rookie_best")}><Plus size={13} /> Rookie do mês</button>
             </div>
           </div>
 
@@ -299,7 +344,7 @@ function PillarEditor({ pillar, index, onChange, onRemove }: { pillar: Incentive
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="rounded bg-ink-2/5 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-            {pillar.type === "per_sale" ? "Valor por venda" : "Mix escalonado"}
+            {pillar.type === "per_sale" ? "Valor por venda" : pillar.type === "tiered_mix" ? "Mix escalonado" : pillar.type === "weekly_top" ? "Líderes da semana" : "Rookie do mês"}
           </span>
           <span className="text-[13px] font-medium">{pillar.name || `Pilar ${index + 1}`}</span>
         </div>
@@ -333,7 +378,7 @@ function PillarEditor({ pillar, index, onChange, onRemove }: { pillar: Incentive
               />
             </Field>
           </>
-        ) : (
+        ) : pillar.type === "tiered_mix" ? (
           <>
             <Field label="% sobre vendas de">
               <select className="input h-10 w-full" value={pillar.percentageOf} onChange={(e) => onChange({ ...pillar, percentageOf: e.target.value })}>
@@ -405,6 +450,31 @@ function PillarEditor({ pillar, index, onChange, onRemove }: { pillar: Incentive
               >
                 <Plus size={13} /> Patamar
               </button>
+            </div>
+          </>
+        ) : pillar.type === "weekly_top" ? (
+          <>
+            <Field label="Prémio por semana (€)">
+              <input className="input h-10 w-full" type="number" min="0" step="0.5" value={pillar.amount} onChange={(e) => onChange({ ...pillar, amount: parseFloat(e.target.value) || 0 })} />
+            </Field>
+            <Field label="Nº de premiados por semana">
+              <input className="input h-10 w-full" type="number" min="1" step="1" value={pillar.topN} onChange={(e) => onChange({ ...pillar, topN: parseInt(e.target.value) || 1 })} />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Vendas mínimas no mês (elegibilidade)">
+                <input className="input h-10 w-full" type="number" min="0" step="1" value={pillar.eligibilityMin} onChange={(e) => onChange({ ...pillar, eligibilityMin: parseInt(e.target.value) || 0 })} />
+              </Field>
+            </div>
+          </>
+        ) : (
+          <>
+            <Field label="Prémio (€)">
+              <input className="input h-10 w-full" type="number" min="0" step="0.5" value={pillar.amount} onChange={(e) => onChange({ ...pillar, amount: parseFloat(e.target.value) || 0 })} />
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Vendas mínimas no mês (elegibilidade)">
+                <input className="input h-10 w-full" type="number" min="0" step="1" value={pillar.eligibilityMin} onChange={(e) => onChange({ ...pillar, eligibilityMin: parseInt(e.target.value) || 0 })} />
+              </Field>
             </div>
           </>
         )}

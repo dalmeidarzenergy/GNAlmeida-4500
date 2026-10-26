@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, inArray, not, sql, type SQL } from "drizzle-orm";
+import { eq, and, gte, lte, lt, inArray, not, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { ORPCError, os } from "@orpc/server";
 import { authed } from "../middleware/auth";
@@ -14,6 +14,8 @@ const tierSchema = z.object({ pct: z.number(), label: z.string(), amount: z.numb
 const pillarSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("per_sale"), name: z.string(), amount: z.number(), conditionKey: z.string(), conditionValues: z.array(z.string()) }),
   z.object({ type: z.literal("tiered_mix"), name: z.string(), percentageOf: z.string(), percentageOfValues: z.array(z.string()), baseRate: z.number(), tiers: z.array(tierSchema) }),
+  z.object({ type: z.literal("weekly_top"), name: z.string(), amount: z.number(), topN: z.number(), eligibilityMin: z.number() }),
+  z.object({ type: z.literal("rookie_best"), name: z.string(), amount: z.number(), eligibilityMin: z.number() }),
 ]);
 const rulesSchema = z.object({
   eligibleServices: z.array(z.string()),
@@ -153,6 +155,7 @@ export const incentivesRoutes = {
           sellerId: sales.sellerId,
           service: sales.service,
           details: sales.details,
+          date: sales.date,
         })
         .from(sales)
         .where(and(...baseConds.filter(Boolean) as SQL[]));
@@ -168,9 +171,10 @@ export const incentivesRoutes = {
       // Busca nomes dos vendedores
       const sellerIds = [...bySeller.keys()];
       const empRows = sellerIds.length
-        ? await db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, sellerIds))
+        ? await db.select({ id: employees.id, name: employees.name, createdAt: employees.createdAt }).from(employees).where(inArray(employees.id, sellerIds))
         : [];
       const empNames = new Map(empRows.map((e) => [e.id, e.name]));
+      const empCreatedAt = new Map(empRows.map((e) => [e.id, e.createdAt]));
 
       // Total de vendas no mês (para o mix %)
       const monthTotal = allSales.length;
@@ -200,6 +204,67 @@ export const incentivesRoutes = {
         const d = s.details as Record<string, string | boolean | null> | null;
         return normalizeSupplier(String(d?.oldSupplier ?? ""));
       };
+
+      // ── Prémios de ranking (weekly_top / rookie_best) ──
+      // Calcula, à parte, os prémios que dependem de ordenação global por semana/rookie.
+
+      /** Segunda-feira da semana a que a data pertence (chave de agrupamento semanal). */
+      const mondayOf = (dateStr: string): string => {
+        const d = new Date(`${dateStr}T00:00:00`);
+        const diff = (d.getDay() + 6) % 7;
+        d.setDate(d.getDate() - diff);
+        return d.toISOString().slice(0, 10);
+      };
+
+      // Elegíveis por vendedor (para rankings).
+      const eligibleBySeller = new Map<number, typeof allSales>();
+      for (const [sid, slist] of bySeller) eligibleBySeller.set(sid, slist.filter(isEligible));
+
+      const rankingAwards = new Map<number, { name: string; amount: number; count: number; detail: string }[]>();
+
+      // Rookies: sem vendas nos 3 meses anteriores ao início, ou registo novo após o início.
+      const startD = new Date(`${inc.startDate}T00:00:00`);
+      const threeBefore = new Date(startD);
+      threeBefore.setMonth(threeBefore.getMonth() - 3);
+      const beforeStr = threeBefore.toISOString().slice(0, 10);
+      const priorSales = sellerIds.length
+        ? await db.select({ sellerId: sales.sellerId }).from(sales).where(and(gte(sales.date, beforeStr), lt(sales.date, inc.startDate), inArray(sales.sellerId, sellerIds)))
+        : [];
+      const hadPrior = new Set(priorSales.map((s) => s.sellerId));
+      const rookieIds = new Set<number>(sellerIds.filter((sid) => !hadPrior.has(sid) || (empCreatedAt.get(sid) ? new Date(empCreatedAt.get(sid)!) >= startD : false)));
+
+      for (const p of rules.pillars) {
+        if (p.type === "weekly_top") {
+          // Só vendedores com ≥ eligibilityMin vendas no mês entram.
+          const eligibleSellers = sellerIds.filter((sid) => (eligibleBySeller.get(sid)?.length ?? 0) >= p.eligibilityMin);
+          // Agrupa as vendas elegíveis por semana.
+          const byWeek = new Map<string, Map<number, number>>();
+          for (const sid of eligibleSellers) {
+            for (const s of eligibleBySeller.get(sid) ?? []) {
+              const wk = mondayOf(s.date);
+              if (!byWeek.has(wk)) byWeek.set(wk, new Map());
+              byWeek.get(wk)!.set(sid, (byWeek.get(wk)!.get(sid) ?? 0) + 1);
+            }
+          }
+          for (const [wk, counts] of byWeek) {
+            const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, p.topN);
+            for (const [sid, cnt] of ranked) {
+              if (!rankingAwards.has(sid)) rankingAwards.set(sid, []);
+              rankingAwards.get(sid)!.push({ name: p.name, amount: p.amount, count: 1, detail: `Top ${p.topN} da semana ${wk} (${cnt} vendas) · ${p.amount.toFixed(0)}€` });
+            }
+          }
+        } else if (p.type === "rookie_best") {
+          const eligibleRookies = [...rookieIds].filter((sid) => (eligibleBySeller.get(sid)?.length ?? 0) >= p.eligibilityMin);
+          const ranked = eligibleRookies
+            .map((sid) => ({ sid, cnt: eligibleBySeller.get(sid)?.length ?? 0 }))
+            .sort((a, b) => b.cnt - a.cnt);
+          if (ranked.length > 0) {
+            const best = ranked[0];
+            if (!rankingAwards.has(best.sid)) rankingAwards.set(best.sid, []);
+            rankingAwards.get(best.sid)!.push({ name: p.name, amount: p.amount, count: 1, detail: `Melhor rookie (${best.cnt} vendas) · ${p.amount.toFixed(0)}€` });
+          }
+        }
+      }
 
       const rows: IncentiveCalcRow[] = [];
 
@@ -251,6 +316,9 @@ export const incentivesRoutes = {
             }
           }
         }
+
+        // Junta prémios de ranking (weekly_top / rookie_best).
+        if (rankingAwards.has(sid)) pillarResults.push(...rankingAwards.get(sid)!);
 
         const total = pillarResults.reduce((s, p) => s + p.amount, 0);
 
