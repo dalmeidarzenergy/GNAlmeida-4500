@@ -322,9 +322,10 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       // Chargeback: ja tinha sido paga (fornecimento antes deste mes, sem Baixa
       // nem Manual no mes de fornecimento) e a baixa acontece dentro deste mes.
       // So pode ser descontada se foi mesmo paga e dentro dos 3 meses de
-      // chargeback (ate 3 meses depois do mes de fornecimento).
+      // chargeback (ate 3 meses depois do mes de assinatura).
       const foiPaga = suppliedOn && suppliedOn < from && !baixaNoMesSup && !manualNoMesSup;
-      const dentroChargeback = sm ? deltaMonths(sm, m) <= 3 : false;
+      const signedMonth = e.signedOn ? e.signedOn.slice(0, 7) : "";
+      const dentroChargeback = signedMonth ? deltaMonths(signedMonth, m) <= 3 : false;
 
       // Anulada e definitiva: nunca paga nem da chargeback.
       if (firstAnulado) continue;
