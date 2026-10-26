@@ -1,0 +1,32 @@
+{
+  "name": "Completar IBAN",
+  "short_name": "IBAN",
+  "description": "Encontra os dígitos em falta de um IBAN, testando todas as combinações e mostrando só as válidas (ISO 13616).",
+  "start_url": "/completar-iban",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "lang": "pt-PT",
+  "icons": [
+    {
+      "src": "/iban/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/iban/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/iban/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
