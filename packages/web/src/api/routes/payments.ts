@@ -465,17 +465,17 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
     return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
   };
 
-  /** Regra automática de timing (fonte: regra da aba Regras). */
-  const timingRule = activeRules.find((r) => normRule(r.name).includes("TIMING")) ?? null;
+  /** Dias obrigatórios de contratação e penalização fixa por venda (nº). */
+  const TIMING_DAYS = 3;
+  const TIMING_PENALTY = 10; // € fixo por venda, 1x mesmo em DUAL
 
-  /** Penalização de timing de uma venda (positiva = a descontar). */
+  /** Penalização de timing de uma venda (positiva = a descontar). Fixa em 10€ por venda. */
   const timingPenalty = (e: Lite) => {
     const ctrl = daysToControl(e.hist?.[e.energy] ?? []);
     if (!ctrl || !e.signedOn) return 0;
     const dias = daysBetween(e.signedOn, ctrl);
-    if (dias <= 3) return 0;
-    if (!timingRule) return 0;
-    return round2(Math.abs(timingRule.effectValue));
+    if (dias <= TIMING_DAYS) return 0;
+    return TIMING_PENALTY;
   };
 
   /**
@@ -619,11 +619,17 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
 
     // ── Penalizações por venda (regras da aba Regras e regra dos 3 dias) ──
     // Só se aplicam a vendas que vêm a pagamento no mês.
+    // A penalidade de timing é por número de venda: 10€ uma única vez, mesmo numa DUAL (luz+gás).
+    const timingFor = new Map<number, number>();
+    for (const e of paidSales) if (!timingFor.has(e.saleId)) timingFor.set(e.saleId, timingPenalty(e));
     let penaltyTiming = 0;
     let penaltyCampaign = 0;
+    const charged = new Set<number>();
     const lines = resolved.map((r) => {
-      const src = paidSales.find((e) => e.saleId === r.saleId);
-      const hire = src ? timingPenalty(src) : 0;
+      const hireRaw = timingFor.get(r.saleId) ?? 0;
+      // Só penaliza uma vez por venda (a linha da luz, que vem primeiro numa DUAL).
+      const hire = charged.has(r.saleId) ? 0 : hireRaw;
+      charged.add(r.saleId);
       const camp = campaignPenalty(r);
       penaltyTiming = round2(penaltyTiming + hire);
       penaltyCampaign = round2(penaltyCampaign + camp);

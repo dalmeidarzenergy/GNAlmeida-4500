@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ShieldAlert } from "lucide-react";
-import { useOrders } from "../queries/sales";
+import { AlertTriangle, ShieldAlert, BellOff, BellRing } from "lucide-react";
+import { useOrders, useToggleAlerts } from "../queries/sales";
+import { useMe } from "../queries/me";
 import { PageHeader, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill } from "../components/ui/kit";
+import { SALE_STATUS } from "../lib/labels";
 import { errMsg, fmtDate } from "../lib/format";
 
 type Order = NonNullable<ReturnType<typeof useOrders>["data"]>[number];
@@ -10,8 +12,8 @@ type VtvEntry = { energy: string; status: string };
 
 const isKO = (s: string) => s.startsWith("KO-");
 const isGrave = (s: string) => s.startsWith("KO-A") || s.startsWith("KO-B");
+const isDone = (status: string) => status === "Control" || status === "Anulado";
 
-/** Estados VTV relevantes de uma venda (luz e gás no DUAL; um único nos restantes serviços). */
 function vtvEntries(o: Order): VtvEntry[] {
   const out: VtvEntry[] = [];
   const luz = o.details?.vtvStatus;
@@ -28,13 +30,30 @@ const vtvColor = (s: string) =>
 
 type Tab = "pendentes" | "ko";
 
+const MUTABLE_ROLES = new Set(["admin", "diretor", "backoffice"]);
+
 export default function VtvStatusPage() {
+  const me = useMe();
   const orders = useOrders();
+  const toggleAlerts = useToggleAlerts();
   const [tab, setTab] = useState<Tab>("pendentes");
   const [q, setQ] = useState("");
 
+  const canMute = MUTABLE_ROLES.has(me.data?.role ?? "");
+
   const relevant = useMemo(
-    () => (orders.data ?? []).filter((o) => vtvEntries(o).some((e) => e.status !== "OK")).map((o) => ({ o, entries: vtvEntries(o) })),
+    () =>
+      (orders.data ?? [])
+        .filter((o) => {
+          const entries = vtvEntries(o);
+          const grave = entries.some((e) => isGrave(e.status));
+          const nonOk = entries.some((e) => e.status !== "OK");
+          if (!nonOk) return false;
+          // KO-A / KO-B aparecem sempre (mesmo Control/Anulado); os restantes só enquanto a venda não está Control/Anulado.
+          if (grave) return true;
+          return !isDone(o.status);
+        })
+        .map((o) => ({ o, entries: vtvEntries(o) })),
     [orders.data],
   );
 
@@ -64,12 +83,25 @@ export default function VtvStatusPage() {
     );
   }
 
+  const headerBtn = (o: Order) =>
+    canMute ? (
+      <button
+        type="button"
+        className={o.alertsDisabled ? "btn btn-ghost h-8 text-[12px] hover:!text-danger" : "btn btn-ghost h-8 text-[12px]"}
+        title={o.alertsDisabled ? "Alertas desligados — clicar para reativar" : "Alertas ativos — clicar para desligar"}
+        onClick={() => toggleAlerts.mutate({ id: o.id, disabled: !o.alertsDisabled })}
+      >
+        {o.alertsDisabled ? <BellOff size={14} /> : <BellRing size={14} />}
+        {o.alertsDisabled ? "Alertas off" : "Alertas on"}
+      </button>
+    ) : null;
+
   return (
     <div>
       <PageHeader
         eyebrow="Vendas"
         title="Estado VTV"
-        subtitle="Vendas cujo Estado VTV não está OK. Os estados KO-A e KO-B são gravíssimos e ficam assinalados a vermelho."
+        subtitle="Vendas cujo Estado VTV não está OK. Os estados KO-A e KO-B são gravíssimos, ficam assinalados a vermelho e não desaparecem mesmo após Control/Anulado."
       >
         <SearchBox value={q} onChange={setQ} placeholder="Nº, contrato, cliente, vendedor…" />
       </PageHeader>
@@ -98,7 +130,7 @@ export default function VtvStatusPage() {
 
       <div className="card overflow-hidden">
         {orders.isLoading ? (
-          <TableSkeleton cols={6} />
+          <TableSkeleton cols={7} />
         ) : !list.length ? (
           <Empty title={tab === "pendentes" ? "Sem estados pendentes" : "Sem estados KO"} text={tab === "pendentes" ? "Nenhuma venda tem Estado VTV pendente." : "Nenhuma venda tem Estado VTV em KO."} />
         ) : (
@@ -112,21 +144,26 @@ export default function VtvStatusPage() {
                   <th>Cliente</th>
                   <th>Serviço</th>
                   <th>Vendedor</th>
+                  <th>Estado da venda</th>
                   <th>Estado VTV</th>
                   <th>Motivo</th>
+                  <th aria-label="Ações" />
                 </tr>
               </thead>
               <tbody>
                 {list.map(({ o, entries }) => {
                   const grave = entries.some((e) => isGrave(e.status));
+                  const c = SALE_STATUS[o.status]?.color ?? "var(--ink-3)";
+                  const muted = o.alertsDisabled;
                   return (
-                    <tr key={o.id} style={grave ? { background: "color-mix(in srgb, var(--danger) 10%, transparent)", boxShadow: "inset 3px 0 0 var(--danger)" } : undefined}>
+                    <tr key={o.id} className={muted ? "opacity-60" : undefined} style={grave ? { background: "color-mix(in srgb, var(--danger) 10%, transparent)", boxShadow: "inset 3px 0 0 var(--danger)" } : undefined}>
                       <td className="num text-[12.5px] text-ink-2">{o.number}</td>
                       <td className="num text-[12.5px] text-ink-2">{(o.details?.contractNumber as string) || "—"}</td>
                       <td className="num whitespace-nowrap text-[12.5px]">{fmtDate(o.date)}</td>
                       <td><div className="font-medium">{o.clientName}</div>{o.clientNif && <div className="num text-[11px] text-ink-3">{o.clientNif}</div>}</td>
                       <td className="text-[12.5px] text-ink-2">{o.service ?? "—"}</td>
                       <td className="text-ink-2">{o.sellerName ?? "—"}</td>
+                      <td><Pill color={c}>{o.status}</Pill></td>
                       <td>
                         <div className="flex flex-col gap-1">
                           {entries.map((e) => (
@@ -150,6 +187,7 @@ export default function VtvStatusPage() {
                           <span className="text-[12.5px] text-ink-3">A aguardar validação</span>
                         )}
                       </td>
+                      <td className="w-32 whitespace-nowrap">{headerBtn(o)}</td>
                     </tr>
                   );
                 })}

@@ -53,4 +53,12 @@ export function useSetOrderStatus() {
 export const useSetTarget = () => useMutation(orpc.sales.targets.set.mutationOptions({ onSuccess: useInv() }));
 export const useSaleHistory = (id: number) => useQuery(orpc.sales.orders.history.queryOptions({ input: { id } }));
 export const useSetHistoryDate = () => useMutation(orpc.sales.orders.setHistoryDate.mutationOptions({ onSuccess: useInv() }));
+export function useToggleAlerts() {
+  const qc = useQueryClient();
+  return useMutation(
+    orpc.sales.orders.toggleAlerts.mutationOptions({
+      onSuccess: () => qc.invalidateQueries({ queryKey: orpc.sales.key() }),
+    }),
+  );
+}
 export const useImportSales = () => useMutation(orpc.sales.orders.importMany.mutationOptions({ onSuccess: useInv() }));

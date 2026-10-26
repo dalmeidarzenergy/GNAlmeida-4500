@@ -17,6 +17,7 @@ import { agenda } from "./routes/agenda";
 import { d2d } from "./routes/d2d";
 import { simulador } from "./routes/simulador";
 import { incentivesRoutes } from "./routes/incentives";
+import { notificationsRoute } from "./routes/notifications";
 import { simuladorStore } from "./lib/simulador-store";
 import { syncCatalog } from "./routes/campaigns";
 import { handle as aiHandle } from "./lib/simulador-ai.mjs";
@@ -38,6 +39,7 @@ export const router = {
   campaigns,
   agenda,
   incentives: incentivesRoutes,
+  notifications: notificationsRoute,
 };
 
 export type AppRouter = typeof router;

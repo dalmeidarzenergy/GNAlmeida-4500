@@ -13,7 +13,7 @@ import {
   validateDetails,
   type Details,
 } from "../shared/client-forms";
-import { requireView, requireEdit } from "../middleware/auth";
+import { requireView, requireEdit, requireRoles } from "../middleware/auth";
 import { db } from "../database";
 import { clients, employees, saleStatusHistory, sales as salesTbl, salesTargets, teamMemberships, teams, user } from "../database/schema";
 import { localPhotoUrl } from "../lib/s3";
@@ -270,6 +270,9 @@ export const sales = {
           sellerName: employees.name,
           date: salesTbl.date,
           status: salesTbl.status,
+          alertsDisabled: salesTbl.alertsDisabled,
+          /** Data em que a venda chegou ao estado Control (energia luz — o estado principal). */
+          ctrlOn: sql<string | null>`(select min(${saleStatusHistory.changedOn}) from ${saleStatusHistory} where ${saleStatusHistory.saleId} = ${salesTbl.id} and ${saleStatusHistory.energy} = 'luz' and ${saleStatusHistory.status} = 'Control')`,
         })
         .from(salesTbl)
         .innerJoin(clients, eq(clients.id, salesTbl.clientId))
@@ -325,6 +328,17 @@ export const sales = {
         await db.update(salesTbl).set({ status: input.status, details: { ...sale.details, saleStatus: input.status } }).where(where);
         await logStatus(input.id, "luz", input.status, sale.status, context.user.id);
         return { ok: true };
+      }),
+    /**
+     * Liga/desliga os alertas (Vendas Críticas / Estado VTV) desta venda.
+     * Só administradores, diretores e backoffice. O comercial pára de receber alertas da venda.
+     */
+    toggleAlerts: requireRoles("admin", "diretor", "backoffice")
+      .input(z.object({ id: z.number(), disabled: z.boolean() }))
+      .handler(async ({ input }) => {
+        const [row] = await db.update(salesTbl).set({ alertsDisabled: input.disabled }).where(eq(salesTbl.id, input.id)).returning({ id: salesTbl.id, alertsDisabled: salesTbl.alertsDisabled });
+        if (!row) throw new ORPCError("NOT_FOUND", { message: "Venda não encontrada" });
+        return { ok: true, disabled: row.alertsDisabled };
       }),
     /** Histórico de estados de uma venda (mais recente primeiro). */
     history: requireView("vendas").input(z.object({ id: z.number() })).handler(async ({ input, context }) => {

@@ -158,6 +158,8 @@ export const sales = sqliteTable("sales", {
   details: text("details", { mode: "json" }).$type<Record<string, string | boolean | null>>(),
   total: real("total").notNull().default(0),
   notes: text("notes"),
+  /** Quando true, o comercial deixa de receber alertas (Vendas Críticas / Estado VTV) para esta venda. */
+  alertsDisabled: integer("alerts_disabled", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
 }, (t) => [
   index("idx_sales_date").on(t.date),
@@ -453,6 +455,27 @@ export const d2dMailbox = sqliteTable("d2d_mailbox", {
   read: integer("read", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
 });
+
+/** Notificações internas (sino). Geradas pelo job de alertas 2x/dia e lidas pelo utilizador. */
+export const notifications = sqliteTable("notifications", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  body: text("body"),
+  url: text("url"),
+  type: text("type"), // "vendas-criticas" | "estado-vtv"
+  /** Identificador da ronda (ex. "2026-10-26-manha") — evita duplicados na mesma ronda. */
+  slot: text("slot"),
+  /** Venda associada (opcional), para deduplicação por venda na mesma ronda. */
+  saleId: integer("sale_id"),
+  read: integer("read", { mode: "boolean" }).notNull().default(false),
+  createdAt: createdAt(),
+}, (t) => [
+  index("idx_notif_user").on(t.userId),
+  index("idx_notif_slot").on(t.slot),
+]);
 
 /** Catálogo do Simulador Iberdrola — armazenamento chave-valor (um único registo com todo o JSON). */
 export const simuladorCatalog = sqliteTable("simulador_catalog", {

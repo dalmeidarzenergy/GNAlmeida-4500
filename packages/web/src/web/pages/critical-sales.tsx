@@ -1,29 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
-import { Timer, AlertTriangle } from "lucide-react";
+import { Timer, AlertTriangle, BellOff, BellRing } from "lucide-react";
 import { Link } from "wouter";
-import { useOrders } from "../queries/sales";
+import { useOrders, useToggleAlerts } from "../queries/sales";
+import { useMe } from "../queries/me";
 import { PageHeader, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill } from "../components/ui/kit";
 import { SALE_STATUS } from "../lib/labels";
 import { errMsg, fmtDate } from "../lib/format";
 
 type Order = NonNullable<ReturnType<typeof useOrders>["data"]>[number];
 
-/** A venda tem de chegar ao estado Control em até 3 dias após a data da venda. */
+/** A venda tem de chegar ao estado Control em até 3 dias após a assinatura. */
 const DEADLINE_DAYS = 3;
-const PENALTY = 10; // €
+const PENALTY = 10; // € por venda (número), 1x mesmo em DUAL
 
-/** Estados anteriores ao Control (a venda ainda está "por tratar"). */
-const PRE_CONTROL = ["Prospeção", "Pré-Venda"] as const;
+/** Estados antes do Control — a venda ainda está "por tratar". */
+const PRE_CONTROL = ["Prospeção", "Pré-Venda", "Backoffice"] as const;
 const isPreControl = (status: string) => (PRE_CONTROL as readonly string[]).includes(status);
 
-const deadlineOf = (date: string) => new Date(`${date}T00:00:00`).getTime() + DEADLINE_DAYS * 86400000;
+const DAY = 86400000;
+const deadineAt = (date: string) => new Date(`${date}T00:00:00`).getTime() + DEADLINE_DAYS * DAY;
+const daysBetween = (a: string, b: string) => Math.round((new Date(`${b}T00:00:00`).getTime() - new Date(`${a}T00:00:00`).getTime()) / DAY);
 
 function fmtDuration(ms: number) {
   const totalMin = Math.max(0, Math.floor(ms / 60000));
   const d = Math.floor(totalMin / 1440);
   const h = Math.floor((totalMin % 1440) / 60);
   const m = totalMin % 60;
-  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (d > 0) return `${d}d ${h}h`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
@@ -39,22 +42,35 @@ function useNow() {
 
 type Tab = "tratar" | "criticas";
 
+const MUTABLE_ROLES = new Set(["admin", "diretor", "backoffice"]);
+
 export default function CriticalSalesPage() {
+  const me = useMe();
   const orders = useOrders();
+  const toggleAlerts = useToggleAlerts();
   const now = useNow();
   const [tab, setTab] = useState<Tab>("tratar");
   const [q, setQ] = useState("");
 
+  const canMute = MUTABLE_ROLES.has(me.data?.role ?? "");
+
+  const all = orders.data ?? [];
+
+  // Vendas por tratar: ainda nos estados pré-Control (desaparecem ao chegar a Control ou Anulado).
   const pending = useMemo(
-    () =>
-      (orders.data ?? []).filter(
-        (o) => isPreControl(o.status) && deadlineOf(o.date) > now,
-      ),
-    [orders.data, now],
+    () => all.filter((o) => isPreControl(o.status)),
+    [all],
   );
+
+  // Vendas críticas: já passaram os 3 dias de contratação (seja ainda em curso, seja já Control).
   const critical = useMemo(
-    () => (orders.data ?? []).filter((o) => isPreControl(o.status) && deadlineOf(o.date) <= now),
-    [orders.data, now],
+    () =>
+      all.filter((o) => {
+        if (o.status === "Anulado") return false;
+        if (o.ctrlOn) return daysBetween(o.date, o.ctrlOn) > DEADLINE_DAYS;
+        return deadineAt(o.date) <= now;
+      }),
+    [all, now],
   );
 
   const list = useMemo(() => {
@@ -79,20 +95,59 @@ export default function CriticalSalesPage() {
     );
   }
 
-  const urgent = pending.filter((o) => deadlineOf(o.date) - now < 12 * 3600000).length;
+  const urgent = pending.filter((o) => deadineAt(o.date) - now < 12 * 3600000 && deadineAt(o.date) > now).length;
+
+  const timerCell = (o: Order) => {
+    if (tab === "criticas" && o.ctrlOn) {
+      // Já chegou a Control: mostra quanto tempo demorou até lá.
+      const d = daysBetween(o.date, o.ctrlOn);
+      return (
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-ink-2">
+          <Timer size={14} /> Control em {d}d
+        </span>
+      );
+    }
+    const remaining = deadineAt(o.date) - now;
+    if (remaining > 0) {
+      const less12 = remaining < 12 * 3600000;
+      return (
+        <span className={`inline-flex items-center gap-1.5 whitespace-nowrap font-medium ${less12 ? "text-amber" : "text-ink-2"}`}>
+          <Timer size={14} className={less12 ? "text-amber" : ""} /> falta {fmtDuration(remaining)}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-danger">
+        <AlertTriangle size={14} /> {fmtDuration(-remaining)} em atraso
+      </span>
+    );
+  };
+
+  const headerBtn = (o: Order) =>
+    canMute ? (
+      <button
+        type="button"
+        className={o.alertsDisabled ? "btn btn-ghost h-8 text-[12px] hover:!text-danger" : "btn btn-ghost h-8 text-[12px]"}
+        title={o.alertsDisabled ? "Alertas desligados — clicar para reativar" : "Alertas ativos — clicar para desligar"}
+        onClick={() => toggleAlerts.mutate({ id: o.id, disabled: !o.alertsDisabled })}
+      >
+        {o.alertsDisabled ? <BellOff size={14} /> : <BellRing size={14} />}
+        {o.alertsDisabled ? "Alertas off" : "Alertas on"}
+      </button>
+    ) : null;
 
   return (
     <div>
       <PageHeader
         eyebrow="Vendas"
         title="Vendas Críticas"
-        subtitle={`A venda tem de chegar ao estado Control em até ${DEADLINE_DAYS} dias após a data da venda. Depois disso aplica-se uma penalidade de ${PENALTY}€.`}
+        subtitle={`A contratação tem de chegar ao estado Control em até ${DEADLINE_DAYS} dias após a assinatura. Fora do prazo aplica-se uma penalidade de ${PENALTY}€ por venda.`}
       >
         <SearchBox value={q} onChange={setQ} placeholder="Nº, contrato, cliente, vendedor…" />
       </PageHeader>
 
       <div className="mb-5 grid grid-cols-2 gap-4 xl:grid-cols-3">
-        <Stat delay={0} label="Por tratar" value={pending.length} accent="var(--sky)" sub="dentro do prazo de contratação" />
+        <Stat delay={0} label="Por tratar" value={pending.length} accent="var(--sky)" sub="ainda antes do Control" />
         <Stat delay={40} label="Críticas (fora de prazo)" value={critical.length} accent="var(--danger)" sub={`penalidade de ${PENALTY}€ cada`} />
         <Stat delay={80} label="Urgentes (< 12h)" value={urgent} accent="var(--amber)" sub="a acabar o prazo" />
       </div>
@@ -106,9 +161,9 @@ export default function CriticalSalesPage() {
 
       <div className="card overflow-hidden">
         {orders.isLoading ? (
-          <TableSkeleton cols={7} />
+          <TableSkeleton cols={8} />
         ) : !list.length ? (
-          <Empty title={tab === "tratar" ? "Sem vendas por tratar" : "Sem vendas críticas"} text={tab === "tratar" ? "Nenhuma venda está dentro do prazo de contratação sem chegar ao Control." : "Nenhuma venda ultrapassou os 3 dias de contratação."} />
+          <Empty title={tab === "tratar" ? "Sem vendas por tratar" : "Sem vendas críticas"} text={tab === "tratar" ? "Nenhuma venda está nos estados pré-Control (Prospeção, Pré-Venda, Backoffice)." : "Nenhuma venda ultrapassou os 3 dias de contratação."} />
         ) : (
           <div className="overflow-x-auto">
             <table className="tbl">
@@ -121,18 +176,18 @@ export default function CriticalSalesPage() {
                   <th>Serviço</th>
                   <th>Vendedor</th>
                   <th>Estado</th>
-                  <th>{tab === "tratar" ? "Tempo restante" : "Em atraso"}</th>
+                  <th>{tab === "tratar" ? "Prazo" : "Cronómetro"}</th>
+                  <th>Penalidade</th>
                   <th aria-label="Ações" />
                 </tr>
               </thead>
               <tbody>
                 {list.map((o) => {
-                  const remaining = deadlineOf(o.date) - now;
-                  const overdue = now - deadlineOf(o.date);
-                  const less12 = remaining < 12 * 3600000;
                   const c = SALE_STATUS[o.status]?.color ?? "var(--ink-3)";
+                  const penalized = tab === "criticas";
+                  const muted = o.alertsDisabled;
                   return (
-                    <tr key={o.id}>
+                    <tr key={o.id} className={muted ? "opacity-60" : undefined}>
                       <td className="num text-[12.5px] text-ink-2">{o.number}</td>
                       <td className="num text-[12.5px] text-ink-2">{(o.details?.contractNumber as string) || "—"}</td>
                       <td className="num whitespace-nowrap text-[12.5px]">{fmtDate(o.date)}</td>
@@ -140,24 +195,13 @@ export default function CriticalSalesPage() {
                       <td className="text-[12.5px] text-ink-2">{o.service ?? "—"}</td>
                       <td className="text-ink-2">{o.sellerName ?? "—"}</td>
                       <td><Pill color={c}>{o.status}</Pill></td>
-                      <td>
-                        {tab === "tratar" ? (
-                          <span className={`inline-flex items-center gap-1.5 whitespace-nowrap font-medium ${less12 ? "text-amber" : "text-ink-2"}`}>
-                            <Timer size={14} className={less12 ? "text-amber" : ""} />
-                            {fmtDuration(remaining)}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-danger">
-                            <AlertTriangle size={14} />
-                            {fmtDuration(overdue)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="w-24 whitespace-nowrap">
-                        {tab === "criticas" && (
-                          <Pill tone="red" label={`−${PENALTY}€`} />
-                        )}
-                        <Link href={`/vendas`} className="btn btn-ghost h-8 text-[12px]">Abrir venda</Link>
+                      <td>{timerCell(o)}</td>
+                      <td>{penalized ? <Pill tone="red" label={`−${PENALTY}€`} /> : <span className="text-ink-3">—</span>}</td>
+                      <td className="w-40 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {headerBtn(o)}
+                          <Link href={`/vendas`} className="btn btn-ghost h-8 text-[12px]">Abrir</Link>
+                        </div>
                       </td>
                     </tr>
                   );

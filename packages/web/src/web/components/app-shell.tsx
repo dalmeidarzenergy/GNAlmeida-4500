@@ -8,6 +8,7 @@ import { authClient } from "../lib/auth";
 import { useMe } from "../queries/me";
 import { ROLE_LABEL } from "../lib/labels";
 import { Avatar } from "./ui/kit";
+import { NotificationsBell } from "./notifications-bell";
 
 import type { Permissions, ModuleKey, Role } from "../../api/middleware/auth";
 export type { Role, Permissions };
@@ -148,6 +149,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="truncate text-[13px] font-medium">{me.data?.name || me.data?.email}</div>
             <div className="text-[11px] text-ink-3">{ROLE_LABEL[role]}</div>
           </div>
+          <NotificationsBell />
           <button className="btn-icon" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo escuro"}>
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
           </button>
