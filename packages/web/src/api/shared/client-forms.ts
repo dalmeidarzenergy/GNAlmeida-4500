@@ -87,6 +87,7 @@ export const SALE_FORMS: Record<string, FieldDef[]> = {
     { key: "pel", label: "PEL", kind: "yesno" },
     { key: "consent", label: "Consentimento", kind: "yesno" },
     { key: "vtvStatus", label: "Estado VTV", kind: "select", options: VTV_STATUS, default: "Pendente" },
+    { key: "koReason", label: "Motivo do KO", kind: "textarea", full: true },
     { key: "saleStatus", label: "Estado da Venda", kind: "select", options: SALE_STATUS, default: "Prospeção" },
     { key: "notes", label: "Observações", kind: "textarea", full: true },
   ],

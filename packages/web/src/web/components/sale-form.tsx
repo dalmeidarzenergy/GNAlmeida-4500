@@ -223,6 +223,17 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
       {known && <p className="mb-4 rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] text-ink-2">Cliente já registado: <strong className="text-ink">{known}</strong>. A venda fica associada a esta ficha.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         {form.map((def) => {
+          // O motivo do KO só aparece quando há um Estado VTV marcado como KO (luz e/ou gás).
+          if (def.key === "koReason") {
+            const luzKO = typeof d.vtvStatus === "string" && d.vtvStatus.startsWith("KO-");
+            const gasKO = typeof d.vtvStatusGas === "string" && d.vtvStatusGas.startsWith("KO-");
+            if (!luzKO && !gasKO) return null;
+            return (
+              <div key={def.key} className="sm:col-span-2">
+                <DynamicField def={def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
+              </div>
+            );
+          }
           // A caixa +AMIGO aparece ao lado do campo de campanha de eletricidade.
           if (def.key === "campaign") {
             return (

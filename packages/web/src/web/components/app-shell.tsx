@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard,
+  LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -31,6 +31,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { to: "/clientes", key: "clientes", label: "Clientes", icon: Contact },
       { to: "/vendas", key: "vendas", label: "Vendas", icon: ShoppingCart },
+      { to: "/vendas-criticas", key: "vendas-criticas", label: "Vendas Críticas", icon: Timer },
+      { to: "/estado-vtv", key: "estado-vtv", label: "Estado VTV", icon: ShieldAlert },
       { to: "/campanhas", key: "campanhas", label: "Campanhas", icon: Megaphone },
       { to: "/agenda", key: "agenda", label: "Agenda", icon: Calendar },
       { to: "/metas", key: "metas", label: "Metas", icon: Target },
