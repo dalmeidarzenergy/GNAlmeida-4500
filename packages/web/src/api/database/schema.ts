@@ -24,7 +24,7 @@ export const departments = sqliteTable("departments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   description: text("description"),
-  color: text("color").notNull().default("#c6f432"),
+  color: text("color").notNull().default("#206a9f"),
   createdAt: createdAt(),
 });
 
@@ -208,7 +208,7 @@ export const teams = sqliteTable("teams", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   description: text("description"),
-  color: text("color").notNull().default("#c6f432"),
+  color: text("color").notNull().default("#206a9f"),
   leaderId: integer("leader_id").references(() => employees.id, { onDelete: "set null" }),
   /** Coordenador responsável pela equipa (funcionário). Opcional. */
   coordinatorId: integer("coordinator_id").references(() => employees.id, { onDelete: "set null" }),
@@ -281,7 +281,7 @@ export const calendars = sqliteTable("calendars", {
   /** Equipa a que pertence (sempre nos de equipa; nos pessoais = equipa atual do dono). */
   teamId: integer("team_id").references(() => teams.id, { onDelete: "set null" }),
   /** Cor do calendário na vista (herda a da equipa nos pessoais). */
-  color: text("color").notNull().default("#c6f432"),
+  color: text("color").notNull().default("#206a9f"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: createdAt(),
 });
@@ -486,7 +486,7 @@ export const commissionTables = sqliteTable("commission_tables", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   description: text("description"),
-  color: text("color").notNull().default("#c6f432"),
+  color: text("color").notNull().default("#206a9f"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   /** Nº de vendas LUZ/Dual BTN em fornecimento que não são pagas (bloqueio mensal da tabela). */
   blockedSales: real("blocked_sales").notNull().default(0),
@@ -538,7 +538,7 @@ export const chiefTables = sqliteTable("chief_tables", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   description: text("description"),
-  color: text("color").notNull().default("#c6f432"),
+  color: text("color").notNull().default("#206a9f"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   /** Nº de vendas da equipa que não são pagas (bloqueio mensal). */
   blockedSales: real("blocked_sales").notNull().default(0),

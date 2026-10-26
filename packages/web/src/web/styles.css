@@ -27,7 +27,7 @@
   --ink: #eef2ea;
   --ink-2: #9aa39b;
   --ink-3: #636b64;
-  --volt: #c6f432;
+  --volt: #35a3d9;
   --amber: #f5a524;
   --sky: #38bdf8;
   --rose: #f472b6;
@@ -45,7 +45,7 @@
   --ink: #1a1e1b;
   --ink-2: #5f6862;
   --ink-3: #8a938c;
-  --volt: #85a020;
+  --volt: #206a9f;
   --amber: #c88a16;
   --sky: #0ea5e9;
   --rose: #e11d8d;
@@ -91,8 +91,8 @@
 
 .grid-bg {
   background-image:
-    linear-gradient(to right, rgba(198, 244, 50, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(198, 244, 50, 0.04) 1px, transparent 1px);
+    linear-gradient(to right, rgba(53, 163, 217, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(53, 163, 217, 0.06) 1px, transparent 1px);
   background-size: 44px 44px;
 }
 .noise::after {

@@ -315,7 +315,7 @@ function personBlock(doc: PDFKit.PDFDocument, p: PdfPerson, month: string) {
 export async function renderAutoPdf(b: PdfBreakdown, people: PdfPerson[]): Promise<Buffer> {
   const doc = new PDFDocument({ size: "A4", margins: { top: M, bottom: M, left: M, right: M }, autoFirstPage: true, bufferPages: true });
   doc.info.Title = `Auto Iberdrola ${b.month}`;
-  doc.info.Author = "GNAlmeida CRM";
+  doc.info.Author = "D2D Consulting CRM";
 
   const chunks: Buffer[] = [];
   const done = new Promise<Buffer>((resolve, reject) => {

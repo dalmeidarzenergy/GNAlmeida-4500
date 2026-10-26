@@ -78,7 +78,7 @@ export default function SignInPage() {
             <span className="text-volt">num só circuito.</span>
           </h1>
           <p className="mt-5 max-w-md text-[15px] leading-relaxed text-ink-2">
-            Gerir equipas, férias, recrutamento, clientes, encomendas e metas comerciais da GNAlmeida num único painel.
+            Gerir equipas, férias, recrutamento, clientes, encomendas e metas comerciais da D2D Consulting num único painel.
           </p>
           <div className="mt-10 grid grid-cols-3 gap-3">
             {[

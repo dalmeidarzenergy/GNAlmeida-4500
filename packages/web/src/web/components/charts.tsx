@@ -18,7 +18,7 @@ function TipBox({ active, payload, label, money = true, labelFmt }: any) {
   );
 }
 
-export function TrendChart({ data, dataKey = "total", height = 260, color = "#c6f432", money = true }: { data: any[]; dataKey?: string; height?: number; color?: string; money?: boolean }) {
+export function TrendChart({ data, dataKey = "total", height = 260, color = "#206a9f", money = true }: { data: any[]; dataKey?: string; height?: number; color?: string; money?: boolean }) {
   const id = `g-${dataKey}-${color.replace("#", "")}`;
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -39,7 +39,7 @@ export function TrendChart({ data, dataKey = "total", height = 260, color = "#c6
   );
 }
 
-export function BarsChart({ data, dataKey, xKey, height = 260, color = "#c6f432", money = true }: { data: any[]; dataKey: string; xKey: string; height?: number; color?: string; money?: boolean }) {
+export function BarsChart({ data, dataKey, xKey, height = 260, color = "#206a9f", money = true }: { data: any[]; dataKey: string; xKey: string; height?: number; color?: string; money?: boolean }) {
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 10, right: 6, left: -8, bottom: 0 }}>
@@ -106,8 +106,8 @@ export function EvolutionChart({ data, height = 320, cumulative = false }: { dat
       <ComposedChart data={data} margin={{ top: 10, right: 6, left: -8, bottom: 0 }}>
         <defs>
           <linearGradient id="g-evo-sup" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#c6f432" stopOpacity={0.28} />
-            <stop offset="100%" stopColor="#c6f432" stopOpacity={0} />
+            <stop offset="0%" stopColor="#206a9f" stopOpacity={0.28} />
+            <stop offset="100%" stopColor="#206a9f" stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid stroke="#1f2420" vertical={false} />
@@ -120,9 +120,9 @@ export function EvolutionChart({ data, height = 320, cumulative = false }: { dat
           <Bar name="Inseridas" dataKey={ins} fill="#38bdf8" fillOpacity={0.55} radius={[5, 5, 0, 0]} maxBarSize={34} />
         )}
         {cumulative ? (
-          <Area type="linear" name="Em Fornecimento" dataKey={sup} stroke="#c6f432" strokeWidth={2.4} fill="url(#g-evo-sup)" dot={false} />
+          <Area type="linear" name="Em Fornecimento" dataKey={sup} stroke="#206a9f" strokeWidth={2.4} fill="url(#g-evo-sup)" dot={false} />
         ) : (
-          <Line type="linear" name="Em Fornecimento" dataKey={sup} stroke="#c6f432" strokeWidth={2.4} dot={{ r: 3, fill: "#c6f432", stroke: "#0c0e0d", strokeWidth: 1.5 }} activeDot={{ r: 5 }} />
+          <Line type="linear" name="Em Fornecimento" dataKey={sup} stroke="#206a9f" strokeWidth={2.4} dot={{ r: 3, fill: "#206a9f", stroke: "#0c0e0d", strokeWidth: 1.5 }} activeDot={{ r: 5 }} />
         )}
       </ComposedChart>
     </ResponsiveContainer>

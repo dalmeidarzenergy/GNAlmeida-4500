@@ -11,7 +11,7 @@ import { TeamFilter, useTeamIds } from "../components/team-filter";
 import { PlaceFilter, type Place } from "../components/place-filter";
 import { SALE_STATUS } from "../lib/labels";
 
-const TIPO_COLORS = ["#c6f432", "#38bdf8", "#f472b6", "#f5a524", "#a78bfa", "#34d399"];
+const TIPO_COLORS = ["#206a9f", "#38bdf8", "#f472b6", "#f5a524", "#a78bfa", "#34d399"];
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
 function downloadCsv(name: string, rows: (string | number)[][]) {
@@ -202,7 +202,7 @@ export default function MedemPage() {
               <div className="card rise p-5">
                 <div className="label-mono mb-1">Equipas · {period}</div>
                 <div className="mb-4 font-display text-[16px] font-semibold">Vendas por equipa</div>
-                <BarsChart money={false} data={d.byTeam.map((t) => ({ ...t, color: t.color ?? "#c6f432" }))} dataKey="orders" xKey="teamName" height={300} />
+                <BarsChart money={false} data={d.byTeam.map((t) => ({ ...t, color: t.color ?? "#206a9f" }))} dataKey="orders" xKey="teamName" height={300} />
               </div>
               <div className="card rise overflow-hidden">
                 <div className="max-h-[400px] overflow-auto">

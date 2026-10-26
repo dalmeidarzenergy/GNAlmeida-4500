@@ -9,7 +9,7 @@ type Table = NonNullable<ReturnType<typeof useChiefTables>["data"]>[number];
 type TeamDraft = { min: string; max: string; luz: string; gas: string };
 type OwnDraft = { min: string; max: string; luz: string; gas: string; dd: string; fe: string; pel: string };
 
-const COLORS = ["#c6f432", "#f5a524", "#38bdf8", "#a78bfa", "#f472b6", "#34d399", "#fb7185", "#facc15"];
+const COLORS = ["#206a9f", "#f5a524", "#38bdf8", "#a78bfa", "#f472b6", "#34d399", "#fb7185", "#facc15"];
 
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
 const str = (v: number | null | undefined) => (v == null ? "" : String(v));

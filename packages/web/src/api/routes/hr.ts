@@ -14,7 +14,7 @@ import { writePublic } from "../lib/public-files";
 const departmentInput = z.object({
   name: z.string().min(1),
   description: z.string().nullable().optional(),
-  color: z.string().default("#c6f432"),
+  color: z.string().default("#206a9f"),
 });
 
 /** O vínculo tem de ser uma das opções configuradas no cargo (vazio = sem vínculo). */
@@ -82,7 +82,7 @@ const idInput = z.object({ id: z.number() });
 const teamInput = z.object({
   name: z.string().trim().min(1, "Indique o nome da equipa."),
   description: z.string().nullable().optional(),
-  color: z.string().default("#c6f432"),
+  color: z.string().default("#206a9f"),
   leaderId: z.number({ message: "Escolha o chefe de equipa." }),
   /** Coordenador responsável pela equipa (opcional). */
   coordinatorId: z.number().nullable().optional(),

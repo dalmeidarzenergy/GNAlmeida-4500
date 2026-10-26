@@ -69,8 +69,8 @@ export function Logo() {
   return (
     <div className="flex items-center gap-2.5">
       <img src="/icons/logo.png" alt="D2D Consulting" className="h-9 w-auto shrink-0 object-contain" />
-      <div className="font-display text-[17px] font-bold tracking-tight">
-        GN<span className="text-volt">Almeida</span>
+      <div className="min-w-0 truncate font-display text-[17px] font-bold tracking-tight">
+        D2D <span className="text-volt">Consulting</span>
       </div>
     </div>
   );

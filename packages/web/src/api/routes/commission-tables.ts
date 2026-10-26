@@ -22,7 +22,7 @@ const rowInput = z.object({
 const tableInput = z.object({
   name: z.string().min(1, "Indique o nome da tabela."),
   description: z.string().nullable().optional(),
-  color: z.string().default("#c6f432"),
+  color: z.string().default("#206a9f"),
   active: z.boolean().default(true),
   group: z.enum(["gestor-comercial", "team-leader", "coordenador", "gestor-parcerias", "parceiro", "freelancer"]).default("gestor-comercial"),
   regime: z.enum(["RES+BTN NEG", "MEDEM", "SOLAR", "CE"]).default("RES+BTN NEG"),

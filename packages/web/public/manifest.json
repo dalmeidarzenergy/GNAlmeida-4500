@@ -1,7 +1,7 @@
 {
-  "name": "GNAlmeida — Gestão",
-  "short_name": "GNAlmeida",
-  "description": "CRM da GNAlmeida: gestão de equipas, vendas, clientes e comissões num só painel.",
+  "name": "D2D Consulting — Gestão",
+  "short_name": "D2D Consulting",
+  "description": "CRM da D2D Consulting: gestão de equipas, vendas, clientes e comissões num só painel.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

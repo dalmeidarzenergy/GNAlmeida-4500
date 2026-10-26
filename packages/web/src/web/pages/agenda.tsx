@@ -129,7 +129,7 @@ export default function AgendaPage() {
                   <span className={`num text-[12px] font-medium ${isToday ? "flex h-5 w-5 items-center justify-center rounded-full bg-volt text-[11px] text-black" : "text-ink-2"}`}>{d.getDate()}</span>
                   <div className="mt-1 flex w-full flex-col gap-0.5">
                     {evs.slice(0, 2).map((e) => (
-                      <span key={e.id} className="truncate rounded px-1 py-px text-[10px] leading-tight text-black" style={{ background: calById.get(e.calendarId)?.color ?? "#c6f432" }}>
+                      <span key={e.id} className="truncate rounded px-1 py-px text-[10px] leading-tight text-black" style={{ background: calById.get(e.calendarId)?.color ?? "#206a9f" }}>
                         {e.startTime} {e.title}
                       </span>
                     ))}
@@ -161,7 +161,7 @@ export default function AgendaPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c?.color ?? "#c6f432" }} />
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c?.color ?? "#206a9f" }} />
                           <span className="truncate text-[13.5px] font-medium">{e.title}</span>
                         </div>
                         <div className="mt-0.5 text-[12px] text-ink-2">

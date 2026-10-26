@@ -129,7 +129,7 @@ async function canWriteCalendar(ctx: Ctx, calendarId: number): Promise<boolean> 
 export async function ensurePersonalCalendar(userId: string, teamId: number | null) {
   const [existing] = await db.select().from(calendars).where(and(eq(calendars.userId, userId), eq(calendars.type, "pessoal")));
   if (existing) return existing;
-  let color = "#c6f432";
+  let color = "#206a9f";
   if (teamId) {
     const [t] = await db.select({ color: teams.color }).from(teams).where(eq(teams.id, teamId));
     if (t) color = t.color;
@@ -143,7 +143,7 @@ export async function ensureTeamCalendar(teamId: number) {
   const [existing] = await db.select().from(calendars).where(and(eq(calendars.teamId, teamId), eq(calendars.type, "equipa")));
   if (existing) return existing;
   const [t] = await db.select({ color: teams.color }).from(teams).where(eq(teams.id, teamId));
-  const [c] = await db.insert(calendars).values({ type: "equipa", teamId, color: t?.color ?? "#c6f432" }).returning();
+  const [c] = await db.insert(calendars).values({ type: "equipa", teamId, color: t?.color ?? "#206a9f" }).returning();
   return c;
 }
 
@@ -154,7 +154,7 @@ export async function ensureTeamCalendar(teamId: number) {
 export async function syncPersonalCalendarTeam(employeeId: number, teamId: number | null) {
   const { userRoles } = await import("../database/schema");
   const linked = await db.select({ userId: userRoles.userId }).from(userRoles).where(eq(userRoles.employeeId, employeeId));
-  let color = "#c6f432";
+  let color = "#206a9f";
   if (teamId != null) {
     const [t] = await db.select({ color: teams.color }).from(teams).where(eq(teams.id, teamId));
     if (t) color = t.color;

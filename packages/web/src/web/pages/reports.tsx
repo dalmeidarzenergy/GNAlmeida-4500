@@ -12,7 +12,7 @@ import { DASHBOARD_SERVICES, ServiceFilter } from "../components/service-filter"
 import { ABSENCE_TYPE, SALE_STATUS } from "../lib/labels";
 import { PlaceFilter, type Place } from "../components/place-filter";
 
-const HEX: Record<string, string> = { "var(--volt)": "#c6f432", "var(--amber)": "#f5a524", "var(--sky)": "#38bdf8", "var(--danger)": "#f05252", "var(--rose)": "#f472b6", "var(--ink-2)": "#9aa39b" };
+const HEX: Record<string, string> = { "var(--volt)": "#206a9f", "var(--amber)": "#f5a524", "var(--sky)": "#38bdf8", "var(--danger)": "#f05252", "var(--rose)": "#f472b6", "var(--ink-2)": "#9aa39b" };
 
 function downloadCsv(name: string, rows: (string | number)[][]) {
   const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
@@ -166,7 +166,7 @@ function HrReports({ month }: { month: string }) {
         <Panel eyebrow={`12 meses até ${monthLabel(month)}`} title="Contratações"><BarsChart money={false} data={d.hires} dataKey="count" xKey="month" height={240} color="#38bdf8" /></Panel>
         <Panel eyebrow={monthLabel(month)} title="Ausências aprovadas (dias)">
           {d.absencesByType.length ? (
-            <Donut data={d.absencesByType.map((a) => ({ name: ABSENCE_TYPE[a.type]?.label ?? a.type, value: a.days, color: { ferias: "#c6f432", baixa: "#f05252", falta: "#f5a524", formacao: "#38bdf8", outro: "#9aa39b" }[a.type] ?? "#666" }))} height={240} />
+            <Donut data={d.absencesByType.map((a) => ({ name: ABSENCE_TYPE[a.type]?.label ?? a.type, value: a.days, color: { ferias: "#206a9f", baixa: "#f05252", falta: "#f5a524", formacao: "#38bdf8", outro: "#9aa39b" }[a.type] ?? "#666" }))} height={240} />
           ) : <Empty title="Sem ausências" />}
         </Panel>
       </div>

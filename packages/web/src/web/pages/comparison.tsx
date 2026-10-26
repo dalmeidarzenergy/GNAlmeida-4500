@@ -11,7 +11,7 @@ import { EmployeeFilter } from "../components/employee-filter";
 import { TeamFilter, useTeamIds } from "../components/team-filter";
 import { DASHBOARD_SERVICES, ServiceFilter } from "../components/service-filter";
 
-const SUPPLIER_COLORS = ["#c6f432", "#38bdf8", "#f472b6", "#f5a524", "#a78bfa", "#34d399", "#fb7185", "#facc15", "#9aa39b"];
+const SUPPLIER_COLORS = ["#206a9f", "#38bdf8", "#f472b6", "#f5a524", "#a78bfa", "#34d399", "#fb7185", "#facc15", "#9aa39b"];
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 const dec = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-PT", { maximumFractionDigits: 1 }));
 
@@ -133,7 +133,7 @@ function YearBars({ data }: { data: { label: string; current: number; previous: 
         <YAxis tick={{ stroke: "#636b64", fontSize: 11, fontFamily: "JetBrains Mono" }} tickLine={false} axisLine={false} width={40} allowDecimals={false} />
         <Tooltip cursor={{ fill: "rgba(255,255,255,0.03)" }} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Bar name="Este ano" dataKey="current" fill="#c6f432" radius={[4, 4, 0, 0]} maxBarSize={18} />
+        <Bar name="Este ano" dataKey="current" fill="#206a9f" radius={[4, 4, 0, 0]} maxBarSize={18} />
         <Bar name="Ano anterior" dataKey="previous" fill="#38bdf8" fillOpacity={0.6} radius={[4, 4, 0, 0]} maxBarSize={18} />
       </BarChart>
     </ResponsiveContainer>
@@ -199,7 +199,7 @@ function TeamsView({ d, period }: { d: NonNullable<ReturnType<typeof useCompare>
       <div className="card rise p-5">
         <div className="label-mono mb-1">Equipas · {period}</div>
         <div className="mb-4 font-display text-[16px] font-semibold">Vendas por equipa</div>
-        <BarsChart money={false} data={teams.map((t) => ({ ...t, color: t.color ?? "#c6f432" }))} dataKey="orders" xKey="teamName" height={320} />
+        <BarsChart money={false} data={teams.map((t) => ({ ...t, color: t.color ?? "#206a9f" }))} dataKey="orders" xKey="teamName" height={320} />
       </div>
       <div className="card rise overflow-hidden">
         <div className="max-h-[440px] overflow-auto">

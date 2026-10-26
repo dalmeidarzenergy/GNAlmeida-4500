@@ -8,7 +8,7 @@ import { errMsg } from "../lib/format";
 import { canManage } from "../../api/shared/hierarchy";
 
 type Team = NonNullable<ReturnType<typeof useTeams>["data"]>[number];
-const COLORS = ["#c6f432", "#f5a524", "#38bdf8", "#a78bfa", "#f472b6", "#34d399", "#fb7185", "#facc15"];
+const COLORS = ["#206a9f", "#f5a524", "#38bdf8", "#a78bfa", "#f472b6", "#34d399", "#fb7185", "#facc15"];
 
 function TeamForm({ initial, teams, onClose }: { initial: Team | null; teams: Team[]; onClose: () => void }) {
   const emps = useEmployees();
