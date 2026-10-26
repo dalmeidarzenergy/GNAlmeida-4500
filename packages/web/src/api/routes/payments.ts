@@ -627,7 +627,7 @@ async function buildBreakdown(m: string): Promise<Breakdown> {
       const camp = campaignPenalty(r);
       penaltyTiming = round2(penaltyTiming + hire);
       penaltyCampaign = round2(penaltyCampaign + camp);
-      return { ...toLine(r), penaltyHire: hire, penaltyCampaign: camp };
+      return { ...toLine(r), penaltyHire: hire, penaltyCampaign: camp, total: round2(r.total - hire - camp) };
     });
 
     const gross = round2(resolved.reduce((sum, e) => sum + e.total, 0));

@@ -150,7 +150,9 @@ function PaymentForm({ initial, onClose, defaultMonth }: { initial: PayRow | nul
 /** Uma linha de venda do auto. */
 function LineTable({ lines, empty }: { lines: AutoLine[]; empty: string }) {
   if (!lines.length) return <Empty title={empty} text="Sem vendas nesta situacao." />;
-  const sum = lines.reduce((s, l) => s + l.luz + l.gas + l.extras, 0);
+  const penaltyHireSum = lines.reduce((s, l) => s + l.penaltyHire, 0);
+  const penaltyCampaignSum = lines.reduce((s, l) => s + l.penaltyCampaign, 0);
+  const netSum = lines.reduce((s, l) => s + l.total, 0);
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[820px] text-[12.5px]">
@@ -188,9 +190,9 @@ function LineTable({ lines, empty }: { lines: AutoLine[]; empty: string }) {
             <td className="num px-3 py-2 text-right">{fmtEur(lines.reduce((s, l) => s + l.luz, 0))}</td>
             <td className="num px-3 py-2 text-right">{fmtEur(lines.reduce((s, l) => s + l.gas, 0))}</td>
             <td className="num px-3 py-2 text-right">{fmtEur(lines.reduce((s, l) => s + l.extras, 0))}</td>
-            <td className="px-3 py-2 text-right">-</td>
-            <td className="px-3 py-2 text-right">-</td>
-            <td className="num px-3 py-2 text-right">{fmtEur(sum)}</td>
+            <td className="num px-3 py-2 text-right text-ink-2">{penaltyHireSum ? `-${fmtEur(penaltyHireSum)}` : "-"}</td>
+            <td className="num px-3 py-2 text-right text-ink-2">{penaltyCampaignSum ? `-${fmtEur(penaltyCampaignSum)}` : "-"}</td>
+            <td className="num px-3 py-2 text-right">{fmtEur(netSum)}</td>
           </tr>
         </tfoot>
       </table>
@@ -200,11 +202,15 @@ function LineTable({ lines, empty }: { lines: AutoLine[]; empty: string }) {
 
 /** Resumo (os campos que saem no PDF). */
 function AutoResumo({ p }: { p: AutoPerson }) {
+  const totalLuz = p.lines.reduce((s, l) => s + l.luz, 0);
+  const totalGas = p.lines.reduce((s, l) => s + l.gas, 0);
   const rows: [string, string][] = [
     ["Total a pagar", fmtEur(p.due)],
     ["Vendas a pagamento", `${p.totalSales} (${p.luzCount} luz, ${p.gasCount} gas)`],
     ["Extras", `${p.pelQty} PEL PLUS, ${p.ddQty} debito direto, ${p.feQty} FE (${fmtEur(p.extrasAmount)})`],
-    ["Base antes de descontos", fmtEur(p.gross)],
+    ["Total luz", fmtEur(totalLuz)],
+    ["Total gas", fmtEur(totalGas)],
+    ["Subtotal sem descontos", fmtEur(p.gross)],
     ["Chargeback a descontar", p.chargeback ? `-${fmtEur(p.chargeback)}` : "-"],
     ["Penalizacao de timing", p.penaltyTiming ? `-${fmtEur(p.penaltyTiming)}` : "-"],
     ["Penalizacao de campanha", p.penaltyCampaign ? `-${fmtEur(p.penaltyCampaign)}` : "-"],
@@ -246,7 +252,7 @@ function AutoPanel({
   if (q.isLoading) return <div className="p-5"><div className="skeleton h-24 rounded-[12px]" /></div>;
   if (!person) return <Empty title="Sem auto neste mes" text="Este comercial nao tem vendas a pagamento no mes escolhido." />;
 
-  const total = person.lines.reduce((s, l) => s + l.total, 0);
+  const total = person.lines.reduce((s, l) => s + l.luz + l.gas + l.extras, 0);
   return (
     <div className="card overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-volt/5 px-5 py-4">

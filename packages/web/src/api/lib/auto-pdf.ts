@@ -172,7 +172,9 @@ function personBlock(doc: PDFKit.PDFDocument, p: PdfPerson, month: string) {
     ["Total a pagar", eur(p.due)],
     ["Vendas a pagamento", `${p.totalSales} (${p.luzCount} luz, ${p.gasCount} gás)`],
     ["Extras", `${p.pelQty} PEL PLUS, ${p.ddQty} débito direto, ${p.feQty} FE (${eur(p.extrasAmount)})`],
-    ["Base antes de descontos", eur(p.gross)],
+    ["Total luz", eur(p.lines.reduce((s, l) => s + l.luz, 0))],
+    ["Total gás", eur(p.lines.reduce((s, l) => s + l.gas, 0))],
+    ["Subtotal sem descontos", eur(p.gross)],
     ["Chargeback a descontar", p.chargeback ? `-${eur(p.chargeback)}` : "-"],
     ["Penalização de timing", p.penaltyTiming ? `-${eur(p.penaltyTiming)}` : "-"],
     ["Penalização de campanha", p.penaltyCampaign ? `-${eur(p.penaltyCampaign)}` : "-"],
@@ -219,9 +221,9 @@ function personBlock(doc: PDFKit.PDFDocument, p: PdfPerson, month: string) {
     eur(p.lines.reduce((s, l) => s + l.luz, 0)),
     eur(p.lines.reduce((s, l) => s + l.gas, 0)),
     eur(p.lines.reduce((s, l) => s + l.extras, 0)),
-    "-",
-    "-",
-    eur(p.lines.reduce((s, l) => s + l.luz + l.gas + l.extras, 0)),
+    p.lines.reduce((s, l) => s + l.penaltyHire, 0) ? `-${eur(p.lines.reduce((s, l) => s + l.penaltyHire, 0))}` : "-",
+    p.lines.reduce((s, l) => s + l.penaltyCampaign, 0) ? `-${eur(p.lines.reduce((s, l) => s + l.penaltyCampaign, 0))}` : "-",
+    eur(p.lines.reduce((s, l) => s + l.total, 0)),
   ]);
   salesTable(doc, cols, body, false);
   doc.moveDown(0.4);
