@@ -711,3 +711,55 @@ export const iberdrolaOverrides = sqliteTable("iberdrola_overrides", {
     .references(() => employees.id, { onDelete: "cascade" }),
   createdAt: createdAt(),
 });
+
+/** Incentivos comerciais com regras configuráveis. */
+export type IncentivePillar =
+  | { type: "per_sale"; name: string; amount: number; conditionKey: string; conditionValues: string[] }
+  | { type: "tiered_mix"; name: string; percentageOf: string; percentageOfValues: string[]; baseRate: number; tiers: { pct: number; label: string; amount: number }[] };
+
+export type IncentiveRules = {
+  eligibleServices: string[];
+  eligibleSuppliers: string[];
+  eligibleVoltages: string[];
+  eligiblePowers: string[];
+  eligibleSegments: string[];
+  excludeOffers: string[];
+  /** Distritos ZBR (zona baixo rácio); os restantes são ZAR. Vazio = todos iguais. */
+  zbrDistricts: string[];
+  pillars: IncentivePillar[];
+};
+
+export const incentives = sqliteTable("incentives", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  description: text("description"),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  rules: text("rules", { mode: "json" }).$type<IncentiveRules>().notNull(),
+  createdAt: createdAt(),
+});
+
+/** Cálculos de incentivos por mês/comercial (guardados após aprovação). */
+export type IncentiveCalcRow = {
+  employeeId: number;
+  employeeName: string;
+  totalSales: number;
+  eligibleSales: number;
+  mixPct: number;
+  pillars: { name: string; amount: number; count: number; detail: string }[];
+  total: number;
+};
+
+export const incentiveCalculations = sqliteTable("incentive_calculations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  incentiveId: integer("incentive_id")
+    .notNull()
+    .references(() => incentives.id, { onDelete: "cascade" }),
+  month: text("month").notNull(),
+  status: text("status").notNull().default("draft"),
+  rows: text("rows", { mode: "json" }).$type<IncentiveCalcRow[]>().notNull(),
+  approvedBy: integer("approved_by"),
+  approvedAt: integer("approved_at", { mode: "timestamp" }),
+  createdAt: createdAt(),
+});

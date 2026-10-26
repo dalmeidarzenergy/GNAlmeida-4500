@@ -16,6 +16,7 @@ import { campaigns } from "./routes/campaigns";
 import { agenda } from "./routes/agenda";
 import { d2d } from "./routes/d2d";
 import { simulador } from "./routes/simulador";
+import { incentivesRoutes } from "./routes/incentives";
 import { simuladorStore } from "./lib/simulador-store";
 import { syncCatalog } from "./routes/campaigns";
 import { handle as aiHandle } from "./lib/simulador-ai.mjs";
@@ -36,6 +37,7 @@ export const router = {
   reports,
   campaigns,
   agenda,
+  incentives: incentivesRoutes,
 };
 
 export type AppRouter = typeof router;
