@@ -66,6 +66,43 @@ export default function D2DPage() {
     return () => observer.disconnect();
   }, []);
 
+  // Mede quanto a parte de baixo do iframe ultrapassa a área realmente visível
+  // e passa esse valor ao iframe. Dentro do iframe env(safe-area-inset-bottom)
+  // é sempre 0, e como o iframe é 100dvh posicionado abaixo do header sticky,
+  // o menu inferior fica tapado (por baixo do header + barra de sistema).
+  useEffect(() => {
+    const measure = () => {
+      const el = ref.current;
+      const vv = window.visualViewport;
+      if (!el || !vv) return;
+      // Linha de baixo da área visível (viewport visual).
+      const visibleBottom = (vv.offsetTop || 0) + vv.height;
+      // Quanto o iframe passa para lá dessa linha.
+      const overflow = el.getBoundingClientRect().bottom - visibleBottom;
+      ref.current?.contentWindow?.postMessage(
+        { type: "safe-area", bottom: Math.round(Math.max(0, overflow)) },
+        "*"
+      );
+    };
+    // O postMessage do iframe só é recebido depois de o documento carregar,
+    // por isso re-medimos no evento load (o measure() imediato perde-se).
+    const iframe = ref.current;
+    measure();
+    if (iframe) iframe.addEventListener("load", measure);
+    const ro = new ResizeObserver(measure);
+    if (iframe) ro.observe(iframe);
+    window.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("scroll", measure);
+    return () => {
+      if (iframe) iframe.removeEventListener("load", measure);
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("scroll", measure);
+    };
+  }, []);
+
   if (user === undefined) {
     return (
       <div className="flex h-[50vh] items-center justify-center">

@@ -18,7 +18,7 @@
 *{box-sizing:border-box}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);background-image:linear-gradient(rgba(53,163,217,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(53,163,217,.035) 1px,transparent 1px);background-size:40px 40px;background-attachment:fixed;color:var(--tx);font:16px/1.4 Outfit,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:560px;margin:0 auto;padding:16px 16px 90px}
+main{max-width:560px;margin:0 auto;padding:16px 16px calc(96px + var(--safe-bottom, 0px))}
 h1{font-size:20px;margin:0 0 2px}
 .sub{color:var(--mu);font-size:14px;margin:0 0 14px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
@@ -32,13 +32,14 @@ button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--bd)
 .chips{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .chip{text-align:left;padding:12px}
 .chip.on{outline:2px solid var(--ac);background:color-mix(in srgb,var(--ac) 12%,var(--card))}
-nav{position:fixed;left:50%;right:auto;bottom:0;transform:translateX(-50%);width:100%;max-width:560px;display:flex;background:var(--card);border-top:1px solid var(--bd);padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));z-index:5}
-nav{overflow-x:auto;scrollbar-width:none}
-nav button{flex:1 1 0;min-width:0;border:0;background:none;color:var(--mu);font-size:12px;padding:10px 2px;white-space:normal;line-height:1.2;word-break:break-word}
+nav{position:fixed;left:50%;right:auto;bottom:var(--safe-bottom,0px);transform:translateX(-50%);width:100%;max-width:560px;display:flex;background:var(--card);border-top:1px solid var(--bd);padding:6px 4px;z-index:5}
+nav{overflow-x:hidden;scrollbar-width:none}
+nav button{flex:1 1 0;min-width:0;border:0;background:none;color:var(--mu);font-size:11.5px;padding:9px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15}
 /* Tablet/PC: a barra centra-se com o conteúdo e ganha cantos/atalas em vez de esticar ao ecrã todo. */
 @media (min-width:768px){nav{max-width:560px;border-left:1px solid var(--bd);border-right:1px solid var(--bd);border-radius:14px 14px 0 0;padding-left:8px;padding-right:8px}nav button{font-size:14px;padding:12px 8px}}
 /* Telemóveis muito estreitos: rótulos e espaçamento mais compactos para caber tudo. */
-@media (max-width:400px){nav button{font-size:11px;padding:9px 1px}}
+@media (max-width:400px){nav button{font-size:10.5px;padding:9px 2px}}
+@media (max-width:340px){nav button{font-size:9.5px;padding:8px 1px}}
 .badge{background:var(--no);color:#fff;border-radius:999px;font-size:10px;padding:1px 6px;margin-left:4px;font-weight:700}.badge.hide{display:none}
 .dlb{flex:none;padding:4px 10px}
 .dotc{width:12px;height:12px;border-radius:50%;flex:none}
@@ -91,7 +92,7 @@ button{transition:transform .08s,background .15s,opacity .15s}button:not(.pin):a
 .dot{animation:pulse 1.6s infinite}
 #toast{animation:tin .22s ease-out}
 .chip{transition:background .15s}
-nav button{position:relative}nav button.on::after{content:"";position:absolute;left:25%;right:25%;top:-6px;height:3px;border-radius:0 0 3px 3px;background:var(--ac);animation:grow .25s ease-out}
+nav button{position:relative}nav button.on::after{content:"";position:absolute;left:22%;right:22%;top:0;height:3px;border-radius:0 0 3px 3px;background:var(--ac);animation:grow .25s ease-out}
 .cf{position:fixed;top:60vh;width:8px;height:12px;border-radius:2px;z-index:30;pointer-events:none;animation:cf 1.3s ease-out forwards}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .syncb{font-size:12px;padding:4px 10px;border-radius:999px;color:var(--mu);white-space:nowrap}
@@ -236,7 +237,7 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
     <div id="terList"></div>
   </section>
 </main>
-<nav><button data-v="equipa" class="hide">Equipa</button><button data-v="turno" class="on">Turno</button><button data-v="portas">Portas</button><button data-v="mapa">Mapa</button><button data-v="rel">Relatório</button><button data-v="ter">Territórios</button><button data-v="hist">Histórico</button><button data-v="caixa">Caixa<b id="cxBadge" class="badge hide"></b></button></nav>
+<nav><button data-v="equipa" class="hide">Equipa</button><button data-v="turno" class="on">Turno</button><button data-v="portas">Portas</button><button data-v="mapa">Mapa</button><button data-v="rel">Relat.</button><button data-v="ter">Territ.</button><button data-v="hist">Histór.</button><button data-v="caixa">Caixa<b id="cxBadge" class="badge hide"></b></button></nav>
 <div class="modal hide" id="editM" role="dialog" aria-modal="true"><div class="sheet">
   <div class="row" style="align-items:center"><b id="eT" style="font-size:17px">Editar porta</b><button id="eX" style="flex:none" aria-label="Fechar">✕</button></div>
   <div class="row"><div><label for="eRua">Rua</label><input id="eRua"></div><div style="max-width:110px"><label for="eNum">Nº porta</label><input id="eNum" inputmode="numeric"></div></div>
@@ -266,7 +267,7 @@ $("gSave").onclick=async function(){var p=parseInt($("gPortas").value,10),v=pars
  var b=this;b.disabled=true;try{var r=await api("/meta",{method:"POST",body:JSON.stringify({employeeId:GOAL.employeeId,portas:p,vendas:v})});if(r.ok){$("goalM").classList.add("hide");await loadTeam();toast("Meta de "+GOAL.name+" atualizada ✔")}else if(r.status===401||r.status===403){toast("Sem permissão para alterar esta meta.")}else if(r.status===422){toast("Não podes definir a meta dessa pessoa.")}else{toast("Não foi possível guardar a meta.")}}catch(e){toast("Sem ligação.")}b.disabled=false};
 var q=new URLSearchParams(location.search);
 var USER=Object.assign({id:q.get("id")||"",name:q.get("nome")||"",role:q.get("role")||""},CFG.user||{});var ISLEAD=USER.role==="chefe";
-window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate();loadMeta();if(d.view&&["turno","portas","mapa","rel","ter","hist","equipa","caixa"].indexOf(d.view)>=0){view(d.view)}}if(d&&d.type==="theme"&&d.theme){document.documentElement.setAttribute("data-theme",d.theme)}});
+window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate();loadMeta();if(d.view&&["turno","portas","mapa","rel","ter","hist","equipa","caixa"].indexOf(d.view)>=0){view(d.view)}}if(d&&d.type==="theme"&&d.theme){document.documentElement.setAttribute("data-theme",d.theme)}if(d&&d.type==="safe-area"&&typeof d.bottom==="number"){document.documentElement.style.setProperty("--safe-bottom",d.bottom+"px")}});
 function emit(tipo,dados){var ev={tipo:tipo,user:USER,hora:Date.now(),dados:dados};try{window.dispatchEvent(new CustomEvent("d2d",{detail:ev}));if(window.parent&&window.parent!==window)window.parent.postMessage({type:"d2d:event",event:ev},"*")}catch(e){}if(CFG.endpoint){try{fetch(CFG.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(ev)})}catch(e){}}}
 var curRua=null,showForm=false;
 function load(){try{var r=localStorage.getItem("d2d");if(r)S=JSON.parse(r)}catch(e){}S.streets=S.streets||[];S.history=S.history||[];normalizeZonas();ownerCheck()}
