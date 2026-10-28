@@ -32,6 +32,7 @@ export const OLD_SUPPLIERS = [
   "Alfa Energia",
   "Ibelectra",
   "Portulogos Power",
+  "Rolear",
 ];
 
 /** Comercializadores de gás natural (GÁS/DUAL). */
@@ -49,6 +50,7 @@ export const OLD_GAS_SUPPLIERS = [
   "Dourogás",
   "Comercializador de Último Recurso",
   "Portulogos Power",
+  "Rolear",
 ];
 
 /**
@@ -81,6 +83,7 @@ const SUPPLIER_ALIASES: [RegExp, string][] = [
   [/elergone/, "Elergone"],
   [/ezuenergia/, "Ezuenergia"],
   [/alfa\s*energia/, "Alfa Energia"],
+  [/rolear/, "Rolear"],
   [/dourogas/, "Dourogás"],
 ];
 
