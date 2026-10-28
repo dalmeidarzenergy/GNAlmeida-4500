@@ -343,9 +343,7 @@ export default function W2lPage() {
                       </Pill>
                     </td>
                     <td className="whitespace-nowrap">
-                      {!o.details?.w2lAdvanced && (
-                        <button type="button" className="btn btn-ghost h-8 text-[12px]" style={{ color: "var(--volt)" }} onClick={() => handleAvançar(o)}>Avançar</button>
-                      )}
+                      <button type="button" className="btn btn-ghost h-8 text-[12px]" style={{ color: "var(--volt)" }} onClick={() => handleAvançar(o)}>Avançar</button>
                       <button type="button" className="btn btn-ghost h-8 text-[12px]" onClick={() => setEditW2l(o)}>Abrir</button>
                       <button type="button" className="btn btn-ghost h-8 text-[12px] hover:!text-danger" aria-label={`Eliminar ${o.number}`} onClick={() => setDeleteTarget(o)}><Trash2 size={12} /></button>
                     </td>
