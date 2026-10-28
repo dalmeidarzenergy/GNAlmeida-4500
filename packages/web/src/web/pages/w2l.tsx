@@ -83,7 +83,7 @@ export default function W2lPage() {
       await save.update.mutateAsync({
         id: o.id,
         service: o.service ?? "LUZ",
-        details: { ...o.details, w2lAdvanced: true },
+        details: { ...o.details, w2lAdvanced: true, name: o.clientName, nif: o.clientNif ?? "", contact: o.clientPhone ?? "" },
         ownerId: o.sellerId,
       });
       await orders.refetch();
