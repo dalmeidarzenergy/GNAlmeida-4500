@@ -164,13 +164,15 @@ function splitSaleForm(service: string, details: Details) {
   allowed.add("w2l");
   // Data para a chamada (W2L) — campo livre, não faz parte do formulário.
   allowed.add("w2lCallDate");
+  // Flag que indica que a lead W2L já foi avançada para Vendas.
+  allowed.add("w2lAdvanced");
   // Motivo livre do KO (aparece só quando o Estado VTV é KO); mantém-se em qualquer serviço.
   allowed.add("koReason");
   for (const k of Object.keys(values)) if (!allowed.has(k)) delete values[k];
   if (typeof values.amigo !== "boolean") delete values.amigo;
   if (typeof values.w2l !== "boolean") delete values.w2l;
   // Se W2L não está ativo, limpa os campos da leed
-  if (!values.w2l) { delete values.leedNumber; delete values.leedCreatedAt; delete values.leedStatus; delete values.w2lCallDate; }
+  if (!values.w2l) { delete values.leedNumber; delete values.leedCreatedAt; delete values.leedStatus; delete values.w2lCallDate; delete values.w2lAdvanced; }
   const status = typeof values.saleStatus === "string" && SALE_STATUS.includes(values.saleStatus) ? values.saleStatus : DEFAULT_SALE_STATUS;
   values.saleStatus = status;
   if (service === "DUAL") {

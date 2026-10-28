@@ -75,6 +75,18 @@ export default function W2lPage() {
     } else setKnown(null);
   }, [nif]);
 
+  const handleAvançar = async (o: Order) => {
+    try {
+      await save.update.mutateAsync({
+        id: o.id,
+        service: o.service ?? "LUZ",
+        details: { ...o.details, w2lAdvanced: true },
+        ownerId: o.sellerId,
+      });
+      await orders.refetch();
+    } catch (err) { setError(errMsg(err)); }
+  };
+
   const handleCreate = async () => {
     setError(null);
     if (!nome.trim()) return setError("Preencha o nome do cliente.");
@@ -232,7 +244,10 @@ export default function W2lPage() {
                         {(o.details?.leedStatus as string) || "—"}
                       </Pill>
                     </td>
-                    <td className="w-24 whitespace-nowrap">
+                    <td className="w-40 whitespace-nowrap">
+                      {!o.details?.w2lAdvanced && (
+                        <button type="button" className="btn btn-ghost h-8 text-[12px]" style={{ color: "var(--volt)" }} onClick={() => handleAvançar(o)}>Avançar</button>
+                      )}
                       <Link href={`/venda/${o.id}?from=/w2l`} className="btn btn-ghost h-8 text-[12px]">Abrir</Link>
                     </td>
                   </tr>

@@ -80,7 +80,7 @@ export default function SalesPage() {
   const [page, setPage] = useState(1);
 
   const scoped = useMemo(
-    () => (orders.data ?? []).filter((o) => (!month || o.date.startsWith(month)) && (seller == null || o.sellerId === seller) && (inTeam == null || inTeam(o.sellerId, o.date)) && services.includes(o.service ?? "")),
+    () => (orders.data ?? []).filter((o) => (!month || o.date.startsWith(month)) && (seller == null || o.sellerId === seller) && (inTeam == null || inTeam(o.sellerId, o.date)) && services.includes(o.service ?? "") && !(o.details?.w2l === true && o.details?.w2lAdvanced !== true)),
     [orders.data, month, seller, services, inTeam],
   );
   const list = useMemo(() => {
