@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
-import { useOrders, useSaveSale, useClients } from "../queries/sales";
+import { useOrders, useSaveSale, useClients, useRemoveOrder } from "../queries/sales";
 import { useEmployeeOptions } from "../queries/hr";
 import { useMe } from "../queries/me";
 import { PageHeader, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill, Pagination, Field, SubmitRow } from "../components/ui/kit";
@@ -18,6 +18,8 @@ export default function W2lPage() {
   const clients = useClients();
   const emps = useEmployeeOptions();
   const save = useSaveSale();
+  const removeOrder = useRemoveOrder();
+  const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<string>("todas");
@@ -77,6 +79,16 @@ export default function W2lPage() {
   }, [nif]);
 
   const [, navigate] = useLocation();
+
+  const handleDelete = async () => {
+    const o = deleteTarget;
+    if (!o) return;
+    try {
+      await removeOrder.mutateAsync({ id: o.id });
+      setDeleteTarget(null);
+      await orders.refetch();
+    } catch (err) { setError(errMsg(err)); setDeleteTarget(null); }
+  };
 
   const handleAvançar = async (o: Order) => {
     try {
@@ -330,11 +342,12 @@ export default function W2lPage() {
                         {(o.details?.leedStatus as string) || "—"}
                       </Pill>
                     </td>
-                    <td className="w-40 whitespace-nowrap">
+                    <td className="whitespace-nowrap">
                       {!o.details?.w2lAdvanced && (
                         <button type="button" className="btn btn-ghost h-8 text-[12px]" style={{ color: "var(--volt)" }} onClick={() => handleAvançar(o)}>Avançar</button>
                       )}
                       <button type="button" className="btn btn-ghost h-8 text-[12px]" onClick={() => setEditW2l(o)}>Abrir</button>
+                      <button type="button" className="btn btn-ghost h-8 text-[12px] hover:!text-danger" aria-label={`Eliminar ${o.number}`} onClick={() => setDeleteTarget(o)}><Trash2 size={12} /></button>
                     </td>
                   </tr>
                 ))}
@@ -344,6 +357,20 @@ export default function W2lPage() {
         )}
         <Pagination page={page} total={list.length} pageSize={PAGE_SIZE} onChange={setPage} />
       </div>
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setDeleteTarget(null)}>
+          <div className="mx-4 w-full max-w-sm rounded-[14px] bg-surface p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-[16px] font-semibold">Eliminar W2L</h3>
+            <p className="mt-2 text-[13px] text-ink-2">Eliminar a lead <strong className="text-ink">{deleteTarget.number}</strong> de <strong className="text-ink">{deleteTarget.clientName}</strong>?</p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button type="button" className="btn" onClick={() => setDeleteTarget(null)} disabled={removeOrder.isPending}>Cancelar</button>
+              <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={removeOrder.isPending}>Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
