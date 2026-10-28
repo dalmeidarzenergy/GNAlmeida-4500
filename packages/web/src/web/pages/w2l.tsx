@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { useOrders, useSaveSale, useClients } from "../queries/sales";
 import { useEmployeeOptions } from "../queries/hr";
 import { useMe } from "../queries/me";
@@ -22,6 +22,7 @@ export default function W2lPage() {
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState<string>("todas");
   const [showNew, setShowNew] = useState(false);
+  const [editW2l, setEditW2l] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [escola, setEscola] = useState<string>("LUZ");
@@ -203,6 +204,88 @@ export default function W2lPage() {
         </form>
       )}
 
+      {/* Edit W2L form */}
+      {editW2l && (() => {
+        const o = editW2l as Order;
+        const d = o.details ?? {};
+        const _escola = (o.service as string) ?? "LUZ";
+        const _leedStatus = (d.leedStatus as string) ?? "Em Processamento";
+        const _nif = (d.nif as string) ?? "";
+        const _contacto = (d.contact as string) ?? "";
+        const _nome = (d.name as string) ?? "";
+        const _callDate = (d.w2lCallDate as string) ?? "";
+        const _gestorId = o.sellerId ?? null;
+        const _leedNumber = (d.leedNumber as string) ?? "";
+
+        const handleEditSave = async (e) => {
+          e.preventDefault();
+          const fd = new FormData(e.currentTarget);
+          const svc = fd.get("escola") as string;
+          const ls = fd.get("leedStatus") as string;
+          const name = (fd.get("name") as string).trim();
+          const nifVal = (fd.get("nif") as string).trim();
+          const phone = (fd.get("contact") as string).trim();
+          const call = fd.get("callDate") as string;
+          const gidStr = fd.get("gestorId") as string;
+          const gid = gidStr ? Number(gidStr) : null;
+          const ln = (fd.get("leedNumber") as string).trim();
+
+          if (!name) return setError("Preencha o nome do cliente.");
+          if (!/^\d{9}$/.test(nifVal)) return setError("NIF inválido (9 dígitos).");
+          try {
+            await save.update.mutateAsync({
+              id: o.id,
+              service: svc,
+              details: { ...d, name, nif: nifVal, contact: phone, leedStatus: ls, w2lCallDate: call || null, leedNumber: ln },
+              ownerId: gid,
+            });
+            setEditW2l(null);
+            await orders.refetch();
+          } catch (err) { setError(errMsg(err)); }
+        };
+
+        return (
+          <form className="mb-5 card" key={o.id} onSubmit={handleEditSave}>
+            <h3 className="mb-1 font-display text-[15px] font-semibold">Editar W2L — {o.number}</h3>
+            <p className="mb-4 text-[12.5px] text-ink-3">Edita os dados da lead W2L. Para preencher CPE, potência e restantes dados, clica em Avançar.</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Escola *">
+                <select className="input" name="escola" defaultValue={_escola}>
+                  {W2L_ESCOLAS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </Field>
+              <Field label="Estado da Leed *">
+                <select className="input" name="leedStatus" defaultValue={_leedStatus}>
+                  {W2L_STATUS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </Field>
+              <Field label="Nº Leed">
+                <input className="input" name="leedNumber" defaultValue={_leedNumber} placeholder="Número da leed" />
+              </Field>
+              <Field label="NIF *">
+                <input className="input num" name="nif" defaultValue={_nif} placeholder="9 dígitos" />
+              </Field>
+              <Field label="Contacto">
+                <input className="input num" name="contact" defaultValue={_contacto} placeholder="912345678" />
+              </Field>
+              <Field label="Nome do Cliente *" className="sm:col-span-2">
+                <input className="input" name="name" defaultValue={_nome} />
+              </Field>
+              <Field label="Data para a Chamada">
+                <input type="date" className="input" name="callDate" defaultValue={_callDate} />
+              </Field>
+              <Field label="Gestor de Cliente" className="sm:col-span-2">
+                <select className="input" name="gestorId" defaultValue={_gestorId ?? ""}>
+                  <option value="">Selecione o gestor…</option>
+                  {managers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              </Field>
+            </div>
+            <SubmitRow pending={save.isPending} onCancel={() => { setEditW2l(null); setError(null); }} error={error} label="Guardar W2L" />
+          </form>
+        );
+      })()}
+
       {/* Estado da Leed tabs */}
       <div className="mb-4">
         <Tabs value={tab} onChange={setTab} items={tabItems} />
@@ -251,7 +334,7 @@ export default function W2lPage() {
                       {!o.details?.w2lAdvanced && (
                         <button type="button" className="btn btn-ghost h-8 text-[12px]" style={{ color: "var(--volt)" }} onClick={() => handleAvançar(o)}>Avançar</button>
                       )}
-                      <Link href={`/venda/${o.id}?from=/w2l`} className="btn btn-ghost h-8 text-[12px]">Abrir</Link>
+                      <button type="button" className="btn btn-ghost h-8 text-[12px]" onClick={() => setEditW2l(o)}>Abrir</button>
                     </td>
                   </tr>
                 ))}
