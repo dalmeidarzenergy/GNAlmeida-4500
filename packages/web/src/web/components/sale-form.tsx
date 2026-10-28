@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { ArrowLeft, Zap } from "lucide-react";
 import { Field, SubmitRow, ConfirmDelete } from "./ui/kit";
 import { useClients, useRemoveOrder, useSaveSale } from "../queries/sales";
@@ -251,22 +251,22 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
               </div>
             );
           }
-          // Campos W2L: só aparecem quando a caixa W2L está ativa.
-          if (def.key === "leedNumber" || def.key === "leedCreatedAt" || def.key === "leedStatus" || def.key === "w2lCallDate") {
-            if (d.w2l !== true) return null;
-            return (
-              <DynamicField key={def.key} def={def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
-            );
-          }
-          // A caixa W2L aparece ao lado do campo de Data de Assinatura.
+          // A caixa W2L aparece ao lado do campo de Data de Assinatura. Quando
+          // ativa, os campos da leed aparecem logo a seguir (antes dos campos seguintes).
           if (def.key === "signatureDate") {
+            const w2lFields = form.filter(f => f.key === "leedNumber" || f.key === "leedCreatedAt" || f.key === "leedStatus" || f.key === "w2lCallDate");
             return (
-              <div key={def.key} className="flex items-end gap-3">
-                <div className="min-w-0 flex-1">
-                  <DynamicField def={def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
+              <Fragment key={def.key}>
+                <div className="flex items-end gap-3">
+                  <div className="min-w-0 flex-1">
+                    <DynamicField def={def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
+                  </div>
+                  <W2lCheckbox checked={d.w2l === true} onChange={(v) => change("w2l", v)} />
                 </div>
-                <W2lCheckbox checked={d.w2l === true} onChange={(v) => change("w2l", v)} />
-              </div>
+                {d.w2l === true && w2lFields.map(f => (
+                  <DynamicField key={f.key} def={f} value={d[f.key]} onChange={(v) => change(f.key, v)} />
+                ))}
+              </Fragment>
             );
           }
           // A caixa +AMIGO aparece ao lado do campo de campanha de eletricidade.
@@ -286,7 +286,7 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
           }
           return CAMPAIGN_FIELDS[def.key] && campaigns.data?.length ? (
             <CampaignSelect key={def.key} label={def.label} {...campaignOptions(def.key)} onChange={(v) => change(def.key, v)} />
-          ) : (
+          ) : def.key.startsWith("leed") || def.key === "w2lCallDate" ? null : (
             <DynamicField key={def.key} def={def.kind === "select" && def.optionsFrom ? { ...def, options: fieldOptions(def, d) } : def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
           );
         })}
