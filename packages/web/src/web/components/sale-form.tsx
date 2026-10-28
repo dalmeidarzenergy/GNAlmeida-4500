@@ -258,6 +258,17 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
               <DynamicField key={def.key} def={def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
             );
           }
+          // A caixa W2L aparece ao lado do campo de Data de Assinatura.
+          if (def.key === "signatureDate") {
+            return (
+              <div key={def.key} className="flex items-end gap-3">
+                <div className="min-w-0 flex-1">
+                  <DynamicField def={def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
+                </div>
+                <W2lCheckbox checked={d.w2l === true} onChange={(v) => change("w2l", v)} />
+              </div>
+            );
+          }
           // A caixa +AMIGO aparece ao lado do campo de campanha de eletricidade.
           if (def.key === "campaign") {
             return (
@@ -270,7 +281,6 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
                   )}
                 </div>
                 <AmigoCheckbox checked={d.amigo === true} onChange={(v) => change("amigo", v)} />
-                <W2lCheckbox checked={d.w2l === true} onChange={(v) => change("w2l", v)} />
               </div>
             );
           }
