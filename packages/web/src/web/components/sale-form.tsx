@@ -101,6 +101,23 @@ function AmigoCheckbox({ checked, onChange }: { checked: boolean; onChange: (v: 
   );
 }
 
+function W2lCheckbox({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <Field label="W2L" className="shrink-0">
+      <div className="flex h-10 items-center gap-2">
+        <input
+          type="checkbox"
+          aria-label="W2L"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="h-[18px] w-[18px] accent-volt"
+        />
+        <span className="text-[13px] text-ink-2">Ativo</span>
+      </div>
+    </Field>
+  );
+}
+
 function ServicePicker({ onPick }: { onPick: (s: string) => void }) {
   return (
     <div>
@@ -234,6 +251,13 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
               </div>
             );
           }
+          // Campos W2L: só aparecem quando a caixa W2L está ativa.
+          if (def.key === "leedNumber" || def.key === "leedCreatedAt" || def.key === "leedStatus" || def.key === "w2lCallDate") {
+            if (d.w2l !== true) return null;
+            return (
+              <DynamicField key={def.key} def={def} value={d[def.key]} onChange={(v) => change(def.key, v)} />
+            );
+          }
           // A caixa +AMIGO aparece ao lado do campo de campanha de eletricidade.
           if (def.key === "campaign") {
             return (
@@ -246,6 +270,7 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
                   )}
                 </div>
                 <AmigoCheckbox checked={d.amigo === true} onChange={(v) => change("amigo", v)} />
+                <W2lCheckbox checked={d.w2l === true} onChange={(v) => change("w2l", v)} />
               </div>
             );
           }

@@ -157,10 +157,17 @@ function splitSaleForm(service: string, details: Details) {
   const allowed = new Set(form.map((f) => f.key));
   // A caixa +AMIGO vive ao lado do campo de campanha, mas não é um campo do formulário.
   allowed.add("amigo");
+  // A caixa W2L também vive ao lado do campo de campanha.
+  allowed.add("w2l");
+  // Data para a chamada (W2L) — campo livre, não faz parte do formulário.
+  allowed.add("w2lCallDate");
   // Motivo livre do KO (aparece só quando o Estado VTV é KO); mantém-se em qualquer serviço.
   allowed.add("koReason");
   for (const k of Object.keys(values)) if (!allowed.has(k)) delete values[k];
   if (typeof values.amigo !== "boolean") delete values.amigo;
+  if (typeof values.w2l !== "boolean") delete values.w2l;
+  // Se W2L não está ativo, limpa os campos da leed
+  if (!values.w2l) { delete values.leedNumber; delete values.leedCreatedAt; delete values.leedStatus; delete values.w2lCallDate; }
   const status = typeof values.saleStatus === "string" && SALE_STATUS.includes(values.saleStatus) ? values.saleStatus : DEFAULT_SALE_STATUS;
   values.saleStatus = status;
   if (service === "DUAL") {

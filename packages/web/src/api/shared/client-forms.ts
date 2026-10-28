@@ -36,6 +36,15 @@ export const DISTRICTS = [
 
 export const POWERS_KVA = ["1,15", "2,3", "3,45", "4,6", "5,75", "6,9", "10,35", "13,8", "17,25", "20,7", "27,6", "34,5", "41,4"];
 
+export const W2L_STATUS = [
+  "Em Processamento",
+  "Em Assinatura",
+  "Pendente",
+  "Consentida",
+] as const;
+
+export const W2L_ESCOLAS = ["Luz", "Gás", "Dual"] as const;
+
 export const VTV_STATUS = [
   "OK",
   "KO-A - Venda Fraudulenta",
@@ -87,6 +96,10 @@ export const SALE_FORMS: Record<string, FieldDef[]> = {
     { key: "pel", label: "PEL", kind: "yesno" },
     { key: "consent", label: "Consentimento", kind: "yesno" },
     { key: "vtvStatus", label: "Estado VTV", kind: "select", options: VTV_STATUS, default: "Pendente" },
+    { key: "leedNumber", label: "Número da Leed", kind: "text" },
+    { key: "leedCreatedAt", label: "Data da Criação (Leed)", kind: "date" },
+    { key: "leedStatus", label: "Estado da Leed", kind: "select", options: [...W2L_STATUS] },
+    { key: "w2lCallDate", label: "Data para a Chamada", kind: "date" },
     { key: "koReason", label: "Motivo do KO", kind: "textarea", full: true },
     { key: "saleStatus", label: "Estado da Venda", kind: "select", options: SALE_STATUS, default: "Prospeção" },
     { key: "notes", label: "Observações", kind: "textarea", full: true },
