@@ -43,7 +43,7 @@ export const W2L_STATUS = [
   "Consentida",
 ] as const;
 
-export const W2L_ESCOLAS = ["Luz", "Gás", "Dual"] as const;
+export const W2L_ESCOLAS = ["LUZ", "GÁS", "DUAL"] as const;
 
 export const VTV_STATUS = [
   "OK",

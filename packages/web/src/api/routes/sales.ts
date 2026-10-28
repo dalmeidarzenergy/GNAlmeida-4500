@@ -115,7 +115,7 @@ async function assertActiveEmployee(id: number | null) {
 async function resolveOwner(ctx: Ctx, ownerId: number | null | undefined) {
   const own = scopeSeller(ctx);
   if (own) return own;
-  if (!ownerId) throw new ORPCError("BAD_REQUEST", { message: "Atribua o gestor do cliente." });
+  if (!ownerId) return null;
   await assertActiveEmployee(ownerId);
   return ownerId;
 }
@@ -147,8 +147,11 @@ function splitSaleForm(service: string, details: Details) {
   const form = getSaleForm(service);
   if (!form) throw new ORPCError("BAD_REQUEST", { message: "Serviço inválido." });
   const values: Details = { ...details };
-  const err = validateDetails(form, values);
-  if (err) throw new ORPCError("BAD_REQUEST", { message: err });
+  // Leads W2L só precisam de nome, NIF e contacto — o resto é opcional.
+  if (values.w2l !== true) {
+    const err = validateDetails(form, values);
+    if (err) throw new ORPCError("BAD_REQUEST", { message: err });
+  }
   const core: Record<string, string> = {};
   for (const k of Object.keys(CORE_MAP)) {
     core[k] = String(values[k] ?? "").trim();
@@ -180,7 +183,7 @@ function splitSaleForm(service: string, details: Details) {
 }
 
 /** Encontra (por id ou NIF) ou cria o cliente da venda e atualiza os dados principais. */
-async function upsertSaleClient(ctx: Ctx, core: { name: string; nif: string; phone: string }, ownerId: number, clientId?: number | null) {
+async function upsertSaleClient(ctx: Ctx, core: { name: string; nif: string; phone: string }, ownerId: number | null, clientId?: number | null) {
   let existing = clientId ? (await db.select().from(clients).where(eq(clients.id, clientId)))[0] : undefined;
   if (clientId && !existing) throw new ORPCError("BAD_REQUEST", { message: "Cliente não encontrado." });
   if (!existing) existing = (await db.select().from(clients).where(eq(clients.nif, core.nif)))[0];
@@ -293,11 +296,12 @@ export const sales = {
     create: requireEdit("vendas").input(saleFormInput).handler(async ({ input, context }) => {
       const ownerId = await resolveOwner(context, input.ownerId);
       const { core, details, status, date } = splitSaleForm(input.service, input.details);
-      const clientId = await upsertSaleClient(context, core, ownerId, input.clientId);
+      const sellerId = ownerId ?? null;
+      const clientId = await upsertSaleClient(context, core, sellerId, input.clientId);
       const number = await nextNumber(date);
       const [row] = await db
         .insert(salesTbl)
-        .values({ clientId, sellerId: ownerId, date, status, supplier: SUPPLIER, service: input.service, details, total: 0, number })
+        .values({ clientId, sellerId, date, status, supplier: SUPPLIER, service: input.service, details, total: 0, number })
         .returning();
       await logStatus(row.id, "luz", status, null, context.user.id);
       if (input.service === "DUAL") await logStatus(row.id, "gas", gasStatus(details), null, context.user.id);
