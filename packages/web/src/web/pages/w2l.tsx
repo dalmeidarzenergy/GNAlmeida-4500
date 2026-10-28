@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useOrders, useSaveSale, useClients } from "../queries/sales";
 import { useEmployeeOptions } from "../queries/hr";
 import { useMe } from "../queries/me";
@@ -75,6 +75,8 @@ export default function W2lPage() {
     } else setKnown(null);
   }, [nif]);
 
+  const [, navigate] = useLocation();
+
   const handleAvançar = async (o: Order) => {
     try {
       await save.update.mutateAsync({
@@ -84,6 +86,7 @@ export default function W2lPage() {
         ownerId: o.sellerId,
       });
       await orders.refetch();
+      navigate(`/venda/${o.id}?from=/w2l`);
     } catch (err) { setError(errMsg(err)); }
   };
 
