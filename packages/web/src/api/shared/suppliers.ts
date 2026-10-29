@@ -151,9 +151,22 @@ export type CustomSupplier = { name: string; scopes: string[] };
 export function supplierOptions(
   scope: SupplierScope,
   custom: CustomSupplier[] | undefined,
+  removed: string[] | undefined = undefined,
+  renamed: Record<string, string> | undefined = undefined,
 ): string[] {
-  const seen = new Set(baseSuppliers(scope).map(supplierKey));
-  const out = [...baseSuppliers(scope)];
+  const removedKeys = new Set((removed ?? []).map(supplierKey));
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const base of baseSuppliers(scope)) {
+    const k = supplierKey(base);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    // Um nome escondido sai da lista; um renomeado entra com o novo nome.
+    if (removedKeys.has(k)) continue;
+    out.push(renamed?.[k] ?? base);
+  }
+
   for (const c of custom ?? []) {
     if (!c.scopes?.includes(scope)) continue;
     const k = supplierKey(c.name);

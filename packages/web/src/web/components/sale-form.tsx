@@ -4,7 +4,7 @@ import { Field, SubmitRow, ConfirmDelete } from "./ui/kit";
 import { useClients, useRemoveOrder, useSaveSale } from "../queries/sales";
 import { useEmployeeOptions } from "../queries/hr";
 import { useCampaigns, campaignState } from "../queries/campaigns";
-import { useCustomSuppliers } from "../queries/suppliers";
+import { useCustomSuppliers, useSupplierOverrides } from "../queries/suppliers";
 import { errMsg } from "../lib/format";
 import { StatusHistory } from "./status-history";
 import { CAMPAIGN_FIELDS, SERVICES, SUPPLIER, clientTypeFromNif, fieldOptions, getSaleForm, validateDetails, withCustomSuppliers, type Details, type FieldDef } from "../../api/shared/client-forms";
@@ -183,11 +183,15 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
   // para a lista e a validacao verem exatamente o mesmo conjunto.
   // O hook fica sempre acima do return antecipado (regras dos hooks).
   const customSuppliers = useCustomSuppliers().data;
+  const { removed: removedSuppliers, renamed: renamedSuppliers } = useSupplierOverrides();
 
   if (!service) return <ServicePicker onPick={setService} />;
-  const form = (getSaleForm(service) ?? []).map((f) => withCustomSuppliers(f, customSuppliers));
+  const form = (getSaleForm(service) ?? []).map((f) =>
+    withCustomSuppliers(f, customSuppliers, removedSuppliers, renamedSuppliers),
+  );
   const d = values ?? initialValues(form, initial);
-  const managers = (emps.data ?? []).filter((x) => x.status !== "inativo");
+  // So funcionarios ativos podem receber vendas: suspensos e inativos ficam de fora.
+  const managers = (emps.data ?? []).filter((x) => x.status === "ativo");
   // Campanhas ativas para este serviço e tipo de cliente (pelo NIF); a já escolhida mantém-se sempre.
   const nif = typeof d.nif === "string" && /^\d{9}$/.test(d.nif) ? d.nif : null;
   const campaignOptions = (key: string) => {

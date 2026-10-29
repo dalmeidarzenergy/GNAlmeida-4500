@@ -232,15 +232,19 @@ export const getSaleForm = (service?: string | null) => (service && SERVICE_LABE
 export function withCustomSuppliers(
   f: FieldDef,
   custom: { name: string; scopes: string[] }[] | undefined,
+  removed: string[] | undefined = undefined,
+  renamed: Record<string, string> | undefined = undefined,
 ): FieldDef {
-  if (!custom?.length || f.kind !== "select") return f;
+  if (f.kind !== "select") return f;
   const scope: SupplierScope | null =
     f.supplierScope ?? (f.key === "oldSupplierGas" ? "GAS" : f.key === "oldSupplier" ? "LUZ" : null);
   if (!scope) return f;
   if (!f.options.includes(baseSuppliers(scope)[0])) return f;
-  const options = supplierOptions(scope, custom);
-  // Nada de novo a acrescentar: devolve o objeto original.
-  if (options.length === f.options.length) return f;
+  // Sem acrescentos nem excecoes nada muda: devolve o campo intacto.
+  if (!custom?.length && !removed?.length && !Object.keys(renamed ?? {}).length) return f;
+  const options = supplierOptions(scope, custom, removed, renamed);
+  const same = options.length === f.options.length && options.every((o, i) => o === f.options[i]);
+  if (same) return f;
   return { ...f, options };
 }
 

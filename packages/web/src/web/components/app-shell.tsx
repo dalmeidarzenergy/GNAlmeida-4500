@@ -35,14 +35,17 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/vendas-criticas", key: "vendas-criticas", label: "Vendas Críticas", icon: Timer },
       { to: "/estado-vtv", key: "estado-vtv", label: "Estado VTV", icon: ShieldAlert },
       { to: "/w2l", key: "w2l", label: "W2L", icon: ClipboardList },
-      { to: "/agenda", key: "agenda", label: "Agenda", icon: Calendar },
       { to: "/metas", key: "metas", label: "Metas", icon: Target },
-      { to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin },
     ],
+  },
+  {
+    group: "Gestão Territorial",
+    items: [{ to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin }],
   },
   {
     group: "Apoio Comercial",
     items: [
+      { to: "/agenda", key: "agenda", label: "Agenda", icon: Calendar },
       { to: "/campanhas", key: "campanhas", label: "Campanhas", icon: Megaphone },
       { to: "/simulador-iberdrola", key: "simulador-iberdrola", label: "Simulador Iberdrola", icon: Calculator },
       { to: "/completar-iban", key: "completar-iban", label: "Completar IBAN", icon: CreditCard },
@@ -225,7 +228,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button type="button" aria-label="Fechar menu" className="flex-1" style={{ background: "var(--overlay-bg)" }} onClick={() => setOpen(false)} />
         </div>
       )}
-      <div className={`min-w-0 flex-1 pb-9 transition-[padding] duration-200 ${expanded ? "lg:pl-[248px]" : "lg:pl-[64px]"}`}>
+      <div className={`relative min-w-0 flex-1 pb-12 transition-[padding] duration-200 ${expanded ? "lg:pl-[248px]" : "lg:pl-[64px]"}`}>
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-line bg-bg/85 px-4 backdrop-blur">
           <button className="btn-icon lg:hidden" onClick={() => setOpen(true)}>
             <Menu size={18} />
@@ -240,7 +243,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NotificationsBell />
         </header>
         {/* pb-12 reserva espaco para a assinatura fixa nao tapar o ultimo elemento. */}
-        <main className="mx-auto w-full max-w-[1400px] min-w-0 px-4 py-8 pb-12 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] min-w-0 px-4 py-8 pb-14 lg:px-8">{children}</main>
       </div>
       <Credit />
     </div>

@@ -108,10 +108,19 @@ async function scopeSellerIds(ctx: Ctx) {
   return null;
 }
 
+/**
+ * As vendas so podem ser atribuidas a quem esta ativo. Suspensos e inativos
+ * ficam de fora, tal como quem ja nao existe na tabela de funcionarios.
+ */
 async function assertActiveEmployee(id: number | null) {
   if (id == null) return;
-  const [e] = await db.select({ status: employees.status }).from(employees).where(eq(employees.id, id));
-  if (!e || e.status === "inativo") throw new ORPCError("BAD_REQUEST", { message: "O gestor tem de ser um funcionário ativo." });
+  const [e] = await db.select({ status: employees.status, name: employees.name }).from(employees).where(eq(employees.id, id));
+  if (!e) throw new ORPCError("BAD_REQUEST", { message: "Vendedor nao encontrado." });
+  if (e.status !== "ativo") {
+    throw new ORPCError("BAD_REQUEST", {
+      message: `${e.name} nao esta ativo (${e.status}) e nao pode registar vendas.`,
+    });
+  }
 }
 
 async function resolveOwner(ctx: Ctx, ownerId: number | null | undefined) {
@@ -428,13 +437,14 @@ export const sales = {
      * O cliente é o que já existe com o mesmo NIF (sem alterar os dados) ou é criado.
      */
     importMany: requireEdit("vendas").input(z.object({ rows: z.array(importRow).min(1).max(200) })).handler(async ({ input, context }) => {
-      const sellerIds = new Set((await db.select({ id: employees.id }).from(employees)).map((e) => e.id));
+      const activeSellers = await db.select({ id: employees.id, name: employees.name }).from(employees).where(eq(employees.status, "ativo"));
       const counters = new Map<string, number>();
       const today = todayLisbon();
       const results: { row: number; ok: boolean; error?: string; number?: string; newClient?: boolean; updated?: boolean }[] = [];
       for (const r of input.rows) {
         try {
-          if (!sellerIds.has(r.sellerId)) throw new ORPCError("BAD_REQUEST", { message: "Vendedor não encontrado." });
+          const seller = activeSellers.find((s) => s.id === r.sellerId);
+          if (!seller) throw new ORPCError("BAD_REQUEST", { message: "Vendedor não encontrado ou não está ativo." });
           if (r.statusDate && r.statusDate > today) throw new ORPCError("BAD_REQUEST", { message: "A data do estado não pode ser no futuro." });
           const existing = await findByMeter(r.details);
           const service = existing && r.serviceAuto && existing.service ? existing.service : r.service;

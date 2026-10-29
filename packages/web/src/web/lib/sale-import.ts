@@ -6,6 +6,9 @@ import { ALL_CONCELHOS } from "../../api/shared/concelhos";
 import { SALE_FORMS, SERVICE_LABELS, fieldOptions, getSaleForm, validateDetails, withCustomSuppliers, type Details, type FieldDef } from "../../api/shared/client-forms";
 import type { CustomSupplier } from "../../api/shared/suppliers";
 
+/** Excecoes aos nomes de origem: escondidos e renomeados. */
+export type SupplierOverrides = { removed?: string[]; renamed?: Record<string, string> };
+
 /** Campos especiais da importação (não fazem parte do formulário). */
 export const SPECIAL = {
   service: "Serviço",
@@ -22,8 +25,8 @@ const BASE_FIELDS: FieldDef[] = SALE_FORMS.DUAL;
  * o modelo Excel, as opções de correspondência e a conversão das células usam
  * exatamente as mesmas listas que o formulário de venda mostra.
  */
-export function allFields(custom?: CustomSupplier[]): FieldDef[] {
-  return BASE_FIELDS.map((f) => withCustomSuppliers(f, custom));
+export function allFields(custom?: CustomSupplier[], overrides?: SupplierOverrides): FieldDef[] {
+  return BASE_FIELDS.map((f) => withCustomSuppliers(f, custom, overrides?.removed, overrides?.renamed));
 }
 const ALL_FIELDS = BASE_FIELDS;
 
@@ -42,11 +45,11 @@ const TEMPLATE_LABEL: Record<string, string> = {
 export type Target = { key: string; label: string };
 
 /** Ordem das colunas do modelo e das opções de correspondência (com os comercializadores acrescentados). */
-export function targets(custom?: CustomSupplier[]): Target[] {
+export function targets(custom?: CustomSupplier[], overrides?: SupplierOverrides): Target[] {
   return [
     { key: "service", label: SPECIAL.service },
     { key: "seller", label: SPECIAL.seller },
-    ...allFields(custom).flatMap((f) => {
+    ...allFields(custom, overrides).flatMap((f) => {
       const t = { key: f.key, label: TEMPLATE_LABEL[f.key] ?? f.label };
       return f.key === "saleStatusGas" ? [t, { key: "statusDate", label: SPECIAL.statusDate }] : [t];
     }),
@@ -253,7 +256,7 @@ export function sellerFrom(employees: Employee[], raw: unknown): Employee | null
   const n = norm(raw);
   if (!n) return null;
   const exact = employees.filter((e) => norm(e.name) === n);
-  if (exact.length) return exact.find((e) => e.status !== "inativo") ?? exact[0];
+  if (exact.length) return exact.find((e) => e.status === "ativo") ?? null;
   const words = n.split(" ");
   const fl = employees.filter((e) => {
     const w = norm(e.name).split(" ");
@@ -307,7 +310,7 @@ export function prepareRow(cells: unknown[], mapping: (string | null)[], rowNumb
   if (!error && sellerRaw && !seller) error = `Vendedor "${sellerRaw}" não encontrado nos funcionários.`;
   if (!error && !seller) error = "Sem vendedor (escolha o vendedor por defeito).";
 
-  const form = (service ? (getSaleForm(service) ?? []) : []).map((f) => withCustomSuppliers(f, opts.customSuppliers));
+  const form = (service ? (getSaleForm(service) ?? []) : []).map((f) => withCustomSuppliers(f, opts.customSuppliers, opts.removedSuppliers, opts.renamedSuppliers));
   const details: Details = {};
   const defaulted: string[] = [];
   // O distrito é convertido primeiro: as opções do concelho dependem dele.
@@ -348,7 +351,7 @@ export function prepareRow(cells: unknown[], mapping: (string | null)[], rowNumb
 // ---------- Modelo ----------
 
 /** Descarrega o modelo Excel com as colunas, um exemplo e os valores aceites. */
-export async function downloadTemplate(custom?: CustomSupplier[]) {
+export async function downloadTemplate(custom?: CustomSupplier[], overrides?: SupplierOverrides) {
   const XLSX = await import("xlsx");
   const example: Record<string, string> = {
     service: "LUZ",
@@ -376,13 +379,14 @@ export async function downloadTemplate(custom?: CustomSupplier[]) {
     statusDate: "",
     notes: "",
   };
-  const header = TARGETS.map((t) => t.label);
-  const ws = XLSX.utils.aoa_to_sheet([header, TARGETS.map((t) => example[t.key] ?? "")]);
+  const targetList = targets(custom, overrides);
+  const header = targetList.map((t) => t.label);
+  const ws = XLSX.utils.aoa_to_sheet([header, targetList.map((t) => example[t.key] ?? "")]);
   ws["!cols"] = header.map((h) => ({ wch: Math.max(14, h.length + 2) }));
 
   const lists: [string, string[]][] = [
     ["Serviço", SERVICE_LABELS],
-    ...allFields(custom).filter((f) => f.kind === "select").map((f): [string, string[]] => [
+    ...allFields(custom, overrides).filter((f) => f.kind === "select").map((f): [string, string[]] => [
       f.kind === "select" && f.optionsFrom ? "Concelho (da lista, conforme o distrito)" : (TEMPLATE_LABEL[f.key] ?? f.label),
       f.kind === "select" && f.optionsFrom ? ALL_CONCELHOS : f.kind === "select" ? f.options : [],
     ]),

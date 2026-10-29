@@ -31,6 +31,11 @@ async function serveStatic(filePath: string, request: Request): Promise<Response
     headers.set("Cache-Control", "public, max-age=31536000, immutable");
   } else if (filePath.endsWith(".html")) {
     headers.set("Cache-Control", "no-cache");
+  } else if (pathname === "/sw.js" || pathname === "/manifest.json") {
+    // O browser guarda o service worker por omissão durante 24h (alguns ignoram
+    // o pedido de atualização durante esse tempo). Sem no-cache, uma versão nova
+    // nunca é detetada e o utilizador fica preso na cache antiga indefinidamente.
+    headers.set("Cache-Control", "no-cache");
   }
 
   const compressible = COMPRESSIBLE.test(pathname);

@@ -9,6 +9,8 @@ import { errMsg } from "../lib/format";
 import { OLD_SUPPLIERS, OLD_GAS_SUPPLIERS, SUPPLIER_SCOPE_LABELS } from "../../api/shared/suppliers";
 
 type Custom = NonNullable<ReturnType<typeof useCustomSuppliers>["data"]>[number];
+/** Verdadeiro nas linhas que vem das listas de origem (nao da base de dados). */
+const isOrigin = (r: Custom) => (r as { origin?: boolean }).origin === true;
 const SCOPES = ["LUZ", "GAS"] as const;
 type Scope = (typeof SCOPES)[number];
 
@@ -241,7 +243,7 @@ export default function SuppliersPage() {
                   <th>Comercializador</th>
                   <th>Onde aparece</th>
                   <th className="text-right">Usado em</th>
-                  {write && <th aria-label="Ações" />}
+                  {write && <th aria-label="Ações" className="w-24 text-right" />}
                 </tr>
               </thead>
               <tbody>
@@ -252,7 +254,13 @@ export default function SuppliersPage() {
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-volt/10 text-volt"><Plug size={15} /></span>
                         <div className="min-w-0">
                           <div className="truncate font-medium">{r.name}</div>
-                          <div className="text-[11.5px] text-ink-3">{r.createdByName ? `acrescentado por ${r.createdByName}` : "acrescentado pela equipa"}</div>
+                          <div className="text-[11.5px] text-ink-3">
+                            {isOrigin(r)
+                              ? "comercializador de origem"
+                              : r.createdByName
+                                ? `acrescentado por ${r.createdByName}`
+                                : "acrescentado pela equipa"}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -260,7 +268,11 @@ export default function SuppliersPage() {
                     <td className="num text-right text-[12.5px]">
                       {Number(r.usageCount) > 0 ? r.usageCount : <span className="text-ink-3">—</span>}
                     </td>
-                    {write && <td className="w-10"><span className="btn-icon"><Pencil size={14} /></span></td>}
+                    {write && (
+                      <td className="w-24 whitespace-nowrap">
+                        <span className="btn-icon" title="Editar"><Pencil size={14} /></span>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -274,7 +286,7 @@ export default function SuppliersPage() {
         Os comercializadores que acrescentar aqui ficam disponíveis no campo "Antigo Comercializador" de todas as vendas.
       </p>
 
-      <Modal open={edit !== null} onClose={() => setEdit(null)} title={edit && edit !== "new" ? "Editar comercializador" : "Novo comercializador"}>
+      <Modal open={edit !== null} onClose={() => setEdit(null)} title={edit && edit !== "new" ? `Editar ${isOrigin(edit) ? "comercializador" : "comercializador"}` : "Novo comercializador"}>
         <SupplierForm initial={edit && edit !== "new" ? edit : null} onClose={() => setEdit(null)} />
       </Modal>
     </div>

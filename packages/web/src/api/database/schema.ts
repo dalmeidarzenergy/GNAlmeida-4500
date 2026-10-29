@@ -809,3 +809,24 @@ export const suppliers = sqliteTable("suppliers", {
   createdBy: text("created_by"),
   createdAt: createdAt(),
 }, (t) => [index("suppliers_normalized_idx").on(t.normalized)]);
+
+/**
+ * Nomes da lista de origem que o utilizador escondeu. Guarda-se a chave
+ * normalizada, para que renomear a constante no codigo nao ressuscite a linha.
+ */
+export const hiddenSuppliers = sqliteTable("hidden_suppliers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  normalized: text("normalized").notNull().unique(),
+  createdAt: createdAt(),
+});
+
+/**
+ * Nomes da lista de origem que o utilizador renomeou. `normalized` e a chave
+ * original e `name` o nome que passa a ser mostrado.
+ */
+export const renamedSuppliers = sqliteTable("renamed_suppliers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  normalized: text("normalized").notNull().unique(),
+  name: text("name").notNull(),
+  createdAt: createdAt(),
+});

@@ -112,7 +112,10 @@ export default function D2DPage() {
   }
 
   return (
-    <div className="-mx-4 -my-8 h-[100dvh] overflow-x-hidden lg:-mx-8">
+    <div
+      className="-mx-4 -my-8 overflow-x-hidden lg:-mx-8"
+      style={{ height: "calc(100dvh - 5.5rem)" }}
+    >
       <iframe
         ref={ref}
         src="/d2d.html"

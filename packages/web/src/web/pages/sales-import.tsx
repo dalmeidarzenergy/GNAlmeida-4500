@@ -5,10 +5,10 @@ import { PageHeader, Empty, Field, Tabs, Stat, Progress } from "../components/ui
 import { useMe } from "../queries/me";
 import { useEmployeeOptions } from "../queries/hr";
 import { useClients, useImportSales, useOrders } from "../queries/sales";
-import { useCustomSuppliers } from "../queries/suppliers";
+import { useCustomSuppliers, useSupplierOverrides } from "../queries/suppliers";
 import { errMsg, fmtDate } from "../lib/format";
 import { SERVICE_LABELS } from "../../api/shared/client-forms";
-import { TARGETS, autoMap, toIsoDate, downloadTemplate, labelOf, prepareRow, readWorkbook, type Prepared, type Sheet } from "../lib/sale-import";
+import { autoMap, toIsoDate, downloadTemplate, labelOf, prepareRow, readWorkbook, targets, type Prepared, type Sheet } from "../lib/sale-import";
 
 const CHUNK = 100;
 const REQUIRED = ["name", "nif", "contact"];
@@ -46,12 +46,13 @@ export default function SalesImportPage() {
   // Os comercializadores acrescentados pelo utilizador entram na importação e no
   // modelo Excel: as listas mostradas são exatamente as que a venda aceita.
   const customSuppliers = useCustomSuppliers().data;
+  const { removed: removedSuppliers, renamed: renamedSuppliers } = useSupplierOverrides();
 
   const prepared = useMemo<Prepared[]>(() => {
     if (!sheet) return [];
-    const opts = { defaultService, defaultSellerId, employees, today: todayLisbon(), customSuppliers };
+    const opts = { defaultService, defaultSellerId, employees, today: todayLisbon(), customSuppliers, removedSuppliers, renamedSuppliers };
     return sheet.rows.map((r, i) => prepareRow(r, mapping, sheet.lines[i], opts));
-  }, [sheet, mapping, defaultService, defaultSellerId, employees, customSuppliers]);
+  }, [sheet, mapping, defaultService, defaultSellerId, employees, customSuppliers, removedSuppliers, renamedSuppliers]);
 
   /**
    * Para cada linha, a venda que vai ser atualizada, com as mesmas regras da importação: a mais recente com o mesmo CPE ou CUI,
@@ -182,7 +183,7 @@ export default function SalesImportPage() {
   const header = (
     <PageHeader eyebrow="Vendas" title="Importar Excel">
       <Link href="/vendas" className="btn"><ArrowLeft size={15} /> Voltar às vendas</Link>
-      <button type="button" className="btn" onClick={() => downloadTemplate(customSuppliers)}><Download size={15} /> Descarregar modelo</button>
+      <button type="button" className="btn" onClick={() => downloadTemplate(customSuppliers, { removed: removedSuppliers, renamed: renamedSuppliers })}><Download size={15} /> Descarregar modelo</button>
     </PageHeader>
   );
 
@@ -277,7 +278,7 @@ export default function SalesImportPage() {
                     </div>
                     <select aria-label={`Campo da coluna ${h}`} className="input mt-1.5 h-9 text-[12.5px]" value={mapping[i] ?? ""} onChange={(e) => setColumn(i, e.target.value || null)}>
                       <option value="">— Não importar —</option>
-                      {TARGETS.map((t) => <option key={t.key} value={t.key}>{t.label}{REQUIRED.includes(t.key) ? " *" : ""}</option>)}
+                      {targets(customSuppliers, { removed: removedSuppliers, renamed: renamedSuppliers }).map((t) => <option key={t.key} value={t.key}>{t.label}{REQUIRED.includes(t.key) ? " *" : ""}</option>)}
                     </select>
                   </div>
                 );

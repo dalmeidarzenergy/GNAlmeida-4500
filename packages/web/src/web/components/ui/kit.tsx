@@ -241,7 +241,11 @@ export function Pagination({ page, total, pageSize, onChange }: { page: number; 
  */
 export function Credit() {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 px-4 pb-3 text-center text-[11px] text-ink-3">
+    <div
+      aria-hidden="true"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-4 py-1 text-center text-[11px] leading-none text-ink-3"
+      style={{ background: "var(--bg)" }}
+    >
       *Desenvolvido por Diogo Almeida
     </div>
   );
