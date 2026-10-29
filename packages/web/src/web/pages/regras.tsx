@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2, Loader2, Scale, Zap } from "lucide-react";
+import { ConfirmDeleteModal } from "../components/bulk-select";
 import { PageHeader, Empty, Field, Modal, SubmitRow, ConfirmDelete, TableSkeleton } from "../components/ui/kit";
 import { useMe } from "../queries/me";
 import { useRules, useSaveRule, useRemoveRule } from "../queries/rules";
@@ -39,6 +40,8 @@ export default function RegrasPage() {
   const save = useSaveRule();
   const remove = useRemoveRule();
   const [editing, setEditing] = useState<Rule | null | "new">(null);
+  /** Regra a confirmar na janela de eliminacao. */
+  const [toDelete, setToDelete] = useState<Rule | null>(null);
 
   const list = rules.data ?? [];
 
@@ -119,14 +122,7 @@ export default function RegrasPage() {
                       {canEdit && (
                         <span className="flex justify-end gap-1">
                           <button type="button" className="btn-icon" aria-label="Editar" onClick={() => setEditing(r)}><Pencil size={14} /></button>
-                          <button
-                            type="button"
-                            className="btn-icon text-rose"
-                            aria-label="Eliminar"
-                            onClick={async () => {
-                              if (window.confirm(`Eliminar a regra "${r.name}"?`)) await remove.mutateAsync({ id: r.id });
-                            }}
-                          ><Trash2 size={14} /></button>
+                          <button type="button" className="btn-icon text-rose" aria-label="Eliminar" onClick={() => setToDelete(r)}><Trash2 size={14} /></button>
                         </span>
                       )}
                     </td>
@@ -141,6 +137,17 @@ export default function RegrasPage() {
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === "new" ? "Nova regra" : "Editar regra"}>
         {editing !== null && <RuleForm initial={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
       </Modal>
+
+      <ConfirmDeleteModal
+        open={toDelete !== null}
+        title={toDelete ? `Eliminar a regra "${toDelete.name}"?` : "Eliminar regra?"}
+        onClose={() => setToDelete(null)}
+        onConfirm={async () => {
+          await remove.mutateAsync({ id: toDelete!.id });
+        }}
+      >
+        A regra <strong className="text-ink">{toDelete?.name}</strong> deixa de ser aplicada nos calculos de comissoes.
+      </ConfirmDeleteModal>
     </div>
   );
 }

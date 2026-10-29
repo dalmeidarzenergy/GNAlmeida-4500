@@ -5,6 +5,7 @@ import { useCustomSuppliers } from "../queries/suppliers";
 import { orpc, client } from "../lib/api";
 import { useMe } from "../queries/me";
 import { PageHeader, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pagination } from "../components/ui/kit";
+import { ConfirmDeleteModal } from "../components/bulk-select";
 import { errMsg } from "../lib/format";
 import { OLD_SUPPLIERS, OLD_GAS_SUPPLIERS, SUPPLIER_SCOPE_LABELS } from "../../api/shared/suppliers";
 
@@ -204,24 +205,13 @@ export default function SuppliersPage() {
   }, [page, lastPage]);
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  /** Remove uma origem sem abrir o modal de edicao (o clique na linha abre-o). */
+  /** Remove uma origem/custom sem abrir o modal de edicao (o clique na linha abre-o). */
   const removeRow = useMutation({
     ...orpc.suppliersRoute.remove.mutationOptions(),
     onSuccess: () => qc.invalidateQueries({ queryKey: orpc.suppliersRoute.key() }),
   });
-  /** Linha a confirmar; o primeiro clique arma, o segundo remove. */
-  const [confirmRow, setConfirmRow] = useState<number | null>(null);
-  useEffect(() => {
-    if (confirmRow === null) return;
-    const t = setTimeout(() => setConfirmRow(null), 4000);
-    return () => clearTimeout(t);
-  }, [confirmRow]);
-
-  const doDelete = (r: Custom) => {
-    if (confirmRow !== r.id) return setConfirmRow(r.id);
-    setConfirmRow(null);
-    removeRow.mutate({ id: r.id, force: true });
-  };
+  /** Comercializador a confirmar na janela de eliminacao. */
+  const [toDelete, setToDelete] = useState<Custom | null>(null);
 
   const cnt = (s: Scope) => rows.filter((r) => r.scopes.includes(s)).length;
 
@@ -304,13 +294,12 @@ export default function SuppliersPage() {
                         <span className="btn-icon" title="Editar"><Pencil size={14} /></span>
                         <button
                           type="button"
-                          title={confirmRow === r.id ? "Clique para confirmar" : "Remover"}
-                          aria-label={`Remover ${r.name}`}
-                          className={`btn-icon ${confirmRow === r.id ? "!text-danger" : "hover:!text-danger"}`}
-                          disabled={removeRow.isPending && confirmRow === null}
+                          title="Eliminar"
+                          aria-label={`Eliminar ${r.name}`}
+                          className="btn-icon hover:!text-danger"
                           onClick={(e) => {
                             e.stopPropagation();
-                            doDelete(r);
+                            setToDelete(r);
                           }}
                         >
                           <Trash2 size={14} />
@@ -328,11 +317,27 @@ export default function SuppliersPage() {
         )}
       </div>
 
-      {removeRow.isError && (
-        <div className="mt-3 rounded-[10px] border border-danger/30 bg-danger/10 px-3 py-2.5 text-[12.5px] text-danger">
-          {errMsg(removeRow.error)}
-        </div>
-      )}
+      <ConfirmDeleteModal
+        open={toDelete !== null}
+        title={toDelete ? `Eliminar "${toDelete.name}"?` : "Eliminar comercializador?"}
+        onClose={() => setToDelete(null)}
+        onConfirm={async () => {
+          await removeRow.mutateAsync({ id: toDelete!.id, force: true });
+        }}
+      >
+        {toDelete && Number(toDelete.usageCount) > 0 ? (
+          <>
+            <strong className="text-ink">{toDelete.name}</strong> está usado em{" "}
+            <strong className="text-ink">{toDelete.usageCount}</strong> venda{Number(toDelete.usageCount) === 1 ? "" : "s"}. Vai desaparecer da lista
+            de comercializadores e do campo "Antigo Comercializador" nas vendas novas. As vendas já registadas mantêm o nome tal como foi gravado.
+          </>
+        ) : (
+          <>
+            <strong className="text-ink">{toDelete?.name}</strong> vai desaparecer da lista de comercializadores e do campo "Antigo Comercializador" em todas
+            as vendas.
+          </>
+        )}
+      </ConfirmDeleteModal>
 
       <p className="mt-4 text-[12px] text-ink-3">
         As listas de origem ({OLD_SUPPLIERS.length} de eletricidade e {OLD_GAS_SUPPLIERS.length} de gás) já existem na aplicação.

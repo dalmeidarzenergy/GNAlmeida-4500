@@ -191,17 +191,66 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
   );
 }
 
-export function ConfirmDelete({ onConfirm, pending, label = "Eliminar" }: { onConfirm: () => void; pending?: boolean; label?: string }) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 3000);
-    return () => clearTimeout(t);
-  }, [armed]);
+/** Campo de confirmacao mostrado dentro da janela de eliminacao. */
+export type ConfirmDetail = string | { text?: string; warning?: string } | undefined;
+
+/**
+ * Botao de eliminacao com janela de confirmacao.
+ *
+ * Antes era preciso clicar duas vezes no mesmo botao ("Eliminar" ->
+ * "Confirmar?"); agora abre uma janela a perguntar se e mesmo para eliminar,
+ * igual em todas as paginas que o usam.
+ */
+export function ConfirmDelete({
+  onConfirm,
+  pending,
+  label = "Eliminar",
+  title,
+  description,
+}: {
+  onConfirm: () => void | Promise<unknown>;
+  pending?: boolean;
+  label?: string;
+  /** Titulo da janela. Sem ele usa "Eliminar este registo?". */
+  title?: string;
+  /** Texto de apoio dentro da janela. */
+  description?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      await onConfirm();
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const wait = busy || pending;
+
   return (
-    <button type="button" className="btn btn-danger h-9" disabled={pending} onClick={() => (armed ? onConfirm() : setArmed(true))}>
-      {pending ? <Loader2 size={14} className="animate-spin" /> : armed ? "Confirmar?" : label}
-    </button>
+    <>
+      <button type="button" className="btn btn-danger" disabled={wait} onClick={() => setOpen(true)}>
+        {wait ? <Loader2 size={14} className="animate-spin" /> : null} {label}
+      </button>
+      <Modal open={open} onClose={() => !wait && setOpen(false)} title={title ?? "Eliminar este registo?"}>
+        <div className="text-[13.5px] text-ink-2">
+          {description ?? "Este registo vai ser eliminado da aplicação."}
+        </div>
+        <p className="mt-3 text-[12.5px] text-danger">Esta ação não pode ser desfeita.</p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)} disabled={wait}>
+            Cancelar
+          </button>
+          <button type="button" className="btn btn-danger" onClick={() => void run()} disabled={wait}>
+            {wait ? <Loader2 size={14} className="animate-spin" /> : null} Eliminar
+          </button>
+        </div>
+      </Modal>
+    </>
   );
 }
 
