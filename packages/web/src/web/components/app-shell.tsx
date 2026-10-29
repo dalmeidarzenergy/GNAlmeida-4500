@@ -143,20 +143,29 @@ export function AppShell({ children }: { children: ReactNode }) {
     navigate("/entrar");
   };
 
-  const sidebar = (
+  /**
+   * O menu lateral e o mesmo em desktop e no telemovel, mas no telemovel o
+   * `hover` nunca acontece (o toque nao dispara mouseenter) e o botao de fixar
+   * esta escondido — por isso a gaveta ficaria sempre so com icones. Na gaveta
+   * (`drawer`) o menu aparece sempre aberto, com o nome das abas.
+   */
+
+  const renderSidebar = (drawer = false) => {
+    const wide = drawer || expanded;
+    return (
     <aside
-      className={`flex h-full flex-col border-r border-line transition-[width] duration-200 ${expanded ? "w-[248px]" : "w-[64px]"}`}
+      className={`flex h-full flex-col border-r border-line transition-[width] duration-200 ${wide ? "w-[248px]" : "w-[64px]"}`}
       style={{ background: "var(--sidebar-bg)" }}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
+      onMouseEnter={() => !drawer && setHovering(true)}
+      onMouseLeave={() => !drawer && setHovering(false)}
     >
-      <div className={`flex h-16 items-center ${expanded ? "justify-between px-5" : "justify-center"}`}>
-        {expanded ? <Logo /> : <img src="/icons/logo.png" alt="D2D" className="h-7 w-auto shrink-0 object-contain" />}
-        <button className={`btn-icon lg:hidden ${expanded ? "" : "absolute right-2 top-2"}`} onClick={() => setOpen(false)}>
+      <div className={`flex h-16 items-center ${wide ? "justify-between px-5" : "justify-center"}`}>
+        {wide ? <Logo /> : <img src="/icons/logo.png" alt="D2D" className="h-7 w-auto shrink-0 object-contain" />}
+        <button className={`btn-icon lg:hidden ${wide ? "" : "absolute right-2 top-2"}`} onClick={() => setOpen(false)}>
           <X size={16} />
         </button>
       </div>
-      <div className={`flex ${expanded ? "justify-end" : "justify-center"} px-3 pb-1`}>
+      <div className={drawer ? "hidden" : `flex ${wide ? "justify-end" : "justify-center"} px-3 pb-1`}>
         <button className="btn-icon hidden lg:flex" onClick={togglePin} title={pinned ? "Desafixar menu" : "Fixar menu"}>
           {pinned ? <PinOff size={14} /> : <Pin size={14} />}
         </button>
@@ -167,7 +176,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!items.length) return null;
           return (
             <div key={g.group} className="mt-5 first:mt-2">
-              {expanded && <div className="label-mono mb-2 px-3">{g.group}</div>}
+              {wide && <div className="label-mono mb-2 px-3">{g.group}</div>}
               {items.map((i) => {
                 const active = i.to === "/" ? loc === "/" : loc.startsWith(i.to);
                 const Icon = i.icon;
@@ -176,12 +185,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                     key={i.to}
                     to={i.to}
                     onClick={() => setOpen(false)}
-                    title={expanded ? undefined : i.label}
-                    className={`group relative mb-0.5 flex h-9 items-center gap-3 rounded-[9px] transition ${expanded ? "px-3 text-[13px]" : "justify-center px-0"} ${active ? "bg-volt/10 font-medium text-volt" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
+                    title={wide ? undefined : i.label}
+                    className={`group relative mb-0.5 flex h-9 items-center gap-3 rounded-[9px] transition ${wide ? "px-3 text-[13px]" : "justify-center px-0"} ${active ? "bg-volt/10 font-medium text-volt" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
                   >
-                    {active && expanded && <span className="absolute -left-3 top-1.5 h-6 w-[3px] rounded-r bg-volt" />}
+                    {active && wide && <span className="absolute -left-3 top-1.5 h-6 w-[3px] rounded-r bg-volt" />}
                     <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
-                    {expanded && i.label}
+                    {wide && i.label}
                   </Link>
                 );
               })}
@@ -190,7 +199,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         })}
       </nav>
       <div className="border-t border-line p-3">
-        {expanded ? (
+        {wide ? (
           <div className="flex items-center gap-3 rounded-[10px] p-2">
             <Avatar name={me.data?.name || me.data?.email || "?"} src={me.data?.image} />
             <div className="min-w-0 flex-1">
@@ -217,14 +226,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       </div>
     </aside>
-  );
+    );
+  };
 
   return (
     <div className="flex min-h-screen">
-      <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">{sidebar}</div>
+      <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">{renderSidebar()}</div>
       {open && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
-          <div className="animate-in slide-in-from-left duration-200">{sidebar}</div>
+          <div className="animate-in slide-in-from-left duration-200">{renderSidebar(true)}</div>
           <button type="button" aria-label="Fechar menu" className="flex-1" style={{ background: "var(--overlay-bg)" }} onClick={() => setOpen(false)} />
         </div>
       )}
