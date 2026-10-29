@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail,
+  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -36,6 +36,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/estado-vtv", key: "estado-vtv", label: "Estado VTV", icon: ShieldAlert },
       { to: "/w2l", key: "w2l", label: "W2L", icon: ClipboardList },
       { to: "/campanhas", key: "campanhas", label: "Campanhas", icon: Megaphone },
+      { to: "/comercializadores", key: "comercializadores", label: "Comercializadores", icon: Plug },
       { to: "/agenda", key: "agenda", label: "Agenda", icon: Calendar },
       { to: "/metas", key: "metas", label: "Metas", icon: Target },
       { to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin },

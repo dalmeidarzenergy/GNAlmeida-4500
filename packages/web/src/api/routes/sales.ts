@@ -11,11 +11,13 @@ import {
   clientTypeFromNif,
   getSaleForm,
   validateDetails,
+  withCustomSuppliers,
   type Details,
+  type FieldDef,
 } from "../shared/client-forms";
 import { requireView, requireEdit, requireRoles } from "../middleware/auth";
 import { db } from "../database";
-import { clients, employees, saleStatusHistory, sales as salesTbl, salesTargets, teamMemberships, teams, user } from "../database/schema";
+import { clients, employees, saleStatusHistory, sales as salesTbl, salesTargets, suppliers as supTbl, teamMemberships, teams, user } from "../database/schema";
 import { localPhotoUrl } from "../lib/s3";
 import { activeInMonth } from "../shared/hierarchy";
 import { notifySaleImmediate, notifyAdminsSaleReady } from "../lib/notify";
@@ -142,9 +144,21 @@ async function logStatus(saleId: number, energy: "luz" | "gas", status: string |
 }
 const gasStatus = (d: Details | null | undefined) => (typeof d?.saleStatusGas === "string" ? d.saleStatusGas : null);
 
+/**
+ * Formulário do serviço já com os comercializadores acrescentados pelo utilizador.
+ * A validação tem de ver exatamente as mesmas opções que o formulário mostra, senão
+ * uma venda com um comercializador novo era recusada.
+ */
+async function saleFormWithCustom(service: string) {
+  const base = getSaleForm(service);
+  if (!base) return null;
+  const custom = await db.select({ name: supTbl.name, scopes: supTbl.scopes }).from(supTbl);
+  return base.map((f) => withCustomSuppliers(f, custom));
+}
+
 /** Valida o formulário da venda e separa os dados do cliente (nome, NIF, contacto) dos dados da venda. */
-function splitSaleForm(service: string, details: Details) {
-  const form = getSaleForm(service);
+function splitSaleForm(service: string, details: Details, customForm?: FieldDef[] | null) {
+  const form = customForm ?? getSaleForm(service);
   if (!form) throw new ORPCError("BAD_REQUEST", { message: "Serviço inválido." });
   const values: Details = { ...details };
   // Leads W2L só precisam de nome, NIF e contacto — o resto é opcional.
@@ -297,7 +311,7 @@ export const sales = {
     /** Nova venda IBERDROLA: grava o formulário completo; o cliente é reutilizado (id ou NIF) ou criado. */
     create: requireEdit("vendas").input(saleFormInput).handler(async ({ input, context }) => {
       const ownerId = await resolveOwner(context, input.ownerId);
-      const { core, details, status, date } = splitSaleForm(input.service, input.details);
+      const { core, details, status, date } = splitSaleForm(input.service, input.details, await saleFormWithCustom(input.service));
       const sellerId = ownerId ?? null;
       const clientId = await upsertSaleClient(context, core, sellerId, input.clientId);
       const number = await nextNumber(date);
@@ -316,7 +330,7 @@ export const sales = {
       const [existing] = await db.select().from(salesTbl).where(where);
       if (!existing) throw new ORPCError("NOT_FOUND", { message: "Venda não encontrada" });
       const ownerId = own ?? (await resolveOwner(context, input.ownerId));
-      const { core, details, status, date } = splitSaleForm(input.service, input.details);
+      const { core, details, status, date } = splitSaleForm(input.service, input.details, await saleFormWithCustom(input.service));
       // Os dados principais do cliente editados na venda atualizam a ficha do cliente.
       const [c] = await db.select().from(clients).where(eq(clients.id, existing.clientId));
       if (c) {
@@ -431,7 +445,7 @@ export const sales = {
             raw = { ...existing.details };
             for (const [k, v] of Object.entries(r.details)) if (!(defaulted.has(k) && raw[k] != null && raw[k] !== "")) raw[k] = v;
           }
-          const { core, details, status, date: formDate } = splitSaleForm(service, raw);
+          const { core, details, status, date: formDate } = splitSaleForm(service, raw, await saleFormWithCustom(service));
           const date = existing && !details.signatureDate ? existing.date : formDate;
           const [found] = await db.select({ id: clients.id }).from(clients).where(eq(clients.nif, core.nif));
           const clientId = found?.id ?? (await db.insert(clients).values({ ...core, type: clientTypeFromNif(core.nif), ownerId: r.sellerId }).returning())[0].id;

@@ -13,6 +13,7 @@ import { rulesRoute } from "./routes/rules";
 import { sales } from "./routes/sales";
 import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
+import { suppliersRoute } from "./routes/suppliers";
 import { agenda } from "./routes/agenda";
 import { d2d } from "./routes/d2d";
 import { simulador } from "./routes/simulador";
@@ -37,6 +38,7 @@ export const router = {
   sales,
   reports,
   campaigns,
+  suppliersRoute,
   agenda,
   incentives: incentivesRoutes,
   notifications: notificationsRoute,

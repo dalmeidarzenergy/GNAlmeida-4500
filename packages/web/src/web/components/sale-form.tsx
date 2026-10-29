@@ -4,9 +4,10 @@ import { Field, SubmitRow, ConfirmDelete } from "./ui/kit";
 import { useClients, useRemoveOrder, useSaveSale } from "../queries/sales";
 import { useEmployeeOptions } from "../queries/hr";
 import { useCampaigns, campaignState } from "../queries/campaigns";
+import { useCustomSuppliers } from "../queries/suppliers";
 import { errMsg } from "../lib/format";
 import { StatusHistory } from "./status-history";
-import { CAMPAIGN_FIELDS, SERVICES, SUPPLIER, clientTypeFromNif, fieldOptions, getSaleForm, validateDetails, type Details, type FieldDef } from "../../api/shared/client-forms";
+import { CAMPAIGN_FIELDS, SERVICES, SUPPLIER, clientTypeFromNif, fieldOptions, getSaleForm, validateDetails, withCustomSuppliers, type Details, type FieldDef } from "../../api/shared/client-forms";
 import { CONCELHOS } from "../../api/shared/concelhos";
 
 const IBER = "#4ade80";
@@ -178,8 +179,13 @@ export function SaleForm({ initial, onClose, isAdmin }: { initial?: SaleInitial 
   const [error, setError] = useState<string | null>(null);
   const [known, setKnown] = useState<string | null>(null);
 
+  // Os comercializadores acrescentados pelo utilizador entram nas opcoes aqui,
+  // para a lista e a validacao verem exatamente o mesmo conjunto.
+  // O hook fica sempre acima do return antecipado (regras dos hooks).
+  const customSuppliers = useCustomSuppliers().data;
+
   if (!service) return <ServicePicker onPick={setService} />;
-  const form = getSaleForm(service) ?? [];
+  const form = (getSaleForm(service) ?? []).map((f) => withCustomSuppliers(f, customSuppliers));
   const d = values ?? initialValues(form, initial);
   const managers = (emps.data ?? []).filter((x) => x.status !== "inativo");
   // Campanhas ativas para este serviço e tipo de cliente (pelo NIF); a já escolhida mantém-se sempre.

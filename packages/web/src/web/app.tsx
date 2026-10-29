@@ -20,6 +20,7 @@ const SaleSummaryPage = lazy(() => import("./pages/sale-summary"));
 const SalesImportPage = lazy(() => import("./pages/sales-import"));
 const TargetsPage = lazy(() => import("./pages/targets"));
 const CampaignsPage = lazy(() => import("./pages/campaigns"));
+const SuppliersPage = lazy(() => import("./pages/comercializadores"));
 const ReportsPage = lazy(() => import("./pages/reports"));
 const EvolutionPage = lazy(() => import("./pages/evolution"));
 const ComparisonPage = lazy(() => import("./pages/comparison"));
@@ -55,6 +56,7 @@ const routes: [string, React.ComponentType][] = [
   ["/w2l", W2lPage],
   ["/venda/:id", SaleSummaryPage],
   ["/campanhas", CampaignsPage],
+  ["/comercializadores", SuppliersPage],
   ["/metas", TargetsPage],
   ["/relatorios", ReportsPage],
   ["/evolucao", EvolutionPage],

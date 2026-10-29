@@ -101,3 +101,62 @@ export function normalizeSupplier(v: string | null | undefined): string {
   for (const [re, name] of SUPPLIER_ALIASES) if (re.test(k)) return name;
   return raw;
 }
+
+
+/**
+ * Âmbitos de um comercializador. Luz e gás têm listas separadas: quem acrescenta
+ * um comercializador escolhe onde ele aparece.
+ */
+export const SUPPLIER_SCOPES = ["LUZ", "GAS"] as const;
+export type SupplierScope = (typeof SUPPLIER_SCOPES)[number];
+
+/** Rótulos para o formulário de gestão. */
+export const SUPPLIER_SCOPE_LABELS: Record<SupplierScope, string> = {
+  LUZ: "Eletricidade",
+  GAS: "Gás",
+};
+
+/** Chave de comparação: minúsculas, sem acentos, sem pontuação nem sufixos societários. */
+export function supplierKey(name: string): string {
+  return name
+    // strip diacritics: NFD splits "é" into "e" + combining acute, then drop
+    // the combining marks (U+0300-U+036F). Written with explicit escapes so the
+    // range survives editing.
+    .normalize("NFD")
+    .replace(/\̀-\ͯ/g, "")
+    .toLowerCase()
+    // drop common company suffixes so "Luzboa" and "Luzboa, Lda." compare equal.
+    // Punctuation goes first, otherwise "Gold Energy, S.A." -> "goldenergysa"
+    // while "Gold Energy" -> "goldenergy", and the duplicate check misses it.
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(s\s?a|lda|unipessoal)\b/g, " ")
+    // collapse back to a bare alphanumeric key
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+/** Lista base de um âmbito, já sem acentos nem duplicados. */
+export function baseSuppliers(scope: SupplierScope): string[] {
+  return scope === "GAS" ? OLD_GAS_SUPPLIERS : OLD_SUPPLIERS;
+}
+
+/**
+ * Opções finais de um campo de comercializador: a lista base do âmbito mais os
+ * comercializadores acrescentados pelo utilizador que se apliquem a esse âmbito.
+ * A base vem primeiro, ordenada como está definida; os acrescentos vão no fim,
+ * por ordem de criação, para a lista não "saltar" entre visitas.
+ */
+export function supplierOptions(
+  scope: SupplierScope,
+  custom: { name: string; scopes: string[] }[] | undefined,
+): string[] {
+  const seen = new Set(baseSuppliers(scope).map(supplierKey));
+  const out = [...baseSuppliers(scope)];
+  for (const c of custom ?? []) {
+    if (!c.scopes?.includes(scope)) continue;
+    const k = supplierKey(c.name);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(c.name);
+  }
+  return out;
+}

@@ -790,3 +790,22 @@ export const incentiveCalculations = sqliteTable("incentive_calculations", {
   approvedAt: integer("approved_at", { mode: "timestamp" }),
   createdAt: createdAt(),
 });
+
+/**
+ * Comercializadores (antigo comercializador) acrescentados pelo utilizador.
+ *
+ * As listas base vivem em `shared/suppliers.ts` e não são editáveis; esta tabela
+ * guarda os acrescentos, visíveis para toda a empresa. `scopes` diz a que energia
+ * se aplicam, porque as listas de luz e de gás são separadas.
+ */
+export const suppliers = sqliteTable("suppliers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  /** Âmbitos onde aparece: "LUZ", "GAS" ou ambos. */
+  scopes: text("scopes", { mode: "json" }).$type<string[]>().notNull().default([]),
+  /** Chave normalizada para detetar duplicados (minúsculas, sem acentos). */
+  normalized: text("normalized").notNull(),
+  /** Quem acrescentou (user id); nulo se a conta tiver sido removida. */
+  createdBy: text("created_by"),
+  createdAt: createdAt(),
+}, (t) => [index("suppliers_normalized_idx").on(t.normalized)]);

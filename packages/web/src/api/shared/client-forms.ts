@@ -3,13 +3,13 @@
  * Módulo puro (sem dependências de servidor) — usado pela API (validação) e pela web (formulário).
  */
 import { ALL_CONCELHOS, CONCELHOS } from "./concelhos";
-import { OLD_SUPPLIERS, OLD_GAS_SUPPLIERS } from "./suppliers";
+import { OLD_SUPPLIERS, OLD_GAS_SUPPLIERS, baseSuppliers, supplierOptions, type SupplierScope } from "./suppliers";
 
 export { OLD_SUPPLIERS, OLD_GAS_SUPPLIERS };
 
 export type FieldDef =
   | { key: string; label: string; kind: "text" | "textarea" | "date" | "tel"; required?: boolean; pattern?: string; patternHint?: string; placeholder?: string; suggestions?: string[]; full?: boolean }
-  | { key: string; label: string; kind: "select"; options: string[]; required?: boolean; full?: boolean; default?: string; optionsFrom?: "district" }
+  | { key: string; label: string; kind: "select"; options: string[]; required?: boolean; full?: boolean; default?: string; optionsFrom?: "district"; supplierScope?: SupplierScope }
   | { key: string; label: string; kind: "yesno"; required?: boolean; full?: boolean };
 
 /** Campos do formulário da venda que pertencem ao cliente (colunas de `clients`); os restantes ficam na venda. */
@@ -126,7 +126,9 @@ SALE_FORMS["GÁS"] = SALE_FORMS.LUZ.flatMap((f): FieldDef[] => {
   if (f.key === "cpe") return GAS_FIELDS;
   if (f.key === "voltageLevel" || f.key === "power") return [];
   if (f.key === "pel") return [{ key: "mgi", label: "MGI", kind: "yesno" }];
-  if (f.key === "oldSupplier") return [{ key: f.key, label: f.label, kind: "select", options: OLD_GAS_SUPPLIERS }];
+  // O campo mantém o key `oldSupplier` mas a lista é a do gás — o ambito vai marcado
+  // no campo, para os acrescentos do utilizador irem para a lista certa.
+  if (f.key === "oldSupplier") return [{ key: f.key, label: f.label, kind: "select", options: OLD_GAS_SUPPLIERS, supplierScope: "GAS" }];
   return [f];
 });
 
@@ -147,8 +149,8 @@ SALE_FORMS.DUAL = SALE_FORMS.LUZ.flatMap((f): FieldDef[] => {
   if (f.key === "campaign") return [{ ...f, label: "Campanha Eletricidade" }, { key: "campaignGas", label: "Campanha Gás", kind: "text" }];
   if (f.key === "oldSupplier") {
     return [
-      { ...f, label: "Antigo Comercializador Luz" },
-      { key: "oldSupplierGas", label: "Antigo Comercializador Gás", kind: "select", options: OLD_GAS_SUPPLIERS },
+      { ...f, label: "Antigo Comercializador Luz", supplierScope: "LUZ" },
+      { key: "oldSupplierGas", label: "Antigo Comercializador Gás", kind: "select", options: OLD_GAS_SUPPLIERS, supplierScope: "GAS" },
     ];
   }
   return [f];
@@ -218,6 +220,29 @@ export const BASE_SALE_FORM: FieldDef[] = [
 ];
 
 export const getSaleForm = (service?: string | null) => (service && SERVICE_LABELS.includes(service) ? (SALE_FORMS[service] ?? BASE_SALE_FORM) : null);
+
+/**
+ * Amplia um campo de comercializador com os comercializadores acrescentados
+ * pelo utilizador. Sem acrescentos devolve o campo intacto, por isso a lista base
+ * continua a ser a unica fonte quando ninguem acrescentou nada.
+ *
+ * `oldSupplier` e da eletricidade e `oldSupplierGas` do gas; no DUAL aparecem os
+ * dois, cada um com a sua lista.
+ */
+export function withCustomSuppliers(
+  f: FieldDef,
+  custom: { name: string; scopes: string[] }[] | undefined,
+): FieldDef {
+  if (!custom?.length || f.kind !== "select") return f;
+  const scope: SupplierScope | null =
+    f.supplierScope ?? (f.key === "oldSupplierGas" ? "GAS" : f.key === "oldSupplier" ? "LUZ" : null);
+  if (!scope) return f;
+  if (!f.options.includes(baseSuppliers(scope)[0])) return f;
+  const options = supplierOptions(scope, custom);
+  // Nada de novo a acrescentar: devolve o objeto original.
+  if (options.length === f.options.length) return f;
+  return { ...f, options };
+}
 
 export type Details = Record<string, string | boolean | null>;
 
