@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Plug, Zap, Flame } from "lucide-react";
+import { Plus, Pencil, Plug, Zap, Flame, Trash2 } from "lucide-react";
 import { useCustomSuppliers } from "../queries/suppliers";
 import { orpc, client } from "../lib/api";
 import { useMe } from "../queries/me";
-import { PageHeader, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, Stat } from "../components/ui/kit";
+import { PageHeader, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pagination } from "../components/ui/kit";
 import { errMsg } from "../lib/format";
 import { OLD_SUPPLIERS, OLD_GAS_SUPPLIERS, SUPPLIER_SCOPE_LABELS } from "../../api/shared/suppliers";
 
@@ -13,6 +13,8 @@ type Custom = NonNullable<ReturnType<typeof useCustomSuppliers>["data"]>[number]
 const isOrigin = (r: Custom) => (r as { origin?: boolean }).origin === true;
 const SCOPES = ["LUZ", "GAS"] as const;
 type Scope = (typeof SCOPES)[number];
+/** Linhas por pagina nas tabelas desta pagina. */
+const PAGE_SIZE = 20;
 
 /** Etiqueta das energias de um comercializador, tal como aparece na lista. */
 function scopeLabel(scopes: string[]) {
@@ -178,6 +180,7 @@ function SupplierForm({ initial, onClose }: { initial: Custom | null; onClose: (
 
 export default function SuppliersPage() {
   const me = useMe();
+  const qc = useQueryClient();
   const write = ["admin", "diretor", "rh"].includes(me.data?.role ?? "");
   const list = useCustomSuppliers();
   const [q, setQ] = useState("");
@@ -191,6 +194,34 @@ export default function SuppliersPage() {
       .filter((r) => tab === "todos" || r.scopes.includes(tab))
       .filter((r) => !s || r.name.toLowerCase().includes(s));
   }, [rows, q, tab]);
+
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [q, tab]);
+  // Se uma remocao esvaziar a ultima pagina, recua para a anterior.
+  const lastPage = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  useEffect(() => {
+    if (page > lastPage) setPage(lastPage);
+  }, [page, lastPage]);
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  /** Remove uma origem sem abrir o modal de edicao (o clique na linha abre-o). */
+  const removeRow = useMutation({
+    ...orpc.suppliersRoute.remove.mutationOptions(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: orpc.suppliersRoute.key() }),
+  });
+  /** Linha a confirmar; o primeiro clique arma, o segundo remove. */
+  const [confirmRow, setConfirmRow] = useState<number | null>(null);
+  useEffect(() => {
+    if (confirmRow === null) return;
+    const t = setTimeout(() => setConfirmRow(null), 4000);
+    return () => clearTimeout(t);
+  }, [confirmRow]);
+
+  const doDelete = (r: Custom) => {
+    if (confirmRow !== r.id) return setConfirmRow(r.id);
+    setConfirmRow(null);
+    removeRow.mutate({ id: r.id, force: true });
+  };
 
   const cnt = (s: Scope) => rows.filter((r) => r.scopes.includes(s)).length;
 
@@ -247,7 +278,7 @@ export default function SuppliersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
+                {paged.map((r) => (
                   <tr key={r.id} className={write ? "cursor-pointer" : ""} onClick={() => write && setEdit(r)}>
                     <td className="max-w-[360px]">
                       <div className="flex items-center gap-3">
@@ -271,6 +302,19 @@ export default function SuppliersPage() {
                     {write && (
                       <td className="w-24 whitespace-nowrap">
                         <span className="btn-icon" title="Editar"><Pencil size={14} /></span>
+                        <button
+                          type="button"
+                          title={confirmRow === r.id ? "Clique para confirmar" : "Remover"}
+                          aria-label={`Remover ${r.name}`}
+                          className={`btn-icon ${confirmRow === r.id ? "!text-danger" : "hover:!text-danger"}`}
+                          disabled={removeRow.isPending && confirmRow === null}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            doDelete(r);
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </td>
                     )}
                   </tr>
@@ -279,7 +323,16 @@ export default function SuppliersPage() {
             </table>
           </div>
         )}
+        {!list.isLoading && !list.isError && filtered.length > PAGE_SIZE && (
+          <Pagination page={page} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
+        )}
       </div>
+
+      {removeRow.isError && (
+        <div className="mt-3 rounded-[10px] border border-danger/30 bg-danger/10 px-3 py-2.5 text-[12.5px] text-danger">
+          {errMsg(removeRow.error)}
+        </div>
+      )}
 
       <p className="mt-4 text-[12px] text-ink-3">
         As listas de origem ({OLD_SUPPLIERS.length} de eletricidade e {OLD_GAS_SUPPLIERS.length} de gás) já existem na aplicação.

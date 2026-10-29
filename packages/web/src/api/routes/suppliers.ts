@@ -101,18 +101,37 @@ async function assertNameFree(name: string, scopes: string[], exceptId?: number)
   }
 }
 
-/** Ids negativos identificam entradas de origem (não guardadas na base de dados). */
-const BASE_ID_BASE = -1000;
+/**
+ * Os ids negativos não podem ser posicionais: a lista é filtrada (origens
+ * escondidas desaparecem) e o índice deixava de corresponder à entrada certa,
+ * fazendo o Remover apagar ou falhar o nome errado. O id é por isso derivado da
+ * chave normalizada, que identifica sempre a mesma origem.
+ */
+const ORIGIN_ID_OFFSET = -100000;
+
+/** Id negativo estável para uma entrada de origem. */
+function originId(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  return ORIGIN_ID_OFFSET - (Math.abs(h) % 1000000);
+}
 
 /**
- * Devolve o nome de origem correspondente a um id negativo da lista.
- * Devolve sempre o nome original (sem as excecoes), para que o `update`/`remove`
- * possam comparar contra a chave guardada e limpar/atualizar a excecao certa.
+ * Devolve a entrada de origem correspondente a um id negativo.
+ * Devolve sempre o nome original (sem as exceções), para que o `update`/`remove`
+ * possam comparar contra a chave guardada e limpar/atualizar a exceção certa.
  */
 function originByNegativeId(id: number): string | null {
-  const idx = BASE_ID_BASE - id;
-  const hit = baseEntries()[idx];
+  const target = ORIGIN_ID_OFFSET - id;
+  const hit = baseEntries().find((e) => Math.abs(hashKey(supplierKey(e.name))) % 1000000 === target);
   return hit ? hit.name : null;
+}
+
+/** Mesmo hash usado por `originId`, sem o offset. */
+function hashKey(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  return h;
 }
 
 /**
@@ -163,10 +182,10 @@ export const suppliersRoute = {
     const base = baseEntries()
       .filter((e) => !hidden.has(supplierKey(e.name)))
       .filter((e) => !customKeys.has(supplierKey(e.name)))
-      .map((e, i) => {
+      .map((e) => {
         const key = supplierKey(e.name);
         return {
-          id: BASE_ID_BASE - i,
+          id: originId(key),
           name: renamed.get(key) ?? e.name,
           scopes: e.scopes,
           createdAt: null as number | null,
