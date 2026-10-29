@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
 import { useMe } from "../queries/me";
 import { ROLE_LABEL } from "../lib/labels";
-import { Avatar } from "./ui/kit";
+import { Avatar, Credit } from "./ui/kit";
 import { NotificationsBell } from "./notifications-bell";
 
 import type { Permissions, ModuleKey, Role } from "../../api/middleware/auth";
@@ -74,9 +74,6 @@ export function Logo() {
   return (
     <div className="flex items-center gap-2.5">
       <img src="/icons/logo.png" alt="D2D Consulting" className="h-9 w-auto shrink-0 object-contain" />
-      <div className="min-w-0 truncate font-display text-[17px] font-bold tracking-tight">
-        D2D <span className="text-volt">Consulting</span>
-      </div>
     </div>
   );
 }
@@ -171,7 +168,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button type="button" aria-label="Fechar menu" className="flex-1" style={{ background: "var(--overlay-bg)" }} onClick={() => setOpen(false)} />
         </div>
       )}
-      <div className="min-w-0 flex-1 lg:pl-[248px]">
+      <div className="min-w-0 flex-1 pb-9 lg:pl-[248px]">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-line bg-bg/85 px-4 backdrop-blur">
           <button className="btn-icon lg:hidden" onClick={() => setOpen(true)}>
             <Menu size={18} />
@@ -185,11 +182,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
           <NotificationsBell />
         </header>
-        <main className="mx-auto w-full max-w-[1400px] min-w-0 px-4 py-8 lg:px-8">{children}</main>
-        <footer className="px-4 pb-5 text-center text-[11px] text-ink-3 lg:px-8 lg:text-right">
-          *Desenvolvido por Diogo Almeida
-        </footer>
+        {/* pb-12 reserva espaco para a assinatura fixa nao tapar o ultimo elemento. */}
+        <main className="mx-auto w-full max-w-[1400px] min-w-0 px-4 py-8 pb-12 lg:px-8">{children}</main>
       </div>
+      <Credit />
     </div>
   );
 }

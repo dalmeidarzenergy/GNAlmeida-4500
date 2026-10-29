@@ -235,3 +235,14 @@ export function Pagination({ page, total, pageSize, onChange }: { page: number; 
     </div>
   );
 }
+/**
+ * Assinatura fixa no fundo da janela. Fica sempre colada a borda inferior do
+ * ecra, mesmo quando o conteudo da pagina e curto ou tem scroll.
+ */
+export function Credit() {
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 px-4 pb-3 text-center text-[11px] text-ink-3">
+      *Desenvolvido por Diogo Almeida
+    </div>
+  );
+}

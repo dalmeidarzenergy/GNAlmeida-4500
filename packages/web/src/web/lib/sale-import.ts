@@ -3,7 +3,8 @@
  * para os campos do formulário da venda. Cada linha do Excel = uma venda, com os dados do cliente na mesma linha.
  */
 import { ALL_CONCELHOS } from "../../api/shared/concelhos";
-import { SALE_FORMS, SERVICE_LABELS, fieldOptions, getSaleForm, validateDetails, type Details, type FieldDef } from "../../api/shared/client-forms";
+import { SALE_FORMS, SERVICE_LABELS, fieldOptions, getSaleForm, validateDetails, withCustomSuppliers, type Details, type FieldDef } from "../../api/shared/client-forms";
+import type { CustomSupplier } from "../../api/shared/suppliers";
 
 /** Campos especiais da importação (não fazem parte do formulário). */
 export const SPECIAL = {
@@ -14,7 +15,17 @@ export const SPECIAL = {
 export type SpecialKey = keyof typeof SPECIAL;
 
 /** Todos os campos dos formulários (o DUAL contém os campos da LUZ e do GÁS). */
-const ALL_FIELDS: FieldDef[] = SALE_FORMS.DUAL;
+const BASE_FIELDS: FieldDef[] = SALE_FORMS.DUAL;
+
+/**
+ * Campos dos formulários já com os comercializadores acrescentados pelo utilizador:
+ * o modelo Excel, as opções de correspondência e a conversão das células usam
+ * exatamente as mesmas listas que o formulário de venda mostra.
+ */
+export function allFields(custom?: CustomSupplier[]): FieldDef[] {
+  return BASE_FIELDS.map((f) => withCustomSuppliers(f, custom));
+}
+const ALL_FIELDS = BASE_FIELDS;
 
 /** Nome da coluna no modelo Excel para cada campo. */
 const TEMPLATE_LABEL: Record<string, string> = {
@@ -30,16 +41,20 @@ const TEMPLATE_LABEL: Record<string, string> = {
 
 export type Target = { key: string; label: string };
 
-/** Ordem das colunas do modelo e das opções de correspondência. */
-export const TARGETS: Target[] = [
-  { key: "service", label: SPECIAL.service },
-  { key: "seller", label: SPECIAL.seller },
-  ...ALL_FIELDS.flatMap((f) => {
-    const t = { key: f.key, label: TEMPLATE_LABEL[f.key] ?? f.label };
-    return f.key === "saleStatusGas" ? [t, { key: "statusDate", label: SPECIAL.statusDate }] : [t];
-  }),
-];
-const targetLabel = new Map(TARGETS.map((t) => [t.key, t.label]));
+/** Ordem das colunas do modelo e das opções de correspondência (com os comercializadores acrescentados). */
+export function targets(custom?: CustomSupplier[]): Target[] {
+  return [
+    { key: "service", label: SPECIAL.service },
+    { key: "seller", label: SPECIAL.seller },
+    ...allFields(custom).flatMap((f) => {
+      const t = { key: f.key, label: TEMPLATE_LABEL[f.key] ?? f.label };
+      return f.key === "saleStatusGas" ? [t, { key: "statusDate", label: SPECIAL.statusDate }] : [t];
+    }),
+  ];
+}
+
+/** Lista base (sem acrescentos): as opções de correspondência partem sempre daqui. */
+export const TARGETS: Target[] = targets();
 
 /** Normaliza texto para comparação: minúsculas, sem acentos nem pontuação. */
 export const norm = (v: unknown) =>
@@ -264,7 +279,7 @@ export type Prepared = {
   defaulted: string[];
 };
 
-export type Options = { defaultService: string; defaultSellerId: number | null; employees: Employee[]; today: string };
+export type Options = { defaultService: string; defaultSellerId: number | null; employees: Employee[]; today: string; customSuppliers?: CustomSupplier[] };
 
 /** Converte uma linha do Excel em venda e valida-a com as mesmas regras do formulário. */
 export function prepareRow(cells: unknown[], mapping: (string | null)[], rowNumber: number, opts: Options): Prepared {
@@ -292,7 +307,7 @@ export function prepareRow(cells: unknown[], mapping: (string | null)[], rowNumb
   if (!error && sellerRaw && !seller) error = `Vendedor "${sellerRaw}" não encontrado nos funcionários.`;
   if (!error && !seller) error = "Sem vendedor (escolha o vendedor por defeito).";
 
-  const form = service ? (getSaleForm(service) ?? []) : [];
+  const form = (service ? (getSaleForm(service) ?? []) : []).map((f) => withCustomSuppliers(f, opts.customSuppliers));
   const details: Details = {};
   const defaulted: string[] = [];
   // O distrito é convertido primeiro: as opções do concelho dependem dele.
@@ -333,7 +348,7 @@ export function prepareRow(cells: unknown[], mapping: (string | null)[], rowNumb
 // ---------- Modelo ----------
 
 /** Descarrega o modelo Excel com as colunas, um exemplo e os valores aceites. */
-export async function downloadTemplate() {
+export async function downloadTemplate(custom?: CustomSupplier[]) {
   const XLSX = await import("xlsx");
   const example: Record<string, string> = {
     service: "LUZ",
@@ -367,7 +382,7 @@ export async function downloadTemplate() {
 
   const lists: [string, string[]][] = [
     ["Serviço", SERVICE_LABELS],
-    ...ALL_FIELDS.filter((f) => f.kind === "select").map((f): [string, string[]] => [
+    ...allFields(custom).filter((f) => f.kind === "select").map((f): [string, string[]] => [
       f.kind === "select" && f.optionsFrom ? "Concelho (da lista, conforme o distrito)" : (TEMPLATE_LABEL[f.key] ?? f.label),
       f.kind === "select" && f.optionsFrom ? ALL_CONCELHOS : f.kind === "select" ? f.options : [],
     ]),

@@ -199,7 +199,7 @@ export default function SuppliersPage() {
       </PageHeader>
 
       <div className="mb-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Stat delay={0} label="Acrescentados" value={rows.length} accent="var(--volt)" sub="por si ou pela equipa" />
+        <Stat delay={0} label="Acrescentados" value={rows.length} accent="var(--volt)" sub="à lista de comercializadores" />
         <Stat delay={40} label="Eletricidade" value={OLD_SUPPLIERS.length + cnt("LUZ")} accent="var(--sky)" sub={`${OLD_SUPPLIERS.length} de origem`} />
         <Stat delay={80} label="Gás" value={OLD_GAS_SUPPLIERS.length + cnt("GAS")} accent="var(--amber)" sub={`${OLD_GAS_SUPPLIERS.length} de origem`} />
         <Stat delay={120} label="Em uso em vendas" value={rows.reduce((a, r) => a + Number(r.usageCount ?? 0), 0)} accent="var(--rose)" sub="vendas que os referem" />
@@ -252,7 +252,7 @@ export default function SuppliersPage() {
                         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-volt/10 text-volt"><Plug size={15} /></span>
                         <div className="min-w-0">
                           <div className="truncate font-medium">{r.name}</div>
-                          <div className="text-[11.5px] text-ink-3">acrescentado por si ou pela equipa</div>
+                          <div className="text-[11.5px] text-ink-3">{r.createdByName ? `acrescentado por ${r.createdByName}` : "acrescentado pela equipa"}</div>
                         </div>
                       </div>
                     </td>

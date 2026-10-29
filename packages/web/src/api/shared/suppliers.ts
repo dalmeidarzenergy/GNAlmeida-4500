@@ -139,6 +139,9 @@ export function baseSuppliers(scope: SupplierScope): string[] {
   return scope === "GAS" ? OLD_GAS_SUPPLIERS : OLD_SUPPLIERS;
 }
 
+/** Comercializador acrescentado pelo utilizador (lista guardada na base de dados). */
+export type CustomSupplier = { name: string; scopes: string[] };
+
 /**
  * Opções finais de um campo de comercializador: a lista base do âmbito mais os
  * comercializadores acrescentados pelo utilizador que se apliquem a esse âmbito.
@@ -147,7 +150,7 @@ export function baseSuppliers(scope: SupplierScope): string[] {
  */
 export function supplierOptions(
   scope: SupplierScope,
-  custom: { name: string; scopes: string[] }[] | undefined,
+  custom: CustomSupplier[] | undefined,
 ): string[] {
   const seen = new Set(baseSuppliers(scope).map(supplierKey));
   const out = [...baseSuppliers(scope)];

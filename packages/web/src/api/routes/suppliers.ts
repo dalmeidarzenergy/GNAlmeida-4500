@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
 import { requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { suppliers as tbl, sales } from "../database/schema";
+import { suppliers as tbl, sales, employees } from "../database/schema";
+import { user } from "../database/auth-schema";
 import { SUPPLIER_SCOPES, supplierKey, baseSuppliers } from "../shared/suppliers";
 
 const scopeEnum = z.enum(SUPPLIER_SCOPES as unknown as [string, ...string[]]);
@@ -15,6 +16,32 @@ const input = z.object({
 
 /** Todas as vendas guardam o antigo comercializador dentro de `details`. */
 const SUPPLIER_DETAIL_KEYS = ["oldSupplier", "oldSupplierGas"];
+
+/**
+ * Nome de quem acrescentou cada comercializador.
+ *
+ * `createdBy` é o id da conta (tabela `user`). O nome do funcionário é mais
+ * legível do que o nome da conta, por isso procura-se o funcionário com o mesmo
+ * email; sem funcionário correspondente usa-se o nome da conta e, em último
+ * recurso, o email. Contas já removidas devolvem null.
+ */
+async function authorNames(ids: string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids.filter(Boolean))];
+  const out = new Map<string, string>();
+  if (!wanted.length) return out;
+  const accounts = await db
+    .select({ id: user.id, name: user.name, email: user.email })
+    .from(user)
+    .where(inArray(user.id, wanted));
+  const emails = accounts.map((a) => a.email.toLowerCase());
+  const staff = emails.length ? await db.select({ name: employees.name, email: employees.email }).from(employees).where(inArray(sql`lower(${employees.email})`, emails)) : [];
+  const byEmail = new Map(staff.map((s) => [s.email.toLowerCase(), s.name]));
+  for (const a of accounts) {
+    const name = byEmail.get(a.email.toLowerCase()) ?? a.name ?? "";
+    if (name) out.set(a.id, name);
+  }
+  return out;
+}
 
 /**
  * Quantas vendas usam este comercializador. Compara pela forma normalizada para
@@ -75,12 +102,14 @@ export const suppliersRoute = {
    */
   list: requireView("comercializadores").handler(async () => {
     const rows = await db.select().from(tbl).orderBy(tbl.name);
+    const authors = await authorNames(rows.map((r) => r.createdBy ?? ""));
     return Promise.all(
       rows.map(async (r) => ({
         id: r.id,
         name: r.name,
         scopes: r.scopes ?? [],
         createdAt: r.createdAt,
+        createdByName: r.createdBy ? (authors.get(r.createdBy) ?? null) : null,
         usageCount: await usageCount(r.name),
       })),
     );

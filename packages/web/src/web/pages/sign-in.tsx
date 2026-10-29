@@ -4,7 +4,7 @@ import { Loader2, Sun, BatteryCharging, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
 import { Logo } from "../components/app-shell";
-import { Field } from "../components/ui/kit";
+import { Credit, Field } from "../components/ui/kit";
 
 function GoogleIcon() {
   return (
@@ -128,6 +128,7 @@ export default function SignInPage() {
 
         </div>
       </div>
+      <Credit />
     </div>
   );
 }

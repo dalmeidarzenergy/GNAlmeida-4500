@@ -5,6 +5,7 @@ import { PageHeader, Empty, Field, Tabs, Stat, Progress } from "../components/ui
 import { useMe } from "../queries/me";
 import { useEmployeeOptions } from "../queries/hr";
 import { useClients, useImportSales, useOrders } from "../queries/sales";
+import { useCustomSuppliers } from "../queries/suppliers";
 import { errMsg, fmtDate } from "../lib/format";
 import { SERVICE_LABELS } from "../../api/shared/client-forms";
 import { TARGETS, autoMap, toIsoDate, downloadTemplate, labelOf, prepareRow, readWorkbook, type Prepared, type Sheet } from "../lib/sale-import";
@@ -42,12 +43,15 @@ export default function SalesImportPage() {
 
   const sheet = sheets[sheetIdx] as Sheet | undefined;
   const employees = useMemo(() => (emps.data ?? []).map((e) => ({ id: e.id, name: e.name, status: e.status })), [emps.data]);
+  // Os comercializadores acrescentados pelo utilizador entram na importação e no
+  // modelo Excel: as listas mostradas são exatamente as que a venda aceita.
+  const customSuppliers = useCustomSuppliers().data;
 
   const prepared = useMemo<Prepared[]>(() => {
     if (!sheet) return [];
-    const opts = { defaultService, defaultSellerId, employees, today: todayLisbon() };
+    const opts = { defaultService, defaultSellerId, employees, today: todayLisbon(), customSuppliers };
     return sheet.rows.map((r, i) => prepareRow(r, mapping, sheet.lines[i], opts));
-  }, [sheet, mapping, defaultService, defaultSellerId, employees]);
+  }, [sheet, mapping, defaultService, defaultSellerId, employees, customSuppliers]);
 
   /**
    * Para cada linha, a venda que vai ser atualizada, com as mesmas regras da importação: a mais recente com o mesmo CPE ou CUI,
@@ -178,7 +182,7 @@ export default function SalesImportPage() {
   const header = (
     <PageHeader eyebrow="Vendas" title="Importar Excel">
       <Link href="/vendas" className="btn"><ArrowLeft size={15} /> Voltar às vendas</Link>
-      <button type="button" className="btn" onClick={() => downloadTemplate()}><Download size={15} /> Descarregar modelo</button>
+      <button type="button" className="btn" onClick={() => downloadTemplate(customSuppliers)}><Download size={15} /> Descarregar modelo</button>
     </PageHeader>
   );
 
