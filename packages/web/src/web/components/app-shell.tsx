@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug,
+  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -35,11 +35,15 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/vendas-criticas", key: "vendas-criticas", label: "Vendas Críticas", icon: Timer },
       { to: "/estado-vtv", key: "estado-vtv", label: "Estado VTV", icon: ShieldAlert },
       { to: "/w2l", key: "w2l", label: "W2L", icon: ClipboardList },
-      { to: "/campanhas", key: "campanhas", label: "Campanhas", icon: Megaphone },
-      { to: "/comercializadores", key: "comercializadores", label: "Comercializadores", icon: Plug },
       { to: "/agenda", key: "agenda", label: "Agenda", icon: Calendar },
       { to: "/metas", key: "metas", label: "Metas", icon: Target },
       { to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin },
+    ],
+  },
+  {
+    group: "Apoio Comercial",
+    items: [
+      { to: "/campanhas", key: "campanhas", label: "Campanhas", icon: Megaphone },
       { to: "/simulador-iberdrola", key: "simulador-iberdrola", label: "Simulador Iberdrola", icon: Calculator },
       { to: "/completar-iban", key: "completar-iban", label: "Completar IBAN", icon: CreditCard },
     ],
@@ -60,6 +64,12 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/evolucao", key: "evolucao", label: "Evolução", icon: TrendingUp },
       { to: "/comparativo", key: "comparativo", label: "Comparativo", icon: Scale },
       { to: "/medem", key: "medem", label: "Análise MEDEM", icon: Gauge },
+    ],
+  },
+  {
+    group: "Definições",
+    items: [
+      { to: "/comercializadores", key: "comercializadores", label: "Comercializadores", icon: Plug },
       { to: "/utilizadores", key: "utilizadores", label: "Utilizadores", icon: ShieldCheck },
     ],
   },
@@ -90,6 +100,29 @@ function useTheme() {
   const toggle = () => set((t) => (t === "dark" ? "light" : "dark"));
   return [theme, toggle] as const;
 }
+function useSidebar() {
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("sidebar-collapsed") === "true";
+  });
+  const [pinned, setPinned] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("sidebar-pinned") === "true";
+  });
+  const [hovering, setHovering] = useState(false);
+
+  useEffect(() => { localStorage.setItem("sidebar-collapsed", String(collapsed)); }, [collapsed]);
+  useEffect(() => { localStorage.setItem("sidebar-pinned", String(pinned)); }, [pinned]);
+
+  const expanded = pinned || hovering;
+  const togglePin = () => {
+    if (pinned) { setPinned(false); setCollapsed(true); }
+    else { setPinned(true); setCollapsed(false); }
+  };
+
+  return { collapsed, pinned, expanded, hovering, setHovering, togglePin } as const;
+}
+
 
 export function AppShell({ children }: { children: ReactNode }) {
   const me = useMe();
@@ -99,6 +132,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const role = (me.data?.role ?? "vendedor") as Role;
   const permissions = me.data?.permissions;
   const [theme, toggleTheme] = useTheme();
+  const { pinned, expanded, setHovering, togglePin } = useSidebar();
 
   const signOut = async () => {
     await authClient.signOut();
@@ -107,11 +141,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   const sidebar = (
-    <aside className="flex h-full w-[248px] flex-col border-r border-line" style={{ background: "var(--sidebar-bg)" }}>
-      <div className="flex h-16 items-center justify-between px-5">
-        <Logo />
-        <button className="btn-icon lg:hidden" onClick={() => setOpen(false)}>
+    <aside
+      className={`flex h-full flex-col border-r border-line transition-[width] duration-200 ${expanded ? "w-[248px]" : "w-[64px]"}`}
+      style={{ background: "var(--sidebar-bg)" }}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+    >
+      <div className={`flex h-16 items-center ${expanded ? "justify-between px-5" : "justify-center"}`}>
+        {expanded ? <Logo /> : <img src="/icons/logo.png" alt="D2D" className="h-7 w-auto shrink-0 object-contain" />}
+        <button className={`btn-icon lg:hidden ${expanded ? "" : "absolute right-2 top-2"}`} onClick={() => setOpen(false)}>
           <X size={16} />
+        </button>
+      </div>
+      <div className={`flex ${expanded ? "justify-end" : "justify-center"} px-3 pb-1`}>
+        <button className="btn-icon hidden lg:flex" onClick={togglePin} title={pinned ? "Desafixar menu" : "Fixar menu"}>
+          {pinned ? <PinOff size={14} /> : <Pin size={14} />}
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
@@ -120,7 +164,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           if (!items.length) return null;
           return (
             <div key={g.group} className="mt-5 first:mt-2">
-              <div className="label-mono mb-2 px-3">{g.group}</div>
+              {expanded && <div className="label-mono mb-2 px-3">{g.group}</div>}
               {items.map((i) => {
                 const active = i.to === "/" ? loc === "/" : loc.startsWith(i.to);
                 const Icon = i.icon;
@@ -129,11 +173,12 @@ export function AppShell({ children }: { children: ReactNode }) {
                     key={i.to}
                     to={i.to}
                     onClick={() => setOpen(false)}
-                    className={`group relative mb-0.5 flex h-9 items-center gap-3 rounded-[9px] px-3 text-[13px] transition ${active ? "bg-volt/10 font-medium text-volt" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
+                    title={expanded ? undefined : i.label}
+                    className={`group relative mb-0.5 flex h-9 items-center gap-3 rounded-[9px] transition ${expanded ? "px-3 text-[13px]" : "justify-center px-0"} ${active ? "bg-volt/10 font-medium text-volt" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
                   >
-                    {active && <span className="absolute -left-3 top-1.5 h-6 w-[3px] rounded-r bg-volt" />}
+                    {active && expanded && <span className="absolute -left-3 top-1.5 h-6 w-[3px] rounded-r bg-volt" />}
                     <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
-                    {i.label}
+                    {expanded && i.label}
                   </Link>
                 );
               })}
@@ -142,19 +187,31 @@ export function AppShell({ children }: { children: ReactNode }) {
         })}
       </nav>
       <div className="border-t border-line p-3">
-        <div className="flex items-center gap-3 rounded-[10px] p-2">
-          <Avatar name={me.data?.name || me.data?.email || "?"} src={me.data?.image} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-medium">{me.data?.name || me.data?.email}</div>
-            <div className="text-[11px] text-ink-3">{ROLE_LABEL[role]}</div>
+        {expanded ? (
+          <div className="flex items-center gap-3 rounded-[10px] p-2">
+            <Avatar name={me.data?.name || me.data?.email || "?"} src={me.data?.image} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-medium">{me.data?.name || me.data?.email}</div>
+              <div className="text-[11px] text-ink-3">{ROLE_LABEL[role]}</div>
+            </div>
+            <button className="btn-icon" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo escuro"}>
+              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+            <button className="btn-icon" onClick={signOut} title="Terminar sessão">
+              <LogOut size={15} />
+            </button>
           </div>
-          <button className="btn-icon" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo escuro"}>
-            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-          </button>
-          <button className="btn-icon" onClick={signOut} title="Terminar sessão">
-            <LogOut size={15} />
-          </button>
-        </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2">
+            <Avatar name={me.data?.name || me.data?.email || "?"} src={me.data?.image} />
+            <button className="btn-icon" onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo escuro"}>
+              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+            <button className="btn-icon" onClick={signOut} title="Terminar sessão">
+              <LogOut size={15} />
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -168,7 +225,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button type="button" aria-label="Fechar menu" className="flex-1" style={{ background: "var(--overlay-bg)" }} onClick={() => setOpen(false)} />
         </div>
       )}
-      <div className="min-w-0 flex-1 pb-9 lg:pl-[248px]">
+      <div className={`min-w-0 flex-1 pb-9 transition-[padding] duration-200 ${expanded ? "lg:pl-[248px]" : "lg:pl-[64px]"}`}>
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-line bg-bg/85 px-4 backdrop-blur">
           <button className="btn-icon lg:hidden" onClick={() => setOpen(true)}>
             <Menu size={18} />
