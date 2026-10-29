@@ -14,16 +14,44 @@ export PATH="$HOME/.bun/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
 
 log() { echo "[auto-update] $(date '+%H:%M:%S'): $1"; }
 
+# Prepara o código para correr: dependências, esquema da BD e build.
+#
+# Isto é SEPARADO de arrancar o processo, de propósito: antes o
+# `drizzle-kit push` vivia dentro do arranque e só corria quando o servidor
+# NÃO estava a correr — ou seja, numa atualização normal (servidor já ativo)
+# a migração nunca acontecia e as tabelas novas nunca eram criadas.
+provision() {
+  log "a preparar (bun install + drizzle-kit push + build)..."
+  bun install --frozen-lockfile >/dev/null 2>&1 || log "aviso: bun install falhou"
+  (cd packages/web && bun --env-file=../../.env drizzle-kit push --force) >/dev/null 2>&1 \
+    || log "aviso: drizzle-kit push falhou"
+  bun run build >/dev/null 2>&1 || log "aviso: build falhou"
+}
+
 start_server() {
   if pgrep -f "start-server" > /dev/null 2>&1; then
     return 0
   fi
   log "a arrancar o servidor..."
-  bun install --frozen-lockfile >/dev/null 2>&1 || log "aviso: bun install falhou"
-  (cd packages/web && bun --env-file=../../.env drizzle-kit push) >/dev/null 2>&1 || log "aviso: drizzle-kit push falhou"
-  bun run build >/dev/null 2>&1 || log "aviso: build falhou"
   bun --env-file=.env packages/web/src/start-server.ts &
   sleep 4
+}
+
+# Mata o servidor e espera que o processo morra mesmo, em vez de confiar
+# num `sleep` fixo (um `sleep 2` curto deixava o processo de pé e o arranque
+# seguinte era abortado pelo `pgrep`).
+stop_server() {
+  local pids
+  pids="$(pgrep -f 'start-server' | tr '\n' ' ')"
+  [ -n "$pids" ] || return 0
+  kill $pids 2>/dev/null
+  for _ in $(seq 1 20); do
+    pgrep -f "start-server" >/dev/null 2>&1 || return 0
+    sleep 1
+  done
+  log "aviso: o servidor não parou em 20s — forço."
+  pkill -9 -f "start-server" 2>/dev/null
+  sleep 2
 }
 
 sync_now() {
@@ -40,8 +68,7 @@ sync_now() {
   fi
   if [ "$LOCAL" != "$REMOTE" ]; then
     log "nova versão detetada ($LOCAL -> $REMOTE) — a atualizar..."
-    kill "$(pgrep -f 'start-server' | tr '\n' ' ')" 2>/dev/null
-    sleep 2
+    stop_server
     # reset --hard descarta alterações locais em ficheiros versionados,
     # mas NUNCA toca em ficheiros ignorados (data.db, .env, *.log) —
     # por isso a BD e as chaves de produção ficam intactas.
@@ -49,6 +76,8 @@ sync_now() {
       log "reset --hard falhou — a tentar de novo em 60s."
       return 1
     fi
+    # provision() corre SEMPRE, mesmo que o servidor já estivesse ativo.
+    provision
     start_server
     log "servidor reiniciado na versão $(git rev-parse --short HEAD)."
   fi
@@ -56,6 +85,8 @@ sync_now() {
 }
 
 log "a iniciar..."
+# No arranque também garantimos que a BD está em dia com o esquema.
+provision
 start_server
 log "servidor ativo. a vigiar alterações no GitHub."
 
