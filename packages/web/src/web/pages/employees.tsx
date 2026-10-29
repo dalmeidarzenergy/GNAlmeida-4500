@@ -460,7 +460,7 @@ export default function EmployeesPage() {
             { key: "todos", label: "Todos", count: count("todos") },
           ]}
         />
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex min-w-0 max-w-full flex-wrap justify-end gap-2">
           <TeamFilter value={team} onChange={setTeam} />
           <select className="input w-52" value={dept} onChange={(e) => setDept(e.target.value)}>
             <option value="">Todos os departamentos</option>

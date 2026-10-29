@@ -184,8 +184,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
           <NotificationsBell />
         </header>
-        <main className="mx-auto max-w-[1400px] px-5 py-8 lg:px-8">{children}</main>
-        <footer className="px-5 pb-5 text-right text-[11px] text-ink-3 lg:px-8">
+        <main className="mx-auto w-full max-w-[1400px] min-w-0 px-4 py-8 lg:px-8">{children}</main>
+        <footer className="px-4 pb-5 text-center text-[11px] text-ink-3 lg:px-8 lg:text-right">
           *Desenvolvido por Diogo Almeida
         </footer>
       </div>

@@ -48,7 +48,7 @@ export default function SimuladorPage() {
   }, []);
 
   return (
-    <div className="-mx-5 -my-8 h-[100dvh] lg:-mx-8">
+    <div className="-mx-4 -my-8 h-[100dvh] overflow-x-hidden lg:-mx-8">
       <iframe
         ref={iframeRef}
         src="/simulador-iberdrola.html"

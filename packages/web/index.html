@@ -2,16 +2,39 @@
 <html lang="pt">
 	<head>
 		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 		<link rel="icon" href="/favicon.ico" />
 		<link rel="manifest" href="/manifest.json" />
-		<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
 		<meta name="theme-color" content="#0c0e0d" />
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<meta name="apple-mobile-web-app-title" content="D2D Consulting" />
 		<meta name="application-name" content="D2D Consulting" />
+		<meta name="format-detection" content="telephone=no" />
+<!-- PWA / iOS: o Safari ignora o manifest para o splash e para o icone.
+     Exige uma meta/startup-image por resolucao de dispositivo, com
+     px do ficheiro = device-width * device-pixel-ratio. -->
+		<link rel="apple-touch-startup-image" href="/splash/iphone-16-pro-max.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-16-plus.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-16-pro.png" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-16.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-14-plus.png" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-14.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-11-pro-max.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-11-pro.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-11.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-8-plus.png" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/iphone-se.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/ipad-pro-12.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/ipad-pro-11.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/ipad-air-10.png" media="(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/ipad-10.png" media="(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/ipad-mini-79.png" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+		<link rel="apple-touch-startup-image" href="/splash/ipad-mini-83.png" media="(device-width: 744px) and (device-height: 1133px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+		<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+		<link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />
+		<link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152.png" />
 		<meta property="og:image" content="/og-image.png" />
 		<title>D2D Consulting — Gestão</title>
 		<link rel="preconnect" href="https://fonts.googleapis.com" />

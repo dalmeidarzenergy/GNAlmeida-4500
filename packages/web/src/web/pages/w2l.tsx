@@ -309,7 +309,7 @@ export default function W2lPage() {
         ) : !list.length ? (
           <Empty title={tab === "todas" ? "Nenhuma W2L" : `Nenhuma W2L em "${tab}"`} text={q ? "Nenhum resultado para esta pesquisa." : "Clica em \"Nova W2L\" para começar."} />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scroll">
             <table className="tbl">
               <thead>
                 <tr>

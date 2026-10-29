@@ -169,17 +169,24 @@ export function TableSkeleton({ rows = 6, cols = 5 }: { rows?: number; cols?: nu
 
 export function Tabs<T extends string>({ value, onChange, items }: { value: T; onChange: (v: T) => void; items: { key: T; label: string; count?: number }[] }) {
   return (
-    <div className="inline-flex rounded-[11px] border border-line bg-surface p-1">
-      {items.map((it) => (
-        <button
-          key={it.key}
-          onClick={() => onChange(it.key)}
-          className={`flex h-8 items-center gap-2 rounded-lg px-3 text-[12.5px] font-medium transition ${value === it.key ? "bg-surface-2 text-ink shadow-[inset_0_0_0_1px_var(--line)]" : "text-ink-2 hover:text-ink"}`}
-        >
-          {it.label}
-          {it.count !== undefined && <span className={`num text-[11px] ${value === it.key ? "text-volt" : "text-ink-3"}`}>{it.count}</span>}
-        </button>
-      ))}
+    /*
+     * Em ecras estreitos ha mais separadores do que largura disponivel.
+     * O contentor faz scroll horizontal em vez de ser cortado, e os rotulos
+     * podem partir em duas linhas para caberem mais separadores de uma vez.
+     */
+    <div className="min-w-0 max-w-full overflow-x-auto">
+      <div className="inline-flex w-max rounded-[11px] border border-line bg-surface p-1">
+        {items.map((it) => (
+          <button
+            key={it.key}
+            onClick={() => onChange(it.key)}
+            className={`flex min-h-8 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1 text-[12.5px] font-medium transition ${value === it.key ? "bg-surface-2 text-ink shadow-[inset_0_0_0_1px_var(--line)]" : "text-ink-2 hover:text-ink"}`}
+          >
+            {it.label}
+            {it.count !== undefined && <span className={`num text-[11px] ${value === it.key ? "text-volt" : "text-ink-3"}`}>{it.count}</span>}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

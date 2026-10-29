@@ -102,7 +102,7 @@ export default function Dashboard() {
             <Stat delay={120} label={allMonths ? "Em Fornecimento (histórico)" : `Em Fornecimento (${aggLabel.toLowerCase()})`} value={sales.orders} icon={<ShoppingCart size={16} />} sub={allMonths ? "todos os meses registados" : `até ${monthLabel(month)}`} />
           </div>
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[1.7fr_1fr]">
+          <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[1.7fr_1fr] [&>*]:min-w-0">
             <div className="card rise p-5" style={{ animationDelay: "160ms" }}>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>

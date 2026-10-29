@@ -65,6 +65,35 @@
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 2px solid var(--bg); }
   /* Remove platform-injected Runable badge */
   [data-runable-badge] { display: none !important; }
+
+  /*
+   * iOS em modo standalone (app instalada no ecrã principal): o conteúdo é
+   * desenhado por baixo da Dynamic Island / barra de estado, porque usamos
+   * apple-mobile-web-app-status-bar-style = black-translucent.
+   * Sem isto, o cabeçalho fica escondido atrás do relógio e a barra inferior
+   * (home indicator) tapa os últimos botões.
+   * env() devolve 0 nos restantes navegadores, por isso é seguro deixar assim.
+   */
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /*
+   * Rede de seguranca para o layout em ecra estreito. Uma grelha ou um
+   * contentor flex cujos filhos tenham largura intrinseca (tabela, tira de
+   * separadores, barra de filtros) empurra a pagina toda para o lado, porque
+   * o minimo de um item e "auto" e ele recusa encolher abaixo do conteudo.
+   * Sem isto, / e /funcionarios rebentavam a largura no iPhone.
+   */
+  .grid > *, .flex > * { min-width: 0; }
+
+  /* Nos telemóveis o Safari faz zoom automático em campos com letra < 16px. */
+  @media (max-width: 640px) {
+    input, select, textarea { font-size: 16px; }
+  }
 }
 
 @layer components {
@@ -100,6 +129,40 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 .skeleton { @apply animate-pulse rounded-md bg-surface-2; }
+
+/*
+ * Tabelas em ecras estreitos.
+ * O wrapper com scroll tem de poder ENCOLHER abaixo do conteudo, senao
+ * estica o layout todo. `min-width: 0` num item de flex/grid faz isso.
+ * O `contain` evita que a largura da tabela "vaze" para o layout pai.
+ */
+.table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll > .tbl {
+  min-width: 100%;
+}
+
+/* Evita scroll horizontal no body quando algum filho transborda
+   (ex.: tabelas, graficos). O scroll fica contido no proprio wrapper. */
+html, body { max-width: 100%; overflow-x: hidden; }
+
+/*
+ * Qualquer wrapper de scroll horizontal dentro do conteudo tem de poder
+ * ENCOLHER abaixo do seu conteudo. Sem `min-width: 0` comporta-se como item
+ * de flex/grid e cresce ate a largura da tabela, empurrando a pagina toda
+ * e criando scroll horizontal no body em vez de scroll interno.
+ * Aplica-se a todos os wrappers de tabela da app de uma so vez.
+ */
+main .overflow-x-auto,
+main .table-scroll {
+  min-width: 0;
+  max-width: 100%;
+}
+
 
 /* Organigrama — árvore top-down com conectores */
 .org-tree,

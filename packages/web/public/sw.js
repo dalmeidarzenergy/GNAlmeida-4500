@@ -4,7 +4,11 @@
 //   - Assets estáticos: cache primeiro (os ficheiros do build têm nomes com hash).
 //   - API e autenticação (/api/): sempre pela rede, nunca em cache.
 
-const CACHE_NAME = "d2dconsulting-v1";
+const CACHE_NAME = "d2dconsulting-v2";
+
+// Nota: as splash screens NÃO entram no precache — são ~560 KB de imagens que
+// a maioria dos dispositivos nunca usa (só o iOS em modo standalone). São
+// guardadas em cache na primeira utilização, pela regra "cache primeiro".
 const SHELL = [
   "/",
   "/manifest.json",
