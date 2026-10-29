@@ -93,3 +93,23 @@ export const useIberdrolaOverrideCreate = () =>
 /** Desfaz uma troca de venda. */
 export const useIberdrolaOverrideRemove = () =>
   useMutation(orpc.iberdrola.overrideRemove.mutationOptions({ onSuccess: useInv() }));
+
+/** PDFs guardados na aba Autos (filtros + paginação de 20). */
+export const useIberdrolaPdfList = (input: {
+  employeeId?: number;
+  leaderId?: number;
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}) => useQuery({ ...orpc.iberdrola.pdfList.queryOptions({ input }), refetchOnMount: "always" });
+
+/** Comerciais com PDFs guardados (filtro por vendedor). */
+export const useIberdrolaPdfSellers = () => useQuery({ ...orpc.iberdrola.pdfSellers.queryOptions(), refetchOnMount: "always" });
+
+/** Chefes de equipa com PDFs guardados (filtro por chefe). */
+export const useIberdrolaPdfTeams = () => useQuery({ ...orpc.iberdrola.pdfTeams.queryOptions(), refetchOnMount: "always" });
+
+/** Elimina um PDF guardado (só admin/diretor). */
+export const useIberdrolaPdfRemove = () =>
+  useMutation(orpc.iberdrola.pdfRemove.mutationOptions({ onSuccess: useInv() }));

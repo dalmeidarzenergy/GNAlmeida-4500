@@ -4,6 +4,7 @@ import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/ki
 import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
+import Autos from "./iberdrola-autos";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
 import { authClient } from "../lib/auth";
 
@@ -44,6 +45,10 @@ async function downloadPdf(month: string, employeeId: number) {
   a.click();
   window.document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  // O servidor guarda também uma cópia na aba Autos e devolve a etiqueta.
+  const label = res.headers.get("X-Auto-Label");
+  const dup = res.headers.get("X-Auto-Duplicate") === "1";
+  return { label: label ? decodeURIComponent(label) : null, duplicate: dup };
 }
 
 /** Descarrega o Excel geral dos autos do mês (uma folha por comercial). */
@@ -67,7 +72,7 @@ async function downloadExcel(month: string) {
   URL.revokeObjectURL(url);
 }
 
-type Tab = "historico" | "finais";
+type Tab = "historico" | "finais" | "autos";
 
 export default function IberdrolaPage() {
   const me = useMe();
@@ -83,10 +88,11 @@ export default function IberdrolaPage() {
           items={[
             { key: "historico" as const, label: "Histórico de Autos" },
             { key: "finais" as const, label: "Autos Finais" },
+            { key: "autos" as const, label: "Autos" },
           ]}
         />
       </PageHeader>
-      {tab === "historico" ? <Historico canEdit={canEdit} /> : <Finais />}
+      {tab === "historico" ? <Historico canEdit={canEdit} /> : tab === "autos" ? <Autos /> : <Finais />}
     </div>
   );
 }
@@ -592,8 +598,14 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
           <button
             type="button"
             className="btn btn-ghost px-2.5 py-1 text-[12px]"
-            onClick={() => downloadPdf(month, employeeId).catch((e) => window.alert(errMsg(e)))}
-            title="Descarregar PDF detalhado deste comercial."
+            onClick={() =>
+              downloadPdf(month, employeeId)
+                .then((r) => {
+                  if (r?.duplicate) window.alert(`O PDF de ${r.label ?? ""} já estava guardado na aba Autos.`);
+                })
+                .catch((e) => window.alert(errMsg(e)))
+            }
+            title="Descarregar PDF detalhado deste comercial. Fica também guardado na aba Autos."
           >
             <Download size={13} /> PDF
           </button>

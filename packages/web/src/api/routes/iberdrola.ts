@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { asc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import type { Hono } from "hono";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildIberdrolaPdf } from "./iberdrola-pdf";
 import { auth } from "../auth";
-import { requireView, requireEdit, restrictToEmployee, assertOwnEmployee, type Role } from "../middleware/auth";
+import { requireView, requireEdit, requireRoles, restrictToEmployee, assertOwnEmployee, type Role } from "../middleware/auth";
 import { ORPCError } from "@orpc/server";
 import { db } from "../database";
 import { PUBLIC_DIR } from "../lib/public-files";
@@ -24,15 +24,30 @@ import {
   teams,
   teamMemberships,
   teamPeriods,
+  autoPdfs,
 } from "../database/schema";
 import { effectivePermissions, type Permissions } from "../permissions";
 
 export const UPLOAD_DIR = join(PUBLIC_DIR, "uploads", "iberdrola");
 
+/** Pasta onde ficam as cópias dos PDFs guardados na aba Autos. */
+export const AUTO_PDF_DIR = join(PUBLIC_DIR, "uploads", "autos");
+
 const month = z.string().regex(/^\d{4}-\d{2}$/, "Mês inválido.");
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const yes = (v: unknown) => (typeof v === "string" ? v.toLowerCase() === "sim" : v === true);
+
+/** Abreviaturas dos meses, usadas no nome do PDF (ex.: "Set26"). */
+const MONTH_ABBR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/** Nome do PDF na aba Autos, ex.: "Set26 - Daniel Nascimento". */
+export function autoLabel(m: string, employeeName: string): string {
+  const [y, mo] = m.split("-");
+  const idx = Number(mo) - 1;
+  const abrev = (MONTH_ABBR[idx] ?? mo).slice(0, 1).toUpperCase() + (MONTH_ABBR[idx] ?? mo).slice(1, 3).toLowerCase();
+  return `${abrev}${y.slice(2)} - ${employeeName}`;
+}
 
 /** Normaliza texto para ligar o comercial do Excel ao funcionário e localizar colunas. */
 const normText = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
@@ -952,6 +967,127 @@ export const iberdrolaRoute = {
       return { removed: true };
     }),
 
+  /** Lista os PDFs guardados na aba Autos (filtros + paginação de 20). */
+  pdfList: requireView("auto-iberdrola")
+    .input(
+      z.object({
+        employeeId: z.number().int().positive().optional(),
+        leaderId: z.number().int().positive().optional(),
+        from: month.optional(),
+        to: month.optional(),
+        page: z.number().int().positive().default(1),
+        pageSize: z.number().int().positive().max(100).default(20),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const conds = [];
+      const monthCube = sql`substr(${autoPdfs.month}, 1, 7)`;
+
+      // Visibilidade: admin/diretor veem tudo; chefe vê a sua equipa; vendedor só o seu.
+      const filterId = restrictToEmployee(context.role, context.employeeId);
+      if (filterId !== null) {
+        const led = await db.select({ id: teams.id }).from(teams).where(eq(teams.leaderId, filterId));
+        if (led.length) {
+          conds.push(or(eq(autoPdfs.leaderId, filterId), inArray(autoPdfs.teamId, led.map((t) => t.id)))!);
+        } else {
+          conds.push(eq(autoPdfs.employeeId, filterId));
+        }
+      }
+
+      // Selecionar um chefe mostra todos os comerciais da equipa dele.
+      if (input.leaderId != null) {
+        const led = await db.select({ id: teams.id }).from(teams).where(eq(teams.leaderId, input.leaderId));
+        conds.push(or(eq(autoPdfs.leaderId, input.leaderId), led.length ? inArray(autoPdfs.teamId, led.map((t) => t.id)) : undefined)!);
+      }
+      if (input.employeeId != null) conds.push(eq(autoPdfs.employeeId, input.employeeId));
+      if (input.from) conds.push(gte(monthCube, input.from));
+      if (input.to) conds.push(lte(monthCube, input.to));
+
+      const where = conds.length ? and(...conds) : undefined;
+
+      const [tot] = await db.select({ n: sql<number>`count(*)`.as("n") }).from(autoPdfs).where(where);
+      const total = Number(tot?.n ?? 0);
+
+      const rows = await db
+        .select()
+        .from(autoPdfs)
+        .where(where)
+        .orderBy(desc(autoPdfs.month), asc(autoPdfs.employeeName))
+        .limit(input.pageSize)
+        .offset((input.page - 1) * input.pageSize);
+
+      return {
+        total,
+        page: input.page,
+        pageSize: input.pageSize,
+        pageCount: Math.max(1, Math.ceil(total / input.pageSize)),
+        items: rows.map((r) => ({
+          id: r.id,
+          month: r.month,
+          employeeId: r.employeeId,
+          employeeName: r.employeeName,
+          teamId: r.teamId,
+          leaderId: r.leaderId,
+          label: r.label,
+          size: r.size,
+          uploadedBy: r.uploadedBy,
+          createdAt: r.createdAt,
+        })),
+      };
+    }),
+
+  /** Comerciais que já têm PDFs guardados (para o filtro por vendedor). */
+  pdfSellers: requireView("auto-iberdrola").handler(async ({ context }) => {
+    const filterId = restrictToEmployee(context.role, context.employeeId);
+    let rows: { employeeId: number; employeeName: string }[];
+    if (filterId !== null) {
+      const led = await db.select({ id: teams.id }).from(teams).where(eq(teams.leaderId, filterId));
+      const conds = led.length
+        ? or(eq(autoPdfs.leaderId, filterId), inArray(autoPdfs.teamId, led.map((t) => t.id)))
+        : eq(autoPdfs.employeeId, filterId);
+      rows = await db
+        .selectDistinct({ employeeId: autoPdfs.employeeId, employeeName: autoPdfs.employeeName })
+        .from(autoPdfs)
+        .where(conds);
+    } else {
+      rows = await db.selectDistinct({ employeeId: autoPdfs.employeeId, employeeName: autoPdfs.employeeName }).from(autoPdfs);
+    }
+    return rows.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  }),
+
+  /** Chefes de equipa a quem pertencem PDFs guardados (para o filtro por chefe). */
+  pdfTeams: requireView("auto-iberdrola").handler(async ({ context }) => {
+    const filterId = restrictToEmployee(context.role, context.employeeId);
+    const conds = filterId === null ? [] : [eq(autoPdfs.leaderId, filterId)];
+    const rows = await db
+      .selectDistinct({ leaderId: autoPdfs.leaderId, leaderName: autoPdfs.employeeName })
+      .from(autoPdfs)
+      .where(conds.length ? and(...conds) : undefined);
+    const out = rows.filter((r): r is { leaderId: number; leaderName: string } => r.leaderId != null);
+    // Nome do chefe vem dos funcionários, não do PDF, para não depender do vendedor registado.
+    const ids = out.map((r) => r.leaderId);
+    const staff = ids.length ? await db.select({ id: employees.id, name: employees.name }).from(employees).where(inArray(employees.id, ids)) : [];
+    const names = new Map(staff.map((s) => [s.id, s.name]));
+    return out
+      .map((r) => ({ leaderId: r.leaderId, leaderName: names.get(r.leaderId) ?? r.leaderName }))
+      .sort((a, b) => a.leaderName.localeCompare(b.leaderName));
+  }),
+
+  /** Elimina um PDF guardado. Só admin/diretor. */
+  pdfRemove: requireRoles("admin", "diretor")
+    .input(z.object({ id: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      const [row] = await db.select({ path: autoPdfs.path }).from(autoPdfs).where(eq(autoPdfs.id, input.id));
+      if (!row) return { removed: false as const };
+      await db.delete(autoPdfs).where(eq(autoPdfs.id, input.id));
+      try {
+        unlinkSync(join(AUTO_PDF_DIR, row.path));
+      } catch {
+        /* o ficheiro já não existe em disco */
+      }
+      return { removed: true as const };
+    }),
+
   /** Resumo dos autos de um funcionário, por mês (para a ficha do funcionário). */
   employee: requireView("auto-iberdrola")
     .input(z.object({ employeeId: z.number() }))
@@ -996,6 +1132,72 @@ async function resolveCtx(headers: Headers): Promise<Ctx | null> {
     employeeId: r?.employeeId ?? null,
     permissions: effectivePermissions(role, r?.permissions ?? null),
   };
+}
+
+/**
+ * Guarda uma cópia do PDF no arquivo da aba Autos.
+ *
+ * Um registo por mês + comercial: se já existir um PDF para esse mês e comercial
+ * não se duplica nada, e devolve-se `duplicate: true` para a interface avisar.
+ * A equipa e o chefe ficam registados no momento da gravação, para que o filtro
+ * por chefe continue a funcionar mesmo que o comercial mude de equipa depois.
+ */
+async function saveAutoPdf({
+  ctx,
+  month: m,
+  person,
+  pdf,
+}: {
+  ctx: Ctx;
+  month: string;
+  person: IberdrolaPerson;
+  pdf: Buffer;
+}): Promise<{ label: string; duplicate: boolean }> {
+  const label = autoLabel(m, person.employeeName);
+
+  const [existing] = await db
+    .select({ id: autoPdfs.id, uploadedBy: autoPdfs.uploadedBy })
+    .from(autoPdfs)
+    .where(and(eq(autoPdfs.month, m), eq(autoPdfs.employeeId, person.employeeId)));
+  if (existing) return { label, duplicate: true };
+
+  // Equipa e chefe do comercial no mês do auto.
+  const monthStart = `${m}-01`;
+  const monthEnd = `${m}-31`;
+  const memberships = await db
+    .select({ teamId: teamMemberships.teamId })
+    .from(teamMemberships)
+    .where(
+      and(
+        eq(teamMemberships.employeeId, person.employeeId),
+        lte(teamMemberships.startDate, monthEnd),
+        or(sql`${teamMemberships.endDate} IS NULL`, gte(teamMemberships.endDate, monthStart)),
+      ),
+    );
+  const teamIds = memberships.map((x) => x.teamId);
+  const teamRows = teamIds.length ? await db.select().from(teams).where(inArray(teams.id, teamIds)) : [];
+  const withLeader = teamRows.find((t) => t.leaderId != null) ?? null;
+
+  const stored = `${person.employeeId}-${m}.pdf`;
+  mkdirSync(AUTO_PDF_DIR, { recursive: true });
+  writeFileSync(join(AUTO_PDF_DIR, stored), pdf);
+
+  await db
+    .insert(autoPdfs)
+    .values({
+      month: m,
+      employeeId: person.employeeId,
+      employeeName: person.employeeName,
+      teamId: withLeader?.id ?? null,
+      leaderId: withLeader?.leaderId ?? null,
+      label,
+      path: stored,
+      size: pdf.length,
+      uploadedBy: ctx.name,
+    })
+    .onConflictDoNothing();
+
+  return { label, duplicate: false };
 }
 
 /** Normaliza texto para localizar as colunas "ID de venda" e "Estado". */
@@ -1255,11 +1457,56 @@ export function iberdrolaRoutes(app: Hono) {
       return c.json({ error: "Erro ao gerar o PDF." }, 500);
     }
 
+    // Guarda uma cópia na aba Autos (um registo por mês + comercial).
+    let saved: { label: string; duplicate: boolean } | null = null;
+    try {
+      saved = await saveAutoPdf({ ctx, month: m, person: p, pdf: pdfBuf });
+    } catch {
+      saved = null; // falha ao arquivar não deve impedir o descarregamento
+    }
+
     const safeName = p.employeeName.replace(/[^a-zA-Z0-9À-ÿ\-_ ]/g, "").replace(/\s+/g, "_").slice(0, 40) || "comercial";
     return new Response(pdfBuf as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(`Auto_Iberdrola_${safeName}_${m}.pdf`)}`,
+        "X-Auto-Label": encodeURIComponent(saved?.label ?? autoLabel(m, p.employeeName)),
+        "X-Auto-Duplicate": saved?.duplicate ? "1" : "0",
+      },
+    });
+  });
+
+  // Descarregar um PDF guardado na aba Autos (nome do ficheiro = etiqueta).
+  app.get("/api/iberdrola/autos/file/:id", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    if (!ctx.permissions["auto-iberdrola"]?.view) return c.json({ error: "Sem permissão" }, 403);
+
+    const id = Number(decodeURIComponent(c.req.param("id")));
+    if (!Number.isInteger(id) || id <= 0) return c.notFound();
+    const [row] = await db.select().from(autoPdfs).where(eq(autoPdfs.id, id));
+    if (!row) return c.json({ error: "PDF não encontrado." }, 404);
+
+    // Visibilidade: admin/diretor veem tudo; chefe a sua equipa; vendedor só o seu.
+    const filterId = restrictToEmployee(ctx.role, ctx.employeeId);
+    if (filterId !== null) {
+      const led = await db.select({ id: teams.id }).from(teams).where(eq(teams.leaderId, filterId));
+      const mine = led.some((t) => t.id === row.teamId);
+      if (row.employeeId !== filterId && row.leaderId !== filterId && !mine) {
+        return c.json({ error: "Sem permissão" }, 403);
+      }
+    }
+
+    let buf: Buffer;
+    try {
+      buf = readFileSync(join(AUTO_PDF_DIR, row.path));
+    } catch {
+      return c.json({ error: "O ficheiro já não existe no servidor." }, 404);
+    }
+    return new Response(buf as unknown as BodyInit, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${row.label}.pdf`)}`,
       },
     });
   });

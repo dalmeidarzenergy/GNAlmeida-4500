@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { user } from "./auth-schema";
 
 export * from "./auth-schema";
@@ -477,6 +477,43 @@ export const notifications = sqliteTable("notifications", {
 }, (t) => [
   index("idx_notif_user").on(t.userId),
   index("idx_notif_slot").on(t.slot),
+]);
+
+/**
+ * PDFs de autos guardados na aba "Autos".
+ *
+ * Cada descarregamento de um PDF no Auto Iberdrola deixa aqui uma cópia, para
+ * ficar visível a quem tem acesso. Um registo por mês + comercial: se já existir
+ * um PDF para esse mês e comercial, não se duplica — avisa-se o utilizador.
+ */
+export const autoPdfs = sqliteTable("auto_pdfs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** Mês do auto, no formato YYYY-MM. */
+  month: text("month").notNull(),
+  /** Funcionário a que o auto pertence. */
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  /** Nome do comercial no momento da gravação (mantém-se se o funcionário for renomeado). */
+  employeeName: text("employee_name").notNull(),
+  /** Equipa do comercial no mês, para o filtro por chefe. */
+  teamId: integer("team_id").references(() => teams.id, { onDelete: "set null" }),
+  /** Chefe da equipa no mês, para o filtro por chefe. */
+  leaderId: integer("leader_id").references(() => employees.id, { onDelete: "set null" }),
+  /** Nome mostrado na lista e usado no download, ex.: "Set26 - Daniel Nascimento". */
+  label: text("label").notNull(),
+  /** Caminho relativo do PDF em disco (public/uploads/autos/). */
+  path: text("path").notNull(),
+  /** Dimensão em bytes, para mostrar na lista. */
+  size: integer("size").notNull().default(0),
+  /** Conta que guardou o ficheiro. */
+  uploadedBy: text("uploaded_by").notNull(),
+  createdAt: createdAt(),
+}, (t) => [
+  index("idx_auto_pdfs_month").on(t.month),
+  index("idx_auto_pdfs_employee").on(t.employeeId),
+  index("idx_auto_pdfs_team").on(t.teamId),
+  uniqueIndex("uniq_auto_pdfs_month_employee").on(t.month, t.employeeId),
 ]);
 
 /** Catálogo do Simulador Iberdrola — armazenamento chave-valor (um único registo com todo o JSON). */
