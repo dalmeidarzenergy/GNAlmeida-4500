@@ -1484,6 +1484,8 @@ export function iberdrolaRoutes(app: Hono) {
 
     const id = Number(decodeURIComponent(c.req.param("id")));
     if (!Number.isInteger(id) || id <= 0) return c.notFound();
+    // ?inline=1 abre o PDF no browser (Visualizar); por omissão descarrega.
+    const inline = c.req.query("inline") === "1";
     const [row] = await db.select().from(autoPdfs).where(eq(autoPdfs.id, id));
     if (!row) return c.json({ error: "PDF não encontrado." }, 404);
 
@@ -1506,7 +1508,7 @@ export function iberdrolaRoutes(app: Hono) {
     return new Response(buf as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(`${row.label}.pdf`)}`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(`${row.label}.pdf`)}`,
       },
     });
   });

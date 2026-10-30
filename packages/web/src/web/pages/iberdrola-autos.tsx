@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { Download, FileText, Trash2, Filter, Loader2 } from "lucide-react";
-import { Empty, Field, Pagination, TableSkeleton } from "../components/ui/kit";
+import { Download, FileText, Trash2, Filter, Loader2, Eye } from "lucide-react";
+import { Empty, Field, Pagination, PageHeader, TableSkeleton } from "../components/ui/kit";
 import { ConfirmDeleteModal } from "../components/bulk-select";
 import { useIberdrolaPdfList, useIberdrolaPdfSellers, useIberdrolaPdfTeams, useIberdrolaPdfRemove } from "../queries/iberdrola";
 import { useMe } from "../queries/me";
@@ -9,7 +9,7 @@ import { authClient } from "../lib/auth";
 
 const PAGE_SIZE = 20;
 
-/** Descarrega um PDF guardado na aba Autos, com o nome da etiqueta (ex.: Set26 - Daniel Nascimento). */
+/** Descarrega um PDF guardado na pagina Autos, com o nome da etiqueta (ex.: Set26 - Daniel Nascimento). */
 async function downloadSaved(id: number, label: string) {
   const token = authClient.managedAuth.getToken();
   const res = await fetch(`${window.location.origin}/api/iberdrola/autos/file/${id}`, {
@@ -27,6 +27,21 @@ async function downloadSaved(id: number, label: string) {
   URL.revokeObjectURL(url);
 }
 
+/** Abre um PDF guardado numa aba nova, para ver online (mantém a verificação de permissões). */
+async function viewSaved(id: number) {
+  const token = authClient.managedAuth.getToken();
+  const res = await fetch(`${window.location.origin}/api/iberdrola/autos/file/${id}?inline=1`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`Erro ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const tab = window.open(url, "_blank");
+  // Liberta a memória depois de a aba nova carregar o PDF.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  if (!tab) window.alert("O browser bloqueou a abertura da aba. Permite janelas neste site.");
+}
+
 function fmtSize(bytes: number) {
   if (!bytes) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -34,7 +49,7 @@ function fmtSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Aba "Autos": PDFs guardados, com filtros por vendedor, por chefe e por data. */
+/** Pagina "Autos": PDFs guardados, com filtros por vendedor, por chefe e por data. */
 export default function Autos() {
   const me = useMe();
   const canDelete = me.data?.role === "admin" || me.data?.role === "diretor";
@@ -72,7 +87,12 @@ export default function Autos() {
   };
 
   return (
-    <div>
+    <div className="p-5 lg:p-7">
+      <PageHeader
+        eyebrow="Pagamentos"
+        title="Autos"
+        subtitle="Todos os PDFs de autos guardados, por comercial e por mês. Cada PDF é guardado automaticamente ao descarregar o auto de um comercial em Auto Iberdrola."
+      />
       <div className="flex flex-wrap items-end gap-3">
         <Field label="Vendedor">
           <select className="input w-56" value={seller} onChange={(e) => reset(() => setSeller(e.target.value))}>
@@ -168,6 +188,14 @@ export default function Autos() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-volt/30 bg-volt/10 px-2.5 py-[4px] text-[11.5px] font-medium text-volt hover:bg-volt/20"
+                          onClick={() => viewSaved(r.id).catch((e) => window.alert(errMsg(e)))}
+                          title="Ver este PDF online."
+                        >
+                          <Eye size={13} /> Visualizar
+                        </button>
+                        <button
+                          type="button"
                           className="btn btn-ghost px-2.5 py-1 text-[12px]"
                           onClick={() => downloadSaved(r.id, r.label).catch((e) => window.alert(errMsg(e)))}
                           title="Descarregar este PDF."
@@ -216,7 +244,7 @@ export default function Autos() {
           list.refetch();
         }}
       >
-        {toRemove ? `O PDF “${toRemove.label}” vai ser eliminado da aba Autos.` : null}
+        {toRemove ? `O PDF “${toRemove.label}” vai ser eliminado da pagina Autos.` : null}
       </ConfirmDeleteModal>
     </div>
   );

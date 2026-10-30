@@ -28,6 +28,7 @@ const MedemPage = lazy(() => import("./pages/medem"));
 const CommissionTablesPage = lazy(() => import("./pages/commission-tables"));
 const PaymentsPage = lazy(() => import("./pages/payments"));
 const IberdrolaPage = lazy(() => import("./pages/iberdrola"));
+const AutosPage = lazy(() => import("./pages/iberdrola-autos"));
 const RegrasPage = lazy(() => import("./pages/regras"));
 const IncentivosPage = lazy(() => import("./pages/incentivos"));
 const UsersPage = lazy(() => import("./pages/users"));
@@ -46,6 +47,7 @@ const routes: [string, React.ComponentType][] = [
   ["/tabelas-comissionais", CommissionTablesPage],
   ["/pagamentos", PaymentsPage],
   ["/auto-iberdrola", IberdrolaPage],
+  ["/autos", AutosPage],
   ["/regras", RegrasPage],
   ["/incentivos", IncentivosPage],
   ["/clientes", ClientsPage],
