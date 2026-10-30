@@ -90,6 +90,14 @@ export const useIberdrolaBlockAdd = () =>
 export const useIberdrolaBlockRemove = () =>
   useMutation(orpc.iberdrola.blockRemove.mutationOptions({ onSuccess: useInv() }));
 
+/** Aplica uma anulação de chargeback (total ou parcial) ao auto de um comercial. */
+export const useIberdrolaChargebackOverrideAdd = () =>
+  useMutation(orpc.iberdrola.chargebackOverrideAdd.mutationOptions({ onSuccess: useInv() }));
+
+/** Remove uma anulação de chargeback. */
+export const useIberdrolaChargebackOverrideRemove = () =>
+  useMutation(orpc.iberdrola.chargebackOverrideRemove.mutationOptions({ onSuccess: useInv() }));
+
 /** Lista de trocas de venda do mês. */
 export const useIberdrolaOverrideList = (month: string) =>
   useQuery({ ...orpc.iberdrola.overrideList.queryOptions({ input: { month } }), enabled: /^\d{4}-\d{2}$/.test(month) });

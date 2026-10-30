@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight, Ban, CircleSlash, ShieldAlert } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams, useIberdrolaBlockAdd, useIberdrolaBlockRemove, useIberdrolaSwapQuote } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams, useIberdrolaBlockAdd, useIberdrolaBlockRemove, useIberdrolaChargebackOverrideAdd, useIberdrolaChargebackOverrideRemove, useIberdrolaSwapQuote } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -430,6 +430,14 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const [blockValue, setBlockValue] = useState("");
   const [blockNote, setBlockNote] = useState("");
 
+  // Anulação de chargeback (só admin/diretor).
+  const cbAdd = useIberdrolaChargebackOverrideAdd();
+  const cbRemove = useIberdrolaChargebackOverrideRemove();
+  const [cbKind, setCbKind] = useState<"total" | "parcial" | null>(null);
+  const [cbMode, setCbMode] = useState<"eur" | "pct">("eur");
+  const [cbValue, setCbValue] = useState("");
+  const [cbNote, setCbNote] = useState("");
+
   // Troca de venda
   const overrideList = useIberdrolaOverrideList(month);
   const overrideCreate = useIberdrolaOverrideCreate();
@@ -476,6 +484,9 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const manualRules = (rules.data ?? []).filter((r) => r.type === "manual");
   const assignedIds = new Set((assignments.data ?? []).map((a) => a.ruleId));
   const blockRows = ((p as { blocks?: { id: number; kind: string; mode: string; value: number; cut: number; note: string | null }[] }).blocks ?? []);
+  const cbRows = ((p as { chargebackOverrides?: { id: number; kind: string; mode: string; value: number; forgiven: number; note: string | null }[] }).chargebackOverrides ?? []);
+  const cbForgiven = (p as { chargebackForgiven?: number }).chargebackForgiven ?? 0;
+  const cbNet = (p as { chargebackNet?: number }).chargebackNet ?? p.chargeback;
 
   function medemTable(title: string, person: typeof p) {
     const lines = (person as any).medemLines as Array<{ idVenda: string; pontos: number; commission: number; total: number }> | undefined;
@@ -569,6 +580,40 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
 
   return (
     <div className="p-5">
+      {cbRows.length > 0 && (
+        <div className="mb-4 rounded-[10px] border border-volt/40 bg-volt/10 px-4 py-3">
+          <div className="flex items-center gap-2 text-[12.5px] font-semibold text-volt">
+            <Undo2 size={14} /> Chargeback anulado
+          </div>
+          <div className="mt-2 grid gap-1.5">
+            {cbRows.map((b) => (
+              <div key={b.id} className="flex flex-wrap items-center gap-2 text-[12px] text-ink-2">
+                <span className="font-medium text-ink">{b.kind === "total" ? "Anulação total" : "Anulação parcial"}</span>
+                <span className="num">
+                  {b.kind === "total"
+                    ? `todo o chargeback (${fmtEur2(b.forgiven)})`
+                    : `${b.mode === "pct" ? `${b.value}%` : fmtEur2(b.value)} → anula ${fmtEur2(b.forgiven)}`}
+                </span>
+                {b.note && <span className="text-ink-3">· {b.note}</span>}
+                {canBlock && (
+                  <button
+                    type="button"
+                    className="ml-auto shrink-0 rounded-[6px] p-1 text-ink-2 hover:bg-rose/20 hover:text-rose"
+                    disabled={cbRemove.isPending}
+                    onClick={() => cbRemove.mutateAsync({ id: b.id })}
+                    title="Remover esta anulação"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-[11px] text-ink-3">
+            Chargeback {fmtEur2(p.chargeback)} − anulado {fmtEur2(cbForgiven)} = descontado {fmtEur2(cbNet)}.
+          </div>
+        </div>
+      )}
       {canBlock && blockRows.length > 0 && (
         <div className="mb-4 rounded-[10px] border border-rose/40 bg-rose/10 px-4 py-3">
           <div className="flex items-center gap-2 text-[12.5px] font-semibold text-rose">
@@ -660,8 +705,17 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 <CircleSlash size={13} /> Bloqueio parcial
               </button>
             )}
+            {canBlock && (
+              <button
+                type="button"
+                className="btn btn-ghost px-2.5 py-1 text-[12px]"
+                onClick={() => { setCbKind("total"); setCbValue(""); setCbNote(""); setCbMode("eur"); }}
+                title="Anula o desconto do chargeback (baixas) deste colaborador neste mês. Total ou parcial (valor ou %)."
+              >
+                <Undo2 size={13} /> Anulação de Chargeback
+              </button>
+            )}
           </div>
-          <div className="text-[11.5px] text-ink-3">{p.tableName ?? "Sem tabela comisional"}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -996,6 +1050,86 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
             }}
           >
             {vncAdd.isPending && <Loader2 size={15} className="animate-spin" />} Guardar
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={cbKind !== null} onClose={() => setCbKind(null)} title="Anulação de chargeback">
+        <div className="text-[12.5px] text-ink-2">
+          Anula o desconto do chargeback (baixas) deste colaborador neste mês. A venda continua
+          a contar normalmente no auto; só deixa de ser descontada.
+        </div>
+        <Field label="Tipo de anulação" className="mt-4">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={cbKind === "total" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"}
+              onClick={() => setCbKind("total")}
+            >
+              Anulação total
+            </button>
+            <button
+              type="button"
+              className={cbKind === "parcial" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"}
+              onClick={() => setCbKind("parcial")}
+            >
+              Anulação parcial
+            </button>
+          </div>
+        </Field>
+        {cbKind === "total" && (
+          <div className="mt-3 rounded-[8px] border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+            Anula <span className="num font-semibold text-ink">{fmtEur2(p.chargeback)}</span> de chargeback (todo o desconto deste mês).
+          </div>
+        )}
+        {cbKind === "parcial" && (
+          <div className="mt-4 grid gap-3">
+            <Field label="Tipo de corte">
+              <div className="flex gap-2">
+                <button type="button" className={cbMode === "eur" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"} onClick={() => setCbMode("eur")}>Valor (EUR)</button>
+                <button type="button" className={cbMode === "pct" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"} onClick={() => setCbMode("pct")}>Percentagem (%)</button>
+              </div>
+            </Field>
+            <Field label={cbMode === "eur" ? "Valor do chargeback a anular (EUR)" : "Percentagem do chargeback a anular (%)"}>
+              <input
+                className="input num"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                max={cbMode === "pct" ? 100 : undefined}
+                step="0.01"
+                value={cbValue}
+                onChange={(e) => setCbValue(e.target.value)}
+                placeholder={cbMode === "eur" ? "0.00" : "0"}
+                autoFocus
+              />
+            </Field>
+            <div className="text-[11.5px] text-ink-3">
+              Nunca passa o chargeback existente ({fmtEur2(p.chargeback)}), por isso nunca gera comissão extra.
+            </div>
+          </div>
+        )}
+        <div className="mt-3">
+          <Field label="Nota interna (opcional)">
+            <input className="input" maxLength={300} value={cbNote} onChange={(e) => setCbNote(e.target.value)} placeholder="Ex.: baixa revertida pelo cliente" />
+          </Field>
+        </div>
+        {cbAdd.error && <div className="mt-3 text-[12px] text-danger">{errMsg(cbAdd.error)}</div>}
+        <div className="mt-4 flex items-center justify-end gap-2 pt-1">
+          <button type="button" className="btn btn-ghost" onClick={() => setCbKind(null)}>Cancelar</button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={cbAdd.isPending || (cbKind === "parcial" && !(parseFloat(cbValue) > 0))}
+            onClick={async () => {
+              if (cbKind === null) return;
+              const value = cbKind === "parcial" ? parseFloat(cbValue) : 0;
+              if (cbKind === "parcial" && !(value > 0)) return;
+              await cbAdd.mutateAsync({ month, employeeId, kind: cbKind, mode: cbMode, value, note: cbNote.trim() || undefined });
+              setCbKind(null);
+            }}
+          >
+            {cbAdd.isPending && <Loader2 size={15} className="animate-spin" />} Anular chargeback
           </button>
         </div>
       </Modal>

@@ -21,6 +21,7 @@ import {
   iberdrolaOverrides,
   vncPenalties,
   commissionBlocks,
+  chargebackOverrides,
   userRoles,
   teams,
   teamMemberships,
@@ -118,6 +119,12 @@ type IberdrolaPerson = {
   saleMeta: { idVenda: string; energy: "luz" | "gas"; hasDD: boolean; hasFE: boolean; hasPEL: boolean }[];
   /** Bloqueios de comissão aplicados pela direção neste mês (nunca aparecem no PDF do comercial). */
   blocks: { id: number; kind: string; mode: string; value: number; cut: number; note: string | null }[];
+  /** Anulações de chargeback aplicadas neste mês (aparecem no PDF e no Excel do comercial). */
+  chargebackOverrides: { id: number; kind: string; mode: string; value: number; forgiven: number; note: string | null }[];
+  /** Total do chargeback anulado este mês (0 quando não há anulação). */
+  chargebackForgiven: number;
+  /** Chargeback efetivamente descontado depois das anulações. */
+  chargebackNet: number;
   /** Vendas que foram transferidas para outro comercial (troca de venda). */
   overridesOut: { idVenda: string; toName: string }[];
   /** Vendas que foram recebidas de outro comercial (troca de venda). */
@@ -348,6 +355,15 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const arr = blocksByEmployee.get(bl.employeeId) ?? [];
     arr.push({ id: bl.id, kind: bl.kind, mode: bl.mode, value: bl.value, note: bl.note });
     blocksByEmployee.set(bl.employeeId, arr);
+  }
+
+  // Anulações de chargeback do mês, por comercial (só admin/diretor aplica; aparece no PDF/Excel).
+  const cbOverrides = await db.select().from(chargebackOverrides).where(eq(chargebackOverrides.month, m));
+  const cbOverridesByEmployee = new Map<number, { id: number; kind: string; mode: string; value: number; note: string | null }[]>();
+  for (const cb of cbOverrides) {
+    const arr = cbOverridesByEmployee.get(cb.employeeId) ?? [];
+    arr.push({ id: cb.id, kind: cb.kind, mode: cb.mode, value: cb.value, note: cb.note });
+    cbOverridesByEmployee.set(cb.employeeId, arr);
   }
 
   // Penalidades VNC do mês, por comercial.
@@ -754,6 +770,28 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const ceGross = round2(ceLines.reduce((t, l) => t + l.total, 0));
     const ceChargeback = round2(ceCbLines.reduce((t, l) => t + l.total, 0));
 
+    // Anulação de chargeback: retira o desconto das baixas. Limite = chargeback existente
+    // (nunca gera comissão extra). Aplica-se antes das regras, para que a "Folha de Km"
+    // e o bloqueio incidam já sobre o valor com a anulação.
+    const personCbOverrides = cbOverridesByEmployee.get(sellerId) ?? [];
+    let cbForgiven = 0;
+    const cbOverridesOut: { id: number; kind: string; mode: string; value: number; forgiven: number; note: string | null }[] = [];
+    for (const co of personCbOverrides) {
+      const remaining = round2(chargeback - cbForgiven);
+      if (remaining <= 0) break;
+      const want = co.kind === "total"
+        ? remaining
+        : co.mode === "pct"
+          ? round2(chargeback * (co.value / 100))
+          : round2(co.value);
+      const forgiven = round2(Math.min(Math.max(0, want), remaining));
+      if (forgiven <= 0) continue;
+      cbForgiven = round2(cbForgiven + forgiven);
+      cbOverridesOut.push({ ...co, forgiven });
+    }
+    // Chargeback efetivamente descontado depois das anulações.
+    const chargebackNet = round2(Math.max(0, chargeback - cbForgiven));
+
     const sum = (l: IberdrolaLine[], f: (x: IberdrolaLine) => number) => round2(l.reduce((t, x) => t + f(x), 0));
     const ddAmount = sum(lines, (l) => l.dd);
     const feAmount = sum(lines, (l) => l.fe);
@@ -811,7 +849,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     // Regra "Folha de Km": aplica a percentagem ao valor final
     // (gross - chargeback + medem + outras regras + unlock + VNC).
     if (kmRule) {
-      const dueBeforeKm = round2(gross - chargeback + medemTotal +
+      const dueBeforeKm = round2(gross - chargebackNet + medemTotal +
         ruleEffects.reduce((t, e) => t + e.amount, 0));
       const kmAmt = kmRule.effectType === "percent"
         ? round2(kmRule.effectValue * dueBeforeKm)
@@ -824,7 +862,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     // Bloqueio de comissão (só admin/diretor aplica). Calculado sobre o total devido ANTES do
     // bloqueio. Não entra em `ruleEffects` de propósito: não pode aparecer no PDF nem no Excel
     // do comercial — é uma medida interna da direção.
-    const dueBeforeBlock = round2(gross - chargeback + rulesDelta + medemTotal + ceGross - ceChargeback);
+    const dueBeforeBlock = round2(gross - chargebackNet + rulesDelta + medemTotal + ceGross - ceChargeback);
     const personBlocks = blocksByEmployee.get(sellerId) ?? [];
     let blockCut = 0;
     const blocksOut: { id: number; kind: string; mode: string; value: number; cut: number; note: string | null }[] = [];
@@ -859,6 +897,9 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       unit: band ? { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } : null,
       gross,
       chargeback,
+      chargebackOverrides: cbOverridesOut,
+      chargebackForgiven: cbForgiven,
+      chargebackNet,
       due: dueFinal,
       ceBandSales,
       ceUnit,
@@ -1063,6 +1104,61 @@ export const iberdrolaRoute = {
     .input(z.object({ id: z.number().int().positive() }))
     .handler(async ({ input }) => {
       await db.delete(commissionBlocks).where(eq(commissionBlocks.id, input.id));
+      return { removed: true };
+    }),
+
+  /** Anula o chargeback do auto de um comercial: total (retira todo o desconto das baixas) ou
+   *  parcial (só o valor em € ou a percentagem do chargeback indicada). Nunca passa o chargeback
+   *  existente, por isso nunca gera comissão extra. Só admin/diretor. Aparece no PDF e no Excel.
+   */
+  chargebackOverrideAdd: requireRoles("admin", "diretor")
+    .input(z.object({
+      month,
+      employeeId: z.number().int().positive(),
+      kind: z.enum(["total", "parcial"]),
+      mode: z.enum(["eur", "pct"]).optional(),
+      value: z.number().min(0).optional(),
+      note: z.string().trim().max(300).optional(),
+    }))
+    .handler(async ({ input, context }) => {
+      const [emp] = await db.select({ id: employees.id, name: employees.name }).from(employees).where(eq(employees.id, input.employeeId));
+      if (!emp) return { found: false as const };
+
+      const mode = input.kind === "total" ? "eur" : (input.mode ?? "eur");
+      const value = input.kind === "total" ? 0 : (input.value ?? 0);
+      if (input.kind === "parcial" && !(value > 0)) {
+        throw new ORPCError("BAD_REQUEST", { message: "Indica um valor maior que 0 € ou uma percentagem maior que 0%." });
+      }
+      if (mode === "pct" && value > 100) {
+        throw new ORPCError("BAD_REQUEST", { message: "A percentagem tem de ser no máximo 100%." });
+      }
+
+      // Uma anulação total substitui qualquer parcial já existente no mesmo mês.
+      if (input.kind === "total") {
+        await db.delete(chargebackOverrides).where(and(eq(chargebackOverrides.month, input.month), eq(chargebackOverrides.employeeId, input.employeeId)));
+      }
+
+      const [row] = await db.insert(chargebackOverrides).values({
+        month: input.month,
+        employeeId: input.employeeId,
+        kind: input.kind,
+        mode,
+        value,
+        note: input.note ?? null,
+        createdBy: context.employeeId,
+      }).returning();
+
+      return {
+        found: true as const,
+        override: { id: row.id, kind: row.kind, mode: row.mode, value: row.value, note: row.note, employeeName: emp.name },
+      };
+    }),
+
+  /** Remove uma anulação de chargeback (só admin/diretor). */
+  chargebackOverrideRemove: requireRoles("admin", "diretor")
+    .input(z.object({ id: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      await db.delete(chargebackOverrides).where(eq(chargebackOverrides.id, input.id));
       return { removed: true };
     }),
 
@@ -1606,6 +1702,7 @@ export function iberdrolaRoutes(app: Hono) {
       rows.push([`Tabela: ${p.tableName ?? "Sem tabela"}`, "", `Mês: ${m}`]);
       rows.push(["Escalão", String(p.bandSales), "", "Gross", `${p.gross.toFixed(2)} €`, "", "Devido", `${p.due.toFixed(2)} €`]);
       rows.push(["Vendas", String(p.salesCount), "", "Chargeback", `${p.chargeback.toFixed(2)} €`]);
+      if (p.chargebackForgiven > 0) rows.push(["", "", "", "Chargeback anulado", `-${p.chargebackForgiven.toFixed(2)} €`]);
       rows.push([]);
 
       rows.push(["--- ESCALÃO ATINGIDO ---"]);
@@ -1667,6 +1764,13 @@ export function iberdrolaRoutes(app: Hono) {
         }
         const cbSum = p.chargebackLines.reduce((s, l) => s + l.total, 0);
         rows.push(["TOTAL", `${p.chargebackLines.length} linhas`, "", "", "", "", cbSum.toFixed(2)]);
+        if (p.chargebackForgiven > 0) {
+          for (const co of p.chargebackOverrides) {
+            const desc = co.kind === "total" ? "Anulacao total" : co.mode === "pct" ? `Anulacao parcial (${co.value}%)` : "Anulacao parcial";
+            rows.push([desc + (co.note ? ` - ${co.note}` : ""), "", "", "", "", "", (-co.forgiven).toFixed(2)]);
+          }
+          rows.push(["Chargeback a descontar (apos anulacoes)", "", "", "", "", "", p.chargebackNet.toFixed(2)]);
+        }
       }
 
       if (p.medemLines && p.medemLines.length > 0) {

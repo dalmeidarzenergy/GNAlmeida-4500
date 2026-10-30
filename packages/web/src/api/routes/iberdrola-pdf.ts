@@ -19,6 +19,9 @@ type Person = {
   unit: { luz: number; gas: number; dd: number; fe: number; pel: number } | null;
   gross: number;
   chargeback: number;
+  chargebackOverrides?: { kind: string; mode: string; value: number; forgiven: number; note: string | null }[];
+  chargebackForgiven?: number;
+  chargebackNet?: number;
   due: number;
   lines: { idVenda: string; service: string; base: number; dd: number; fe: number; pel: number; total: number }[];
   chargebackLines: { idVenda: string; service: string; base: number; dd: number; fe: number; pel: number; total: number }[];
@@ -173,7 +176,17 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
       html += `<tr><td class="num">${esc(l.idVenda)}</td><td>${l.service}</td><td class="num r-num">${l.base ? eur(l.base) : "—"}</td><td class="num r-num t-svc">${l.dd ? eur(l.dd) : "—"}</td><td class="num r-num t-svc">${l.fe ? eur(l.fe) : "—"}</td><td class="num r-num t-svc">${l.pel ? eur(l.pel) : "—"}</td><td class="num r-num t-neg">${eur(l.total)}</td></tr>`;
     }
     const cbS = p.chargebackLines.reduce((s, l) => s + l.total, 0);
-    html += `<tr class="tfoot"><td>Total</td><td class="r-num">—</td><td class="r-num" colspan="4">—</td><td class="num r-num t-neg">${eur(cbS)}</td></tr></tbody></table></section>`;
+    html += `<tr class="tfoot"><td>Total</td><td class="r-num">—</td><td class="r-num" colspan="4">—</td><td class="num r-num t-neg">${eur(cbS)}</td></tr></tbody></table>`;
+    const forgiven = p.chargebackForgiven ?? 0;
+    if (forgiven > 0) {
+      const net = p.chargebackNet ?? Math.max(0, cbS - forgiven);
+      for (const co of p.chargebackOverrides ?? []) {
+        const desc = co.kind === "total" ? "Anulacao total" : co.mode === "pct" ? `Anulacao parcial (${co.value}%)` : "Anulacao parcial";
+        html += `<tr><td colspan="6">${esc(desc)}${co.note ? ` - ${esc(co.note)}` : ""}</td><td class="num r-num t-pos">+${eur(co.forgiven)}</td></tr>`;
+      }
+      html += `<tr class="tfoot"><td colspan="6">Chargeback a descontar depois das anulacoes</td><td class="num r-num t-neg">${eur(net)}</td></tr>`;
+    }
+    html += `</section>`;
   }
 
   html += `<div class="footer"><span>RZENERGY · Colaborador Oficial Iberdrola · Auto Iberdrola</span><span>Gerado em ${new Date().toLocaleDateString("pt-PT")}</span></div></body></html>`;

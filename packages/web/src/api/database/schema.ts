@@ -103,6 +103,25 @@ export const commissionBlocks = sqliteTable("commission_blocks", {
   createdAt: createdAt(),
 });
 
+/** Anulações de chargeback (Auto Iberdrola): o admin/diretor retira o desconto das baixas
+ *  de um comercial num mês. `kind` = "total" anula todo o chargeback; `kind` = "parcial"
+ *  anula apenas o valor (€) ou a percentagem indicada do chargeback desse colaborador.
+ *  A anulação nunca ultrapassa o chargeback existente (não gera comissão extra).
+ *  Aparece no PDF e no Excel do comercial. */
+export const chargebackOverrides = sqliteTable("chargeback_overrides", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  month: text("month").notNull(),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().default("total"),
+  mode: text("mode").notNull().default("eur"),
+  value: real("value").notNull().default(0),
+  note: text("note"),
+  createdBy: text("created_by"),
+  createdAt: createdAt(),
+});
+
 export const absences = sqliteTable("absences", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id")
