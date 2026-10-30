@@ -94,6 +94,13 @@ export const useIberdrolaBlockRemove = () =>
 export const useIberdrolaOverrideList = (month: string) =>
   useQuery({ ...orpc.iberdrola.overrideList.queryOptions({ input: { month } }), enabled: /^\d{4}-\d{2}$/.test(month) });
 
+/** Precos de cada venda pela tabela de origem e pela tabela de destino. */
+export const useIberdrolaSwapQuote = (month: string, fromEmployeeId: number, toEmployeeId: number | null) =>
+  useQuery({
+    ...orpc.iberdrola.swapQuote.queryOptions({ input: { month, fromEmployeeId, toEmployeeId: toEmployeeId ?? 0 } }),
+    enabled: /^\d{4}-\d{2}$/.test(month) && toEmployeeId != null && toEmployeeId > 0,
+  });
+
 /** Troca uma venda de um comercial para outro. */
 export const useIberdrolaOverrideCreate = () =>
   useMutation(orpc.iberdrola.overrideCreate.mutationOptions({ onSuccess: useInv() }));

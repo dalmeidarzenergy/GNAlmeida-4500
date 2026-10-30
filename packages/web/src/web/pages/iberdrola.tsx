@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight, Ban, CircleSlash, ShieldAlert } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams, useIberdrolaBlockAdd, useIberdrolaBlockRemove } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams, useIberdrolaBlockAdd, useIberdrolaBlockRemove, useIberdrolaSwapQuote } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -435,12 +435,21 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const overrideCreate = useIberdrolaOverrideCreate();
   const overrideRemove = useIberdrolaOverrideRemove();
   const [swapOpen, setSwapOpen] = useState(false);
-  const [swapStep, setSwapStep] = useState<1 | 2>(1);
+  const [swapStep, setSwapStep] = useState<1 | 2 | 3>(1);
+  // Tabela com que cada venda e paga no destino: "atual" ou "destino".
+  const [swapPricing, setSwapPricing] = useState<Record<string, "atual" | "destino">>({});
   const [swapIds, setSwapIds] = useState<string[]>([]);
   const [swapSearch, setSwapSearch] = useState("");
   const [swapToId, setSwapToId] = useState<number | null>(null);
   const [swapDestSearch, setSwapDestSearch] = useState("");
   const [swapBusy, setSwapBusy] = useState(false);
+  // Precos de cada venda selecionada pela tabela de origem e pela de destino.
+  const swapQuote = useIberdrolaSwapQuote(month, employeeId, swapToId);
+  const swapQuoteById = useMemo(() => {
+    const m = new Map<string, { byFrom: number | null; byTo: number | null }>();
+    for (const q of (swapQuote.data?.sales ?? [])) m.set(q.idVenda, { byFrom: q.byFrom, byTo: q.byTo });
+    return m;
+  }, [swapQuote.data]);
 
   const toggleSwapId = (id: string) =>
     setSwapIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -625,7 +634,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
               <button
                 type="button"
                 className="btn btn-ghost px-2.5 py-1 text-[12px]"
-                onClick={() => { setSwapStep(1); setSwapSearch(""); setSwapIds([]); setSwapToId(null); setSwapDestSearch(""); setSwapOpen(true); }}
+                onClick={() => { setSwapStep(1); setSwapSearch(""); setSwapIds([]); setSwapToId(null); setSwapDestSearch(""); setSwapPricing({}); setSwapOpen(true); }}
                 title="Transferir uma venda deste comercial para outro."
               >
                 <ArrowLeftRight size={13} /> Trocar venda
@@ -1120,7 +1129,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
               </button>
             </div>
           </>
-        ) : (
+        ) : swapStep === 2 ? (
           <>
             <div className="text-[12.5px] text-ink-2">
               {swapIds.length === 1 ? (
@@ -1169,13 +1178,83 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!swapToId || swapBusy}
-                onClick={async () => {
+                disabled={!swapToId}
+                onClick={() => {
                   if (!swapToId) return;
+                  setSwapPricing(() => {
+                    const next: Record<string, "atual" | "destino"> = {};
+                    for (const id of swapIds) next[id] = "destino";
+                    return next;
+                  });
+                  setSwapStep(3);
+                }}
+              >
+                Seguinte{swapIds.length > 1 ? ` (${swapIds.length})` : ""}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-[12.5px] text-ink-2">
+              Escolhe por que tabela cada venda e paga no destino. A venda passa sempre para o
+              destino; isto so decide os valores com que e paga.
+            </div>
+            <div className="mt-3 max-h-[340px] overflow-y-auto rounded-[10px] border border-line">
+              {swapIds.map((id) => {
+                const q = swapQuoteById.get(id);
+                const cur = swapPricing[id] ?? "destino";
+                const fmt = (v: number | null | undefined) =>
+                  v == null ? "sem tabela" : fmtEur2(v);
+                return (
+                  <div key={id} className="flex flex-wrap items-center gap-3 border-b border-line px-3 py-2.5 last:border-b-0">
+                    <span className="num w-16 shrink-0 text-[12.5px] font-medium">{id}</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className={
+                          cur === "atual"
+                            ? "rounded-[8px] border border-volt bg-volt/15 px-2.5 py-1 text-[11.5px] font-medium text-volt"
+                            : "rounded-[8px] border border-line px-2.5 py-1 text-[11.5px] text-ink-2 hover:bg-volt/5"
+                        }
+                        onClick={() => setSwapPricing((prev) => ({ ...prev, [id]: "atual" }))}
+                      >
+                        Tabela do atual — {fmt(q?.byFrom)}
+                      </button>
+                      <button
+                        type="button"
+                        className={
+                          cur === "destino"
+                            ? "rounded-[8px] border border-volt bg-volt/15 px-2.5 py-1 text-[11.5px] font-medium text-volt"
+                            : "rounded-[8px] border border-line px-2.5 py-1 text-[11.5px] text-ink-2 hover:bg-volt/5"
+                        }
+                        onClick={() => setSwapPricing((prev) => ({ ...prev, [id]: "destino" }))}
+                      >
+                        Tabela do destino — {fmt(q?.byTo)}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {swapQuote.isLoading && <div className="mt-2 text-[11.5px] text-ink-3">A calcular valores…</div>}
+            {overrideCreate.error && <div className="mt-2 text-[12px] text-danger">{errMsg(overrideCreate.error)}</div>}
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <button type="button" className="btn btn-ghost" onClick={() => setSwapStep(2)}>← Voltar</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={swapBusy}
+                onClick={async () => {
                   setSwapBusy(true);
                   try {
                     for (const id of swapIds) {
-                      await overrideCreate.mutateAsync({ month, idVenda: id, fromEmployeeId: employeeId, toEmployeeId: swapToId });
+                      await overrideCreate.mutateAsync({
+                        month,
+                        idVenda: id,
+                        fromEmployeeId: employeeId,
+                        toEmployeeId: swapToId!,
+                        pricingTable: swapPricing[id] ?? "destino",
+                      });
                     }
                     setSwapIds([]);
                     setSwapOpen(false);

@@ -788,6 +788,10 @@ export const iberdrolaOverrides = sqliteTable("iberdrola_overrides", {
   toEmployeeId: integer("to_employee_id")
     .notNull()
     .references(() => employees.id, { onDelete: "cascade" }),
+  /** Por que tabela comissional a venda e paga depois da troca. A venda passa SEMPRE
+   *  para o auto do destino; isto escolhe apenas os valores unitarios com que e paga:
+   *  "atual" = valores da tabela de quem cede; "destino" = valores da tabela do destino. */
+  pricingTable: text("pricing_table").notNull().default("destino"),
   createdAt: createdAt(),
 });
 

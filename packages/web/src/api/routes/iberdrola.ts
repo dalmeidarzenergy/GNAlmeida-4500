@@ -53,6 +53,12 @@ export function autoLabel(m: string, employeeName: string): string {
 /** Normaliza texto para ligar o comercial do Excel ao funcionário e localizar colunas. */
 const normText = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 
+/** Valor de uma coluna do Excel pelo nome, ignorando maiusculas/acentos (versao de modulo). */
+const colValOf = (data: Record<string, unknown>, name: string): unknown => {
+  const key = Object.keys(data).find((k) => normText(k) === normText(name));
+  return key != null ? data[key] : null;
+};
+
 type IberdrolaLine = {
   idVenda: string;
   clientName: string | null;
@@ -107,6 +113,9 @@ type IberdrolaPerson = {
   ruleEffects: { id: number; name: string; type: string; amount: number }[];
   /** Penalidades VNC registadas manualmente neste mês. */
   vncs: { id: number; idVenda: string; amount: number }[];
+  /** Detalhe de cada venda do comercial (energia e servicos marcados no Excel),
+   *  para recalcular o preco com outra tabela na troca de venda. */
+  saleMeta: { idVenda: string; energy: "luz" | "gas"; hasDD: boolean; hasFE: boolean; hasPEL: boolean }[];
   /** Bloqueios de comissão aplicados pela direção neste mês (nunca aparecem no PDF do comercial). */
   blocks: { id: number; kind: string; mode: string; value: number; cut: number; note: string | null }[];
   /** Vendas que foram transferidas para outro comercial (troca de venda). */
@@ -141,6 +150,54 @@ type IberdrolaEntry = {
 type Band = { luz: number | null; gas: number | null; dd: number | null; fe: number | null; pel: number | null };
 
 /** Constrói o "Auto Final" do mês a partir dos ficheiros Iberdrola carregados nesse mês. */
+/** Escalao (valores unitarios) que a tabela RES+BTN NEG atribuida a um comercial atinge
+ *  num mes, contando as vendas BTN dele no mes mais um numero extra de vendas (as que vao
+ *  ser transferidas para ele na troca). Usado para mostrar quanto uma venda paga por cada tabela. */
+async function sellerUnitFor(m: string, employeeId: number, extraBtnSales = 0) {
+  const imports = await db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m));
+  const importIds = imports.map((i) => i.id);
+  if (!importIds.length) return { missingTable: true, unit: null as { luz: number; gas: number; dd: number; fe: number; pel: number } | null };
+
+  const [emp] = await db.select({ id: employees.id, commissionTableId: employees.commissionTableId, forceCommissionsPct: employees.forceCommissionsPct }).from(employees).where(eq(employees.id, employeeId));
+  if (!emp || !emp.commissionTableId) return { missingTable: true, unit: null };
+
+  const [table] = await db.select().from(commissionTables).where(eq(commissionTables.id, emp.commissionTableId));
+  if (!table || table.regime !== "RES+BTN NEG") return { missingTable: true, unit: null };
+
+  const bands = await db.select().from(commissionRows).where(eq(commissionRows.tableId, table.id)).orderBy(asc(commissionRows.position));
+  const sBands = bands.filter((b) => b.kind === "clients").sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+  if (!sBands.length) return { missingTable: true, unit: null };
+
+  // Vendas BTN do comercial no mes (coluna "Nivel de tensao" = BTN).
+  const rows = await db.select().from(iberdrolaRows).where(and(inArray(iberdrolaRows.importId, importIds), eq(iberdrolaRows.sheet, "auto")));
+  const staff = await db.select({ id: employees.id, name: employees.name, nif: employees.nif }).from(employees);
+  const byNif = new Map(staff.filter((s) => s.nif && s.nif.trim() !== "").map((s) => [normText(s.nif!), s.id] as const));
+  const byName = new Map(staff.map((s) => [normText(s.name), s.id] as const));
+
+  let btn = 0;
+  for (const r of rows) {
+    if (!r.idVenda || r.estado !== "Em Fornecimento") continue;
+    const data = (r.data ?? {}) as Record<string, unknown>;
+    const nivel = normText(String(colValOf(data, "nivel de tensao") ?? "")).toUpperCase();
+    if (nivel !== "BTN") continue;
+    const nif = normText(String(colValOf(data, "nif comercial") ?? ""));
+    const nome = normText(String(colValOf(data, "comercial") ?? ""));
+    const owner = (nif && byNif.get(nif)) || (nome && byName.get(nome)) || null;
+    if (owner === employeeId) btn += 1;
+  }
+
+  const total = btn + extraBtnSales;
+  const forced = (emp.forceCommissionsPct ?? 0) > 0;
+  const pool = forced ? sBands.slice(1) : sBands;
+  const band =
+    pool.find((b) => total >= (b.min ?? 0) && (b.max == null || total <= b.max)) ??
+    [...pool.filter((b) => b.max == null && total >= (b.min ?? 0))].pop() ??
+    (forced ? (pool[0] ?? null) : null);
+
+  if (!band) return { missingTable: false, unit: null };
+  return { missingTable: false, unit: { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } };
+}
+
 async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {}) {
   const imports = await db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m));
   const importIds = imports.map((i) => i.id);
@@ -300,6 +357,13 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     overridesIn.set(ov.toEmployeeId, inArr);
   }
 
+  // Vendas trocadas que sao pagas pela tabela de QUEM CEDE (nao pela do destino).
+  // O auto onde a venda cai e sempre o do destino; isto so decide o preco unitario.
+  const pricedByFrom = new Map<string, number>();
+  for (const ov of overrides) {
+    if (ov.pricingTable === "atual") pricedByFrom.set(ov.idVenda, ov.fromEmployeeId);
+  }
+
   // Regras de pagamento: automáticas (todas) e manuais atribuídas neste mês.
   const allRules = await db.select().from(rules);
   const activeRules = allRules.filter((r) => r.active);
@@ -369,6 +433,21 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
         total: round2(base + (i === 0 ? svcTotal : 0)),
       };
     });
+  };
+
+  /** Escalao (valores unitarios) que a tabela RES+BTN NEG de um comercial atinge no mes,
+   *  para uma dada lista de vendas dele. Usado quando uma venda trocada e paga pela
+   *  tabela de quem a cede em vez da tabela do destino. */
+  const bandForSeller = (tableId: number, entries: IberdrolaEntry[], forced: boolean): Band | null => {
+    const tBands = cRows.filter((r) => r.tableId === tableId && r.kind === "clients");
+    const sBands = [...tBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
+    const bandSales = entries.filter((e) => e.hasBTN).length;
+    const pool = forced ? sBands.slice(1) : sBands;
+    return (
+      pool.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
+      [...pool.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
+      (forced ? (pool[0] ?? null) : null)
+    );
   };
 
   // Agrupa as entradas por comercial.
@@ -486,6 +565,13 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       bandSales: 0,
       salesCount: mine.length,
       allSaleIds: mine.map((e) => e.idVenda),
+      saleMeta: mine.flatMap((e) => {
+        const metodo = normText(strOf(colVal(e.excel, "metodo de pagamento")) ?? "");
+        const hasDD = metodo.includes("debito");
+        const hasFE = yes(colVal(e.excel, "fe")) || yes(colVal(e.excel, "fatura eletronica"));
+        const hasPEL = yes(colVal(e.excel, "pel")) || normText(strOf(colVal(e.excel, "pel plus")) ?? "") === "pel" || yes(colVal(e.excel, "pel plus"));
+        return e.energies.map((energy) => ({ idVenda: e.idVenda, energy, hasDD, hasFE, hasPEL }));
+      }),
       luzCount: 0,
       gasCount: 0,
       ddCount: 0,
@@ -562,7 +648,22 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       const commissionable = mine.filter((e) => !lowPower.has(e.idVenda));
       paidEntries = commissionable.slice(Math.min(blocked, commissionable.length));
 
-      lines = paidEntries.flatMap((e) => split(e, band));
+      // Vendas pagas pela tabela de quem cede: o escalao vem dessa tabela, nao do destino.
+      const fromBandCache = new Map<number, Band | null>();
+      const bandFromFor = (fromId: number): Band | null => {
+        if (fromBandCache.has(fromId)) return fromBandCache.get(fromId)!;
+        const fromEmp = staffById.get(fromId);
+        const fromTable = fromEmp?.commissionTableId ?? null;
+        const fromEntries = bySeller.get(fromId) ?? [];
+        const b = fromTable ? bandForSeller(fromTable, fromEntries, (fromEmp?.forceCommissionsPct ?? 0) > 0) : null;
+        fromBandCache.set(fromId, b);
+        return b;
+      };
+
+      lines = paidEntries.flatMap((e) => {
+        const fromId = pricedByFrom.get(e.idVenda);
+        return split(e, fromId != null ? bandFromFor(fromId) : band);
+      });
 
       // Chargeback: vendas resolvidas no auto anterior + fallback com escalão corrente.
       const cbMine = cbEntries.filter((e) => e.employeeId === sellerId);
@@ -1031,6 +1132,7 @@ export const iberdrolaRoute = {
         fromName: names.get(r.fromEmployeeId) ?? `#${r.fromEmployeeId}`,
         toEmployeeId: r.toEmployeeId,
         toName: names.get(r.toEmployeeId) ?? `#${r.toEmployeeId}`,
+        pricingTable: r.pricingTable,
       }));
       if (filterId !== null) {
         result = result.filter((r) => r.fromEmployeeId === filterId || r.toEmployeeId === filterId);
@@ -1038,12 +1140,64 @@ export const iberdrolaRoute = {
       return result;
     }),
 
+  /** Precos de cada venda pela tabela do comercial de origem e pela tabela do destino.
+   *  Devolve, por venda, quanto ela paga com cada uma das tabelas, para o utilizador
+   *  escolher no momento da troca. A venda passa sempre para o auto do destino. */
+  swapQuote: requireView("auto-iberdrola")
+    .input(z.object({ month, fromEmployeeId: z.number().int().positive(), toEmployeeId: z.number().int().positive().optional() }))
+    .handler(async ({ input }) => {
+      const calc = await buildCalc(input.month, { skipPrevChargeback: true });
+      const from = calc.people.find((x) => x.employeeId === input.fromEmployeeId) ?? null;
+
+      // Escalao da tabela de cada comercial (o destino pode nao ter vendas no mes).
+      const fromUnit = await sellerUnitFor(input.month, input.fromEmployeeId, 0);
+      const toUnit = input.toEmployeeId != null
+        ? await sellerUnitFor(input.month, input.toEmployeeId, 0)
+        : { missingTable: true, unit: null };
+
+      const priceWith = (u: { luz: number; gas: number; dd: number; fe: number; pel: number } | null, meta: { energy: "luz" | "gas"; hasDD: boolean; hasFE: boolean; hasPEL: boolean }): number | null => {
+        if (!u) return null;
+        const base = meta.energy === "gas" ? u.gas : u.luz;
+        const svc = (meta.hasDD ? u.dd : 0) + (meta.hasFE ? u.fe : 0) + (meta.hasPEL ? u.pel : 0);
+        return round2(base + svc);
+      };
+
+      const metas = (from as { saleMeta?: { idVenda: string; energy: "luz" | "gas"; hasDD: boolean; hasFE: boolean; hasPEL: boolean }[] } | null)?.saleMeta ?? [];
+      const bySale = new Map<string, typeof metas>();
+      for (const m of metas) {
+        const arr = bySale.get(m.idVenda) ?? [];
+        arr.push(m);
+        bySale.set(m.idVenda, arr);
+      }
+
+      const sumWith = (u: { luz: number; gas: number; dd: number; fe: number; pel: number } | null, parts: typeof metas) => {
+        const vals = parts.map((m) => priceWith(u, m));
+        if (vals.some((v) => v == null)) return null;
+        return round2(vals.reduce((t, v) => t + (v ?? 0), 0));
+      };
+
+      return {
+        fromMissingTable: fromUnit.missingTable,
+        toMissingTable: toUnit.missingTable,
+        sales: [...bySale.keys()].map((idVenda) => {
+          const parts = bySale.get(idVenda) ?? [];
+          return { idVenda, byFrom: sumWith(fromUnit.unit, parts), byTo: sumWith(toUnit.unit, parts) };
+        }),
+      };
+    }),
+
   /** Troca uma venda de um comercial para outro no mês. */
   overrideCreate: requireEdit("auto-iberdrola")
-    .input(z.object({ month, idVenda: z.string().trim().min(1), fromEmployeeId: z.number().int().positive(), toEmployeeId: z.number().int().positive() }))
+    .input(z.object({
+      month,
+      idVenda: z.string().trim().min(1),
+      fromEmployeeId: z.number().int().positive(),
+      toEmployeeId: z.number().int().positive(),
+      pricingTable: z.enum(["atual", "destino"]).optional(),
+    }))
     .handler(async ({ input }) => {
       if (input.fromEmployeeId === input.toEmployeeId) return { error: "Origem e destino são iguais." as const };
-      const [row] = await db.insert(iberdrolaOverrides).values(input).returning();
+      const [row] = await db.insert(iberdrolaOverrides).values({ ...input, pricingTable: input.pricingTable ?? "destino" }).returning();
       return { created: row };
     }),
 
