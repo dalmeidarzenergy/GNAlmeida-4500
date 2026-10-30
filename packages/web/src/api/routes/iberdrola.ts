@@ -149,6 +149,25 @@ type IberdrolaEntry = {
 
 type Band = { luz: number | null; gas: number | null; dd: number | null; fe: number | null; pel: number | null };
 
+/** Tabelas comissionais atribuídas a um colaborador num mês: a tabela por omissão
+ *  (employees.commission_table_id) mais as atribuições registadas em employee_tables
+ *  cujo período cobre o mês. É a mesma regra usada pelo cálculo do auto. */
+function activeCommissionTableIds(
+  employeeId: number,
+  defaultTableId: number | null,
+  assignments: { employeeId: number; kind: string; commissionTableId: number | null; startDate: string; endDate: string | null }[],
+  monthStart: string,
+  monthEnd: string,
+): Set<number> {
+  const ids = new Set<number>();
+  if (defaultTableId) ids.add(defaultTableId);
+  for (const a of assignments) {
+    if (a.employeeId !== employeeId || a.kind !== "commission" || !a.commissionTableId) continue;
+    if (a.startDate <= monthEnd && (a.endDate == null || a.endDate >= monthStart)) ids.add(a.commissionTableId);
+  }
+  return ids;
+}
+
 /** Constrói o "Auto Final" do mês a partir dos ficheiros Iberdrola carregados nesse mês. */
 /** Escalao (valores unitarios) que a tabela RES+BTN NEG atribuida a um comercial atinge
  *  num mes, contando as vendas BTN dele no mes mais um numero extra de vendas (as que vao
@@ -159,10 +178,17 @@ async function sellerUnitFor(m: string, employeeId: number, extraBtnSales = 0) {
   if (!importIds.length) return { missingTable: true, unit: null as { luz: number; gas: number; dd: number; fe: number; pel: number } | null };
 
   const [emp] = await db.select({ id: employees.id, commissionTableId: employees.commissionTableId, forceCommissionsPct: employees.forceCommissionsPct }).from(employees).where(eq(employees.id, employeeId));
-  if (!emp || !emp.commissionTableId) return { missingTable: true, unit: null };
+  if (!emp) return { missingTable: true, unit: null };
 
-  const [table] = await db.select().from(commissionTables).where(eq(commissionTables.id, emp.commissionTableId));
-  if (!table || table.regime !== "RES+BTN NEG") return { missingTable: true, unit: null };
+  // Tabelas ativas do colaborador: por omissão + atribuições de employee_tables no mês.
+  const assignments = await db.select().from(employeeTables);
+  const activeIds = activeCommissionTableIds(employeeId, emp.commissionTableId, assignments, `${m}-01`, `${m}-31`);
+  if (!activeIds.size) return { missingTable: true, unit: null };
+
+  // Tabela RES+BTN NEG ativa (é a que paga as vendas de energia e serviços).
+  const empTables = await db.select().from(commissionTables).where(inArray(commissionTables.id, [...activeIds]));
+  const table = empTables.find((t) => t.regime === "RES+BTN NEG") ?? null;
+  if (!table) return { missingTable: true, unit: null };
 
   const bands = await db.select().from(commissionRows).where(eq(commissionRows.tableId, table.id)).orderBy(asc(commissionRows.position));
   const sBands = bands.filter((b) => b.kind === "clients").sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
@@ -541,14 +567,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     if (!emp) continue;
 
     // Todas as tabelas ativas do comercial no mês (default + assignments).
-    const activeTableIds = new Set<number>();
-    if (emp.commissionTableId) activeTableIds.add(emp.commissionTableId);
-    for (const x of assignments) {
-      if (x.employeeId !== sellerId || x.kind !== "commission" || !x.commissionTableId) continue;
-      if (x.startDate <= `${m}-31` && (x.endDate == null || x.endDate >= `${m}-01`)) {
-        activeTableIds.add(x.commissionTableId);
-      }
-    }
+    const activeTableIds = activeCommissionTableIds(sellerId, emp.commissionTableId, assignments, monthStart, monthEnd);
     const empTables = cTables.filter((t) => activeTableIds.has(t.id));
     const resTable = empTables.find((t) => t.regime === "RES+BTN NEG") ?? null;
     const medemTable = empTables.find((t) => t.regime === "MEDEM") ?? null;
@@ -653,7 +672,8 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       const bandFromFor = (fromId: number): Band | null => {
         if (fromBandCache.has(fromId)) return fromBandCache.get(fromId)!;
         const fromEmp = staffById.get(fromId);
-        const fromTable = fromEmp?.commissionTableId ?? null;
+        const fromActiveIds = activeCommissionTableIds(fromId, fromEmp?.commissionTableId ?? null, assignments, monthStart, monthEnd);
+        const fromTable = cTables.find((t) => fromActiveIds.has(t.id) && t.regime === "RES+BTN NEG")?.id ?? null;
         const fromEntries = bySeller.get(fromId) ?? [];
         const b = fromTable ? bandForSeller(fromTable, fromEntries, (fromEmp?.forceCommissionsPct ?? 0) > 0) : null;
         fromBandCache.set(fromId, b);
