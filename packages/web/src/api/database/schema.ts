@@ -86,6 +86,23 @@ export const vncPenalties = sqliteTable("vnc_penalties", {
   createdAt: createdAt(),
 });
 
+/** Bloqueios de comissão (Auto Iberdrola): cortes manuais aplicados pelo admin/diretor ao auto de um comercial num mês.
+ *  `kind` = "total" corta todo o comissionamento (0 €); `kind` = "parcial" corta só o valor indicado.
+ *  `mode` = "eur" (valor em euros) ou "pct" (percentagem do total). Só é visível para admin/diretor. */
+export const commissionBlocks = sqliteTable("commission_blocks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  month: text("month").notNull(),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().default("total"),
+  mode: text("mode").notNull().default("eur"),
+  value: real("value").notNull().default(0),
+  note: text("note"),
+  createdBy: text("created_by"),
+  createdAt: createdAt(),
+});
+
 export const absences = sqliteTable("absences", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id")

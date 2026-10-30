@@ -82,6 +82,14 @@ export const useIberdrolaVncAdd = () =>
 export const useIberdrolaVncRemove = () =>
   useMutation(orpc.iberdrola.vncRemove.mutationOptions({ onSuccess: useInv() }));
 
+/** Aplica um bloqueio de comissão (total ou parcial) ao auto de um comercial. */
+export const useIberdrolaBlockAdd = () =>
+  useMutation(orpc.iberdrola.blockAdd.mutationOptions({ onSuccess: useInv() }));
+
+/** Remove um bloqueio de comissão. */
+export const useIberdrolaBlockRemove = () =>
+  useMutation(orpc.iberdrola.blockRemove.mutationOptions({ onSuccess: useInv() }));
+
 /** Lista de trocas de venda do mês. */
 export const useIberdrolaOverrideList = (month: string) =>
   useQuery({ ...orpc.iberdrola.overrideList.queryOptions({ input: { month } }), enabled: /^\d{4}-\d{2}$/.test(month) });

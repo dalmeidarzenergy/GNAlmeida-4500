@@ -20,6 +20,7 @@ import {
   rules,
   iberdrolaOverrides,
   vncPenalties,
+  commissionBlocks,
   userRoles,
   teams,
   teamMemberships,
@@ -106,6 +107,8 @@ type IberdrolaPerson = {
   ruleEffects: { id: number; name: string; type: string; amount: number }[];
   /** Penalidades VNC registadas manualmente neste mês. */
   vncs: { id: number; idVenda: string; amount: number }[];
+  /** Bloqueios de comissão aplicados pela direção neste mês (nunca aparecem no PDF do comercial). */
+  blocks: { id: number; kind: string; mode: string; value: number; cut: number; note: string | null }[];
   /** Vendas que foram transferidas para outro comercial (troca de venda). */
   overridesOut: { idVenda: string; toName: string }[];
   /** Vendas que foram recebidas de outro comercial (troca de venda). */
@@ -254,6 +257,15 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     }
     return ids;
   };
+
+  // Bloqueios de comissão do mês, por comercial (só admin/diretor os vê ou aplica).
+  const blocks = await db.select().from(commissionBlocks).where(eq(commissionBlocks.month, m));
+  const blocksByEmployee = new Map<number, { id: number; kind: string; mode: string; value: number; note: string | null }[]>();
+  for (const bl of blocks) {
+    const arr = blocksByEmployee.get(bl.employeeId) ?? [];
+    arr.push({ id: bl.id, kind: bl.kind, mode: bl.mode, value: bl.value, note: bl.note });
+    blocksByEmployee.set(bl.employeeId, arr);
+  }
 
   // Penalidades VNC do mês, por comercial.
   const vncs = await db.select().from(vncPenalties).where(eq(vncPenalties.month, m));
@@ -688,6 +700,27 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     const rulesDelta = round2(ruleEffects.reduce((t, e) => t + e.amount, 0));
 
+    // Bloqueio de comissão (só admin/diretor aplica). Calculado sobre o total devido ANTES do
+    // bloqueio. Não entra em `ruleEffects` de propósito: não pode aparecer no PDF nem no Excel
+    // do comercial — é uma medida interna da direção.
+    const dueBeforeBlock = round2(gross - chargeback + rulesDelta + medemTotal + ceGross - ceChargeback);
+    const personBlocks = blocksByEmployee.get(sellerId) ?? [];
+    let blockCut = 0;
+    const blocksOut: { id: number; kind: string; mode: string; value: number; cut: number; note: string | null }[] = [];
+    for (const bl of personBlocks) {
+      let cut: number;
+      if (bl.kind === "total") {
+        // Bloqueio total: leva tudo a 0 €.
+        cut = round2(dueBeforeBlock - blockCut);
+      } else {
+        cut = bl.mode === "pct" ? round2((dueBeforeBlock - blockCut) * (bl.value / 100)) : round2(bl.value);
+      }
+      if (cut <= 0) continue;
+      blockCut = round2(blockCut + cut);
+      blocksOut.push({ ...bl, cut });
+    }
+    const dueFinal = round2(Math.max(0, dueBeforeBlock - blockCut));
+
     people.push({
       ...base,
       bandSales: resTable ? mine.filter((e) => e.hasBTN).length : 0,
@@ -705,7 +738,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       unit: band ? { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } : null,
       gross,
       chargeback,
-      due: round2(gross - chargeback + rulesDelta + medemTotal + ceGross - ceChargeback),
+      due: dueFinal,
       ceBandSales,
       ceUnit,
       ceGross,
@@ -716,6 +749,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       chargebackLines: cbLines,
       ruleEffects,
       vncs: personVncs,
+      blocks: blocksOut,
       overridesOut: overridesOut.get(sellerId) ?? [],
       overridesIn: overridesIn.get(sellerId) ?? [],
       medemLines: medemResult,
@@ -854,6 +888,60 @@ export const iberdrolaRoute = {
     .input(z.object({ id: z.number().int().positive() }))
     .handler(async ({ input }) => {
       await db.delete(vncPenalties).where(eq(vncPenalties.id, input.id));
+      return { removed: true };
+    }),
+
+  /** Aplica um bloqueio de comissão ao auto de um comercial: total (tudo a 0 €) ou parcial (só o valor/percentagem indicado).
+   *  Só admin/diretor. Nunca aparece no PDF/Excel do comercial.
+   */
+  blockAdd: requireRoles("admin", "diretor")
+    .input(z.object({
+      month,
+      employeeId: z.number().int().positive(),
+      kind: z.enum(["total", "parcial"]),
+      mode: z.enum(["eur", "pct"]).optional(),
+      value: z.number().min(0).optional(),
+      note: z.string().trim().max(300).optional(),
+    }))
+    .handler(async ({ input, context }) => {
+      const [emp] = await db.select({ id: employees.id, name: employees.name }).from(employees).where(eq(employees.id, input.employeeId));
+      if (!emp) return { found: false as const };
+
+      const mode = input.kind === "total" ? "eur" : (input.mode ?? "eur");
+      const value = input.kind === "total" ? 0 : (input.value ?? 0);
+      if (input.kind === "parcial" && !(value > 0)) {
+        throw new ORPCError("BAD_REQUEST", { message: "Indica um valor maior que 0 € ou uma percentagem maior que 0%." });
+      }
+      if (mode === "pct" && value > 100) {
+        throw new ORPCError("BAD_REQUEST", { message: "A percentagem tem de ser no máximo 100%." });
+      }
+
+      // Um bloqueio total substitui qualquer parcial já existente no mesmo mês.
+      if (input.kind === "total") {
+        await db.delete(commissionBlocks).where(and(eq(commissionBlocks.month, input.month), eq(commissionBlocks.employeeId, input.employeeId)));
+      }
+
+      const [row] = await db.insert(commissionBlocks).values({
+        month: input.month,
+        employeeId: input.employeeId,
+        kind: input.kind,
+        mode,
+        value,
+        note: input.note ?? null,
+        createdBy: context.employeeId,
+      }).returning();
+
+      return {
+        found: true as const,
+        block: { id: row.id, kind: row.kind, mode: row.mode, value: row.value, note: row.note, employeeName: emp.name },
+      };
+    }),
+
+  /** Remove um bloqueio de comissão (só admin/diretor). */
+  blockRemove: requireRoles("admin", "diretor")
+    .input(z.object({ id: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      await db.delete(commissionBlocks).where(eq(commissionBlocks.id, input.id));
       return { removed: true };
     }),
 

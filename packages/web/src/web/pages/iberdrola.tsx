@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight } from "lucide-react";
+import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight, Ban, CircleSlash, ShieldAlert } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams, useIberdrolaBlockAdd, useIberdrolaBlockRemove } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -406,6 +406,8 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const p = people.find((x) => x.employeeId === employeeId);
   const me = useMe();
   const canEdit = me.data?.permissions?.["regras"]?.edit ?? false;
+  // Bloqueios de comissão: só admin e diretor, independentemente das permissões do módulo.
+  const canBlock = me.data?.role === "admin" || me.data?.role === "diretor";
   const rules = useRules();
   const employeeIds = useMemo(() => [employeeId], [employeeId]);
   const assignments = useRuleAssignments(month, employeeIds);
@@ -419,6 +421,14 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const [vncOpen, setVncOpen] = useState(false);
   const [vncIdVenda, setVncIdVenda] = useState("");
   const [vncAmount, setVncAmount] = useState("");
+
+  // Bloqueios de comissão (só admin/diretor).
+  const blockAdd = useIberdrolaBlockAdd();
+  const blockRemove = useIberdrolaBlockRemove();
+  const [blockKind, setBlockKind] = useState<"total" | "parcial" | null>(null);
+  const [blockMode, setBlockMode] = useState<"eur" | "pct">("eur");
+  const [blockValue, setBlockValue] = useState("");
+  const [blockNote, setBlockNote] = useState("");
 
   // Troca de venda
   const overrideList = useIberdrolaOverrideList(month);
@@ -456,6 +466,7 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
 
   const manualRules = (rules.data ?? []).filter((r) => r.type === "manual");
   const assignedIds = new Set((assignments.data ?? []).map((a) => a.ruleId));
+  const blockRows = ((p as { blocks?: { id: number; kind: string; mode: string; value: number; cut: number; note: string | null }[] }).blocks ?? []);
 
   function medemTable(title: string, person: typeof p) {
     const lines = (person as any).medemLines as Array<{ idVenda: string; pontos: number; commission: number; total: number }> | undefined;
@@ -549,6 +560,37 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
 
   return (
     <div className="p-5">
+      {canBlock && blockRows.length > 0 && (
+        <div className="mb-4 rounded-[10px] border border-rose/40 bg-rose/10 px-4 py-3">
+          <div className="flex items-center gap-2 text-[12.5px] font-semibold text-rose">
+            <ShieldAlert size={14} /> Comissão bloqueada
+            <span className="rounded-full bg-rose/20 px-2 py-[1px] text-[10.5px] font-medium uppercase tracking-wide">Visível só para admin/diretor</span>
+          </div>
+          <div className="mt-2 grid gap-1.5">
+            {blockRows.map((b) => (
+              <div key={b.id} className="flex flex-wrap items-center gap-2 text-[12px] text-ink-2">
+                <span className="font-medium text-ink">{b.kind === "total" ? "Bloqueio total" : "Bloqueio parcial"}</span>
+                <span className="num">
+                  {b.kind === "total"
+                    ? `tudo a 0,00 € (corte de ${fmtEur2(b.cut)})`
+                    : `${b.mode === "pct" ? `${b.value}%` : fmtEur2(b.value)} → corte de ${fmtEur2(b.cut)}`}
+                </span>
+                {b.note && <span className="text-ink-3">· {b.note}</span>}
+                <button
+                  type="button"
+                  className="ml-auto shrink-0 rounded-[6px] p-1 text-ink-2 hover:bg-rose/20 hover:text-rose"
+                  disabled={blockRemove.isPending}
+                  onClick={() => blockRemove.mutateAsync({ id: b.id })}
+                  title="Remover este bloqueio"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-[11px] text-ink-3">O bloqueio não aparece no PDF nem no Excel entregues ao comercial.</div>
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -587,6 +629,26 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 title="Transferir uma venda deste comercial para outro."
               >
                 <ArrowLeftRight size={13} /> Trocar venda
+              </button>
+            )}
+            {canBlock && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-[8px] border border-rose/40 bg-rose/10 px-2.5 py-1 text-[12px] font-medium text-rose hover:bg-rose/20"
+                onClick={() => { setBlockValue(""); setBlockNote(""); setBlockMode("eur"); setBlockKind("total"); }}
+                title="Bloqueia TODO o comissionamento deste colaborador neste mês (tudo a 0 €). Não aparece no PDF nem no Excel do comercial."
+              >
+                <Ban size={13} /> Bloqueio total
+              </button>
+            )}
+            {canBlock && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-[8px] border border-amber/40 bg-amber/10 px-2.5 py-1 text-[12px] font-medium text-amber hover:bg-amber/20"
+                onClick={() => { setBlockValue(""); setBlockNote(""); setBlockMode("eur"); setBlockKind("parcial"); }}
+                title="Bloqueia apenas o valor (€) ou a percentagem que indicares."
+              >
+                <CircleSlash size={13} /> Bloqueio parcial
               </button>
             )}
           </div>
@@ -925,6 +987,61 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
             }}
           >
             {vncAdd.isPending && <Loader2 size={15} className="animate-spin" />} Guardar
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={blockKind !== null} onClose={() => setBlockKind(null)} title={blockKind === "total" ? "Bloqueio total de comissao" : "Bloqueio parcial de comissao"}>
+        <div className="text-[12.5px] text-ink-2">
+          {blockKind === "total"
+            ? "O comissionamento deste colaborador neste mes vai a 0,00 EUR. O bloqueio nao aparece no PDF nem no Excel entregues ao comercial."
+            : "Corta apenas o valor ou a percentagem que indicares ao total deste mes. O bloqueio nao aparece no PDF nem no Excel entregues ao comercial."}
+        </div>
+        {blockKind === "parcial" && (
+          <div className="mt-4 grid gap-3">
+            <Field label="Tipo de corte">
+              <div className="flex gap-2">
+                <button type="button" className={blockMode === "eur" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"} onClick={() => setBlockMode("eur")}>Valor (EUR)</button>
+                <button type="button" className={blockMode === "pct" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"} onClick={() => setBlockMode("pct")}>Percentagem (%)</button>
+              </div>
+            </Field>
+            <Field label={blockMode === "eur" ? "Valor a bloquear (EUR)" : "Percentagem a bloquear (%)"}>
+              <input
+                className="input num"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                max={blockMode === "pct" ? 100 : undefined}
+                step="0.01"
+                value={blockValue}
+                onChange={(e) => setBlockValue(e.target.value)}
+                placeholder={blockMode === "eur" ? "0.00" : "0"}
+                autoFocus
+              />
+            </Field>
+          </div>
+        )}
+        <div className="mt-3">
+          <Field label="Nota interna (opcional)">
+            <input className="input" maxLength={300} value={blockNote} onChange={(e) => setBlockNote(e.target.value)} placeholder="Ex.: incumprimento de condicoes" />
+          </Field>
+        </div>
+        {blockAdd.error && <div className="mt-3 text-[12px] text-danger">{errMsg(blockAdd.error)}</div>}
+        <div className="mt-4 flex items-center justify-end gap-2 pt-1">
+          <button type="button" className="btn btn-ghost" onClick={() => setBlockKind(null)}>Cancelar</button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={blockAdd.isPending || (blockKind === "parcial" && !(parseFloat(blockValue) > 0))}
+            onClick={async () => {
+              if (blockKind === null) return;
+              const value = blockKind === "parcial" ? parseFloat(blockValue) : 0;
+              if (blockKind === "parcial" && !(value > 0)) return;
+              await blockAdd.mutateAsync({ month, employeeId, kind: blockKind, mode: blockMode, value, note: blockNote.trim() || undefined });
+              setBlockKind(null);
+            }}
+          >
+            {blockAdd.isPending && <Loader2 size={15} className="animate-spin" />} Aplicar bloqueio
           </button>
         </div>
       </Modal>
