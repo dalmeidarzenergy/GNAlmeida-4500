@@ -123,6 +123,7 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
       <button class="pri" id="btnStart">▶ Iniciar trabalho</button>
       <p class="tag" id="startNote">Ao iniciar, é registada a hora e a localização e é emitido o alerta de início. Às 21h recebe um lembrete para fechar o dia.</p>
     </div>
+    <p class="tag hide" id="trackNote" style="margin:8px 0 0"></p>
     <div class="card hide" id="endCard">
       <button class="pri" id="btnEnd" style="margin-top:0">🔒 Fechar dia</button>
     </div>
@@ -156,9 +157,14 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
 
   <section id="v-mapa" class="hide">
     <div class="card" style="padding:0;overflow:hidden;position:relative">
-      <div id="map"><div id="tiles"></div><div id="pins"></div></div>
+      <div id="map"><div id="tiles"></div><svg id="trk" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3"></svg><div id="pins"></div></div>
       <div style="position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px"><button class="mb" id="zIn" aria-label="Aproximar">+</button><button class="mb" id="zOut" aria-label="Afastar">−</button><button class="mb" id="zFit" aria-label="Ver todas">◎</button></div>
       <div style="position:absolute;left:6px;bottom:4px;font-size:11px;color:var(--mu)">© OpenStreetMap</div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center"><b>Rasto da equipa</b><button id="btnTrk" class="x" style="color:var(--ac)">Ver</button></div>
+      <div class="tag" style="margin-top:4px">Pontos de GPS do dia, um por minuto. O rasto só existe enquanto a app esteve aberta — se o ecrã bloqueou, há buracos.</div>
+      <div id="trkBox" class="hide" style="margin-top:8px"></div>
     </div>
     <div class="card"><b>Legenda</b><div id="legend" style="margin-top:6px"></div></div>
     <div class="card hide" id="pinInfo"></div>
@@ -290,6 +296,7 @@ function report(){var s=S.shift,t=S.doors.length,c=cnt("lead")+cnt("venda"),r=t?
  if(L.length){o+="\n\nContactos a seguir:";L.forEach(function(d){o+="\n• "+d.rua+" "+d.num+" – "+(d.cli||"s/ nome")+(d.tel?" ("+d.tel+")":"")+" ["+nm(d.res)+"]"+(d.nota?" – "+d.nota:"")})}return o}
 function nm(k){return RES.filter(function(x){return x[0]===k})[0][1]}
 function render(){
+ if(S.shift&&!S.shift.end){trackStart()}else{trackStop()}
  var s=S.shift,on=s&&!s.end;
  $("active").classList.toggle("hide",!on);$("endCard").classList.toggle("hide",!on);var gn=S.doors.length,vn=cnt("venda"),gp=META.portas||40,gv=META.vendas||5;$("goalCard").classList.toggle("hide",!on);$("goalTxtP").textContent=gn>=gp?"🎉 Meta atingida · "+gn+" portas":gn+" / "+gp+" portas";$("goalBarP").style.width=Math.min(gp?gn/gp*100:0,100)+"%";$("goalTxtV").textContent=vn>=gv?"🎉 Meta atingida · "+vn+" vendas":vn+" / "+gv+" vendas";$("goalBarV").style.width=Math.min(gv?vn/gv*100:0,100)+"%";$("btnGoalEdit").classList.add("hide");$("startCard").classList.toggle("hide",!!on);
  if(on)$("aInfo").textContent=s.name+" · "+s.zone+" · desde "+hm(s.start);
@@ -338,7 +345,107 @@ function mapDraw(){var m=$("map"),W=m.clientWidth,H=m.clientHeight,tx0=MP.cx-W/2
  for(var x=Math.floor(tx0/256);x<=Math.floor((tx0+W)/256);x++)for(var y=Math.floor(ty0/256);y<=Math.floor((ty0+H)/256);y++){if(y<0||y>=n)continue;var k=MP.z+"/"+x+"/"+y,im=T[k];if(!im){im=document.createElement("img");im.alt="";im.draggable=false;im.src="https://tile.openstreetmap.org/"+MP.z+"/"+(((x%n)+n)%n)+"/"+y+".png";$("tiles").appendChild(im);T[k]=im}need[k]=1;im.style.left=(x*256-tx0)+"px";im.style.top=(y*256-ty0)+"px"}
  Object.keys(T).forEach(function(k){if(!need[k]){T[k].remove();delete T[k]}});
  var P=$("pins");P.innerHTML="";
- mapDoors().forEach(function(d){var p=proj(d.loc.lat,d.loc.lng,MP.z),b=document.createElement("button");b.className="pin"+(MP.sel===d.t?" sel":"");b.style.left=(p.x-tx0)+"px";b.style.top=(p.y-ty0)+"px";b.style.background=PC[d.res];b.setAttribute("aria-label","Porta "+d.num+", "+nm(d.res));b.onclick=function(){if(MP.moved)return;MP.sel=d.t;mapDraw();pinInfo(d)};P.appendChild(b)})}
+ mapDoors().forEach(function(d){var p=proj(d.loc.lat,d.loc.lng,MP.z),b=document.createElement("button");b.className="pin"+(MP.sel===d.t?" sel":"");b.style.left=(p.x-tx0)+"px";b.style.top=(p.y-ty0)+"px";b.style.background=PC[d.res];b.setAttribute("aria-label","Porta "+d.num+", "+nm(d.res));b.onclick=function(){if(MP.moved)return;MP.sel=d.t;mapDraw();pinInfo(d)};P.appendChild(b)});
+ drawRasto(tx0,ty0)}
+/* ------------------------------------------------------------
+ * RASTO DA EQUIPA NO MAPA
+ * ------------------------------------------------------------
+ * Desenha uma linha por turno. Os pontos vem do servidor
+ * (/rasto) e ficam em TRK para o mapDraw os redesenhar a cada
+ * movimento do mapa, sem voltar a pedir ao servidor.
+ */
+var TRK = null;
+var TRK_CORES = ["#1fa971","#3b82f6","#f5a623","#e04b4b","#7c3aed","#0ea5c6","#c2410c","#0f766e"];
+var TRK_VIS = {};
+
+function trkCor(i){return TRK_CORES[i % TRK_CORES.length]}
+
+function drawRasto(tx0,ty0){
+ var svg = $("trk");
+ if(!svg) return;
+ if(!TRK || !TRK.length){svg.innerHTML="";return}
+ var out = "";
+ for(var i=0;i<TRK.length;i++){
+  var g = TRK[i];
+  if(TRK_VIS[g.userId] === false) continue;
+  var cor = trkCor(i);
+  var pts = [];
+  for(var j=0;j<g.points.length;j++){
+   var p = proj(g.points[j].lat, g.points[j].lng, MP.z);
+   pts.push((p.x-tx0).toFixed(1)+","+(p.y-ty0).toFixed(1));
+  }
+  if(pts.length > 1){
+   out += "<polyline points='"+pts.join(" ")+"' fill='none' stroke='"+cor+"' stroke-width='3' stroke-linejoin='round' stroke-linecap='round' opacity='0.85'/>";
+  }
+  var a = proj(g.points[0].lat, g.points[0].lng, MP.z);
+  out += "<circle cx='"+(a.x-tx0)+"' cy='"+(a.y-ty0)+"' r='5' fill='"+cor+"' stroke='#fff' stroke-width='2'/>";
+  if(pts.length > 1){
+   var f = proj(g.points[g.points.length-1].lat, g.points[g.points.length-1].lng, MP.z);
+   out += "<circle cx='"+(f.x-tx0)+"' cy='"+(f.y-ty0)+"' r='5' fill='#fff' stroke='"+cor+"' stroke-width='3'/>";
+  }
+ }
+ svg.innerHTML = out;
+}
+
+function renderTrkBox(){
+ var box = $("trkBox");
+ if(!box) return;
+ if(!CFG.endpoint){box.innerHTML="<p class='tag'>Sem ligacao ao servidor.</p>";return}
+ if(!TRK){box.innerHTML="<p class='tag'>A carregar...</p>";return}
+ if(!TRK.length){box.innerHTML="<p class='tag'>Sem rasto registado neste periodo.</p>";return}
+ var h = "";
+ for(var i=0;i<TRK.length;i++){
+  var g = TRK[i];
+  var dist = 0;
+  for(var j=1;j<g.points.length;j++) dist += distM(g.points[j-1], g.points[j]);
+  var cor = trkCor(i);
+  var on = TRK_VIS[g.userId] !== false;
+  h += "<div class='door' data-i='"+i+"' style='cursor:pointer'><div><b style='color:"+cor+"'>"+esc(g.name)+"</b><div class='tag'>"+g.points.length+" pontos · "+(dist/1000).toFixed(1)+" km · "+hm(g.start)+"-"+hm(g.end)+"</div></div><span>"+(on?"&#9679;":"&#9675;")+"</span></div>";
+ }
+ box.innerHTML = h;
+ box.querySelectorAll(".door").forEach(function(el){
+  el.onclick = function(){
+   var g = TRK[Number(el.dataset.i)];
+   TRK_VIS[g.userId] = TRK_VIS[g.userId] === false;
+   renderTrkBox(); mapDraw();
+  };
+ });
+}
+
+async function loadRasto(){
+ if(!CFG.endpoint) return;
+ var box = $("trkBox");
+ try{
+  var desde = dayStart();
+  var ate = Date.now();
+  var r = await api("/rasto?desde="+desde+"&ate="+ate);
+  if(!r.ok){box.innerHTML="<p class='tag'>Nao foi possivel carregar o rasto.</p>";return}
+  var d = await r.json();
+  TRK = (d && d.tracks) || [];
+ }catch(e){
+  box.innerHTML="<p class='tag'>Sem ligacao.</p>";return}
+ renderTrkBox();
+ trkFit();
+}
+
+function trkFit(){
+ var m = $("map");
+ if(!m || !TRK || !TRK.length) return;
+ var W = m.clientWidth, H = m.clientHeight;
+ var pts = [];
+ TRK.forEach(function(g){
+  if(TRK_VIS[g.userId] === false) return;
+  g.points.forEach(function(p){pts.push(p)});
+ });
+ if(!pts.length) return;
+ var la = pts.map(function(p){return p.lat}), ln = pts.map(function(p){return p.lng});
+ var mxa = Math.max.apply(0,la), mna = Math.min.apply(0,la), mxn = Math.max.apply(0,ln), mnn = Math.min.apply(0,ln);
+ var z = 18;
+ for(;z>3;z--){var a = proj(mxa,mnn,z), b = proj(mna,mxn,z); if(b.x-a.x < W-80 && b.y-a.y < H-80) break}
+ var c = proj((mxa+mna)/2,(mxn+mnn)/2,z);
+ MP.z = z; MP.cx = c.x; MP.cy = c.y;
+ mapDraw();
+}
 function mapZoom(dz){var z=MP.z+dz;if(z<3||z>19)return;var f=Math.pow(2,dz);MP.z=z;MP.cx*=f;MP.cy*=f;mapDraw()}
 function mapFit(){var m=$("map"),W=m.clientWidth,H=m.clientHeight,pts=mapDoors().map(function(d){return d.loc});MP.sel=null;$("pinInfo").classList.add("hide");legend();
  if(!pts.length&&S.shift&&S.shift.loc)pts=[S.shift.loc];
@@ -352,6 +459,7 @@ function mapFit(){var m=$("map"),W=m.clientWidth,H=m.clientHeight,pts=mapDoors()
  window.addEventListener("pointerup",function(){dr=null;setTimeout(function(){MP.moved=false},0)});
  m.addEventListener("wheel",function(e){e.preventDefault();mapZoom(e.deltaY<0?1:-1)},{passive:false});
  $("zIn").onclick=function(){mapZoom(1)};$("zOut").onclick=function(){mapZoom(-1)};$("zFit").onclick=mapFit})();
+if($("btnTrk"))$("btnTrk").onclick=function(){var b=$("trkBox");var abrir=b.classList.contains("hide");b.classList.toggle("hide",!abrir);this.textContent=abrir?"Ocultar":"Ver";if(abrir)loadRasto()}
 var TEAM=[],DEMO=false,curCom=null;
 function demo(){var base=[[38.7223,-9.1393,"Ana Costa","Rua Augusta"],[38.7369,-9.1427,"Bruno Reis","Av. da Liberdade"],[38.7071,-9.1366,"Carla Matos","Rua do Alecrim"]],ks=RES.map(function(x){return x[0]}),t0=Date.now()-4*36e5;
  return base.map(function(b,i){var D=[];for(var j=0;j<12;j++)D.push({t:t0+j*9e5+i,rua:b[3],num:String(2*j+1),res:ks[(j*(i+2)+i)%ks.length],cli:j%3?"":"Cliente "+(j+1),tel:"",nota:"",loc:{lat:+(b[0]+j*0.00012).toFixed(6),lng:+(b[1]+(j%2)*0.00008+j*0.00005).toFixed(6),acc:8}});return{id:"d"+i,name:b[2],shift:{name:b[2],zone:b[3],start:t0,end:null,loc:null},doors:D,streets:[b[3]],history:[{id:t0-864e5,shift:{name:b[2],zone:b[3],start:t0-864e5,end:t0-864e5+6*36e5,loc:null},doors:D.map(function(d,j){return Object.assign({},d,{t:d.t-864e5,done:j===2})}),streets:[b[3]]}]}})}
@@ -522,6 +630,72 @@ function api(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"ap
 function ownerCheck(){try{if(!USER.id)return;var o=localStorage.getItem("d2d_owner");if(o&&o!==String(USER.id)){localStorage.removeItem("d2d");localStorage.removeItem("d2d_ob");S={shift:null,doors:[],streets:[],history:[]};OB=[]}localStorage.setItem("d2d_owner",String(USER.id))}catch(e){}}
 function resumo(){var t=S.doors.length,o={};RES.forEach(function(x){o[x[0]]=cnt(x[0])});return{portas:t,por_resultado:o,interessados:cnt("lead")+cnt("voltar"),vendas:cnt("venda"),conversao:t?Math.round(cnt("venda")/t*100):0}}
 function setSync(){var b=$("sync");if(!CFG.endpoint){b.textContent="💾 Modo local";b.title="Sem ligação ao site: os dados ficam só neste telemóvel";return}b.title="Toca para sincronizar agora";b.textContent=syncSt==="auth"?"🔒 Inicia sessão no site":OB.length?(syncSt==="off"?"⚠️ Sem ligação · ":"⏳ ")+OB.length+" por enviar":"☁️ Sincronizado"}
+/* ------------------------------------------------------------
+ * RASTO GPS DO TURNO (1 ponto por minuto)
+ * ------------------------------------------------------------
+ * O browser so da localizacao enquanto a pagina estiver viva. Se o ecra
+ * bloquear, o sistema suspende a pagina e o rasto tem um buraco -- nao ha
+ * forma de contornar isto numa pagina web (so app nativa o faz em segundo
+ * plano). Por isso os pontos vao para uma fila local e so de la para o
+ * servidor, para que nada se perca quando a rede falha.
+ */
+var TRACK_MS = 60000;
+var TRACK_MIN_MOVE = 25;
+var TRACK_WATCH = null;
+var TRACK_LAST = null;
+var TRACK_LAST_PUSH = 0;
+var TRACK_QK = "d2d_track_q";
+var TRACK_SENDING = false;
+
+function distM(a,b){if(!a||!b)return Infinity;var R=6371000,dLat=(b.lat-a.lat)*Math.PI/180,dLng=(b.lng-a.lng)*Math.PI/180,mLat=(a.lat+b.lat)/2*Math.PI/180,x=dLng*Math.cos(mLat),y=dLat;return Math.sqrt(x*x+y*y)*R}
+function trackQLoad(){try{return JSON.parse(localStorage.getItem(TRACK_QK)||"[]")}catch(e){return[]}}
+function trackQSave(q){try{localStorage.setItem(TRACK_QK,JSON.stringify(q.slice(-2000)))}catch(e){}}
+function trackActive(){return !!(S.shift&&!S.shift.end&&CFG.endpoint)}
+
+function trackPoint(p,forcar){if(!trackActive())return
+ if(!p||typeof p.lat!=="number"||typeof p.lng!=="number")return
+ if(!forcar){var dt=Date.now()-TRACK_LAST_PUSH;if(dt<TRACK_MS-5000&&distM(TRACK_LAST,p)<TRACK_MIN_MOVE)return}
+ TRACK_LAST={lat:p.lat,lng:p.lng};TRACK_LAST_PUSH=Date.now()
+ var q=trackQLoad();q.push({t:TRACK_LAST_PUSH,lat:p.lat,lng:p.lng,acc:p.acc==null?null:Math.round(p.acc)});trackQSave(q);trackSync();updateTrackUI()}
+
+async function trackSync(){if(!CFG.endpoint||TRACK_SENDING)return
+ var q=trackQLoad();if(!q.length){updateTrackUI();return}
+ TRACK_SENDING=true
+ try{
+  while(q.length){var lote=q.slice(0,200)
+   var r;try{r=await api("/track",{method:"POST",body:JSON.stringify({points:lote})})}catch(e){break}
+   if(r.ok){q=q.slice(lote.length);trackQSave(q)}
+   else if(r.status>=400&&r.status<500&&r.status!==401&&r.status!==403&&r.status!==408&&r.status!==429){q=q.slice(lote.length);trackQSave(q)}
+   else break}
+ }finally{TRACK_SENDING=false;updateTrackUI()}}
+
+function trackStart(){if(!CFG.endpoint||TRACK_WATCH||!navigator.geolocation)return
+ TRACK_LAST=null;TRACK_LAST_PUSH=0
+ try{TRACK_WATCH=navigator.geolocation.watchPosition(
+   function(pos){trackPoint({lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6),acc:pos.coords.accuracy})},
+   function(){updateTrackUI()},
+   {enableHighAccuracy:true,timeout:30000,maximumAge:60000})}catch(e){}
+ trackSync();updateTrackUI()}
+
+function trackStop(){if(TRACK_WATCH!=null){try{navigator.geolocation.clearWatch(TRACK_WATCH)}catch(e){}TRACK_WATCH=null}
+ trackSync();updateTrackUI()}
+
+setInterval(function(){if(!trackActive())return
+ if(Date.now()-TRACK_LAST_PUSH<TRACK_MS-5000)return
+ if(!navigator.geolocation)return
+ try{navigator.geolocation.getCurrentPosition(function(pos){trackPoint({lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6),acc:pos.coords.accuracy},true)},function(){},{enableHighAccuracy:true,timeout:20000,maximumAge:30000})}catch(e){}
+},15000);
+
+setInterval(function(){if(trackActive())trackSync()},120000);
+window.addEventListener("online",function(){trackSync()});
+document.addEventListener("visibilitychange",function(){if(!document.hidden&&trackActive()){trackSync()}});
+
+function updateTrackUI(){var el=$("trackNote");if(!el)return
+ if(!trackActive()){el.textContent="";el.classList.add("hide");return}
+ var n=trackQLoad().length
+ el.classList.remove("hide")
+ el.textContent=n?("Rasto GPS ativo - "+n+" ponto"+(n===1?"":"s")+" por enviar"):"Rasto GPS ativo - tudo enviado"}
+
 function emit(tipo,dados){var ev={id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),tipo:tipo,user:USER,hora:Date.now(),dados:dados==null?null:JSON.parse(JSON.stringify(dados))};
  try{window.dispatchEvent(new CustomEvent("d2d",{detail:ev}));if(window.parent&&window.parent!==window)window.parent.postMessage({type:"d2d:event",event:ev},"*")}catch(e){}
  if(CFG.endpoint){OB.push(ev);obSave();setSync();flush()}}
@@ -640,7 +814,7 @@ document.addEventListener("visibilitychange",function(){if(!document.hidden)poll
 function view(v){if(ISLEAD&&READONLY&&(v==="turno"||v==="portas"))pickCom("me");$("leadBar").classList.toggle("hide",!ISLEAD||v==="turno"||v==="portas"||v==="caixa");
  ["turno","portas","mapa","rel","ter","hist","equipa","caixa"].forEach(function(k){$("v-"+k).classList.toggle("hide",k!==v)});document.querySelectorAll("nav button").forEach(function(b){b.classList.toggle("on",b.dataset.v===v)});window.scrollTo(0,0);if(v==="caixa"){renderCaixa();pollCaixa()}if(v==="ter")renderTer();
  var nb=document.querySelector('nav [data-v="'+v+'"]');if(nb&&nb.scrollIntoView)try{nb.scrollIntoView({inline:"center",block:"nearest"})}catch(e){}
- if(v==="mapa")setTimeout(function(){$("pins").classList.add("anim");mapFit();setTimeout(function(){$("pins").classList.remove("anim")},800)},0)}
+ if(v==="mapa")setTimeout(function(){$("pins").classList.add("anim");mapFit();setTimeout(function(){$("pins").classList.remove("anim")},800);if($("trkBox")&&!$("trkBox").classList.contains("hide"))loadRasto()},0)}
 document.querySelectorAll("nav button").forEach(function(b){b.onclick=function(){view(b.dataset.v)}});
 $("btnStart").onclick=async function(){var n=USER.name||"Comercial (teste)",z=$("zona").value.trim();if(!z){toast("Indica a zona de trabalho.");return}
  $("btnStart").disabled=true;$("btnStart").textContent="A obter localização…";
@@ -649,11 +823,12 @@ $("btnStart").onclick=async function(){var n=USER.name||"Comercial (teste)",z=$(
  $("btnStart").disabled=false;$("btnStart").textContent="▶ Iniciar trabalho";
  try{if("Notification"in window&&Notification.permission==="granted")new Notification("Trabalho iniciado",{body:n+" · "+z+" · "+hm(S.shift.start)})}catch(e){}
  toast("✅ Trabalho iniciado às "+hm(S.shift.start)+(p?"":" (sem localização)"));render();
+ trackStart();
  emit("inicio",S.shift);
 };
 
 $("btnEnd").onclick=function(){var b=$("btnEnd");if(!b.dataset.c){b.dataset.c=1;b.textContent="Toca outra vez para fechar o dia";setTimeout(function(){delete b.dataset.c;b.textContent="🔒 Fechar dia"},4000);return}
- delete b.dataset.c;b.textContent="🔒 Fechar dia";S.shift.end=Date.now();S.history=S.history||[];S.history.unshift(JSON.parse(JSON.stringify({id:S.shift.start,shift:S.shift,doors:S.doors,streets:S.streets})));save();emit("fim",{shift:S.shift,doors:S.doors,relatorio:report(),resumo:resumo()});render();view("rel");toast(CFG.endpoint&&(OB.length||PDn)?"⚠️ Dia fechado, mas há dados e documentos por enviar. Mantém a app aberta com rede até aparecer ☁️ Sincronizado.":"Dia fechado. Relatório guardado no histórico.")};
+ delete b.dataset.c;b.textContent="🔒 Fechar dia";S.shift.end=Date.now();S.history=S.history||[];S.history.unshift(JSON.parse(JSON.stringify({id:S.shift.start,shift:S.shift,doors:S.doors,streets:S.streets})));save();trackStop();emit("fim",{shift:S.shift,doors:S.doors,relatorio:report(),resumo:resumo()});render();view("rel");toast(CFG.endpoint&&(OB.length||PDn)?"⚠️ Dia fechado, mas há dados e documentos por enviar. Mantém a app aberta com rede até aparecer ☁️ Sincronizado.":"Dia fechado. Relatório guardado no histórico.")};
 $("btnRua").onclick=function(){var r=$("rua").value.trim();if(!r){toast("Indica o nome da rua.");return}if(!S.shift||S.shift.end){toast("Inicia o turno primeiro.");view("turno");return}S.streets=S.streets||[];if(S.streets.indexOf(r)<0){S.streets.push(r);addRuaZona(r)}save();$("rua").value="";openRua(r)};
 $("btnGoTurno").onclick=function(){view("turno")};
 $("btnZona").onclick=function(){if(!S.shift||S.shift.end){toast("Inicia o turno primeiro.");view("turno");return}$("zNome").value="";$("zoneM").classList.remove("hide");$("zNome").focus()};

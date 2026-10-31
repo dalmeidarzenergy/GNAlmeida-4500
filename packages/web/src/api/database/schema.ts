@@ -495,6 +495,36 @@ export const d2dGoals = sqliteTable("d2d_goals", {
   createdAt: createdAt(),
 });
 
+/**
+ * Ponto de rasto GPS de um turno D2D. Gravado em lote a partir do telemóvel,
+ * um ponto por minuto, para se poder reconstruir o percurso feito durante o turno.
+ * Fica junto de `d2d_shifts` porque é filho de um turno: apagar o turno apaga o rasto.
+ */
+export const d2dTracks = sqliteTable(
+  "d2d_tracks",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    shiftId: integer("shift_id")
+      .notNull()
+      .references(() => d2dShifts.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** Timestamp (ms) gerado no telemóvel — ordena o percurso e evita duplicados. */
+    t: integer("t").notNull(),
+    lat: real("lat").notNull(),
+    lng: real("lng").notNull(),
+    /** Precisão em metros reportada pelo GPS (null quando o browser não a dá). */
+    acc: real("acc"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("d2d_tracks_shift_t_idx").on(table.shiftId, table.t),
+    index("d2d_tracks_user_t_idx").on(table.userId, table.t),
+    uniqueIndex("d2d_tracks_shift_t_uniq").on(table.shiftId, table.t),
+  ],
+);
+
 /** Documento anexado a uma porta (ou enviado pela chefia). O ficheiro fica em public/uploads/d2d. */
 export const d2dDocuments = sqliteTable("d2d_documents", {
   id: text("id").primaryKey(),

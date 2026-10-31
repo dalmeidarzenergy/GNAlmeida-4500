@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { eq, and, isNotNull, inArray } from "drizzle-orm";
+import { eq, and, isNotNull, inArray, gte, lte } from "drizzle-orm";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { auth } from "../auth";
@@ -15,6 +15,7 @@ import {
   d2dDocuments,
   d2dMailbox,
   d2dGoals,
+  d2dTracks,
 } from "../database/schema";
 import type { Role } from "../middleware/auth";
 
@@ -121,6 +122,67 @@ async function doorJson(d: typeof d2dDoors.$inferSelect): Promise<Record<string,
     docs: docs.map((m) => ({ id: m.id, name: m.name, type: m.type, size: m.size, t: m.createdAt.getTime(), url: `/api/d2d/file/${encodeURIComponent(m.id)}` })),
     done: d.done ?? false,
   };
+}
+
+/* ------------------------------------------------------------
+ * Rasto GPS (d2d_tracks)
+ * ------------------------------------------------------------ */
+
+/**
+ * Quantos pontos a mesma pessoa/grupo pode enviar de uma vez. O telemóvel
+ * acumula offline e descarrega a fila quando volta a haver rede, por isso o
+ * lote tem de ter folga — mas não pode ser ilimitado.
+ */
+const MAX_TRACK_BATCH = 500;
+
+/** Arredonda a coordenada para 5 casas (~1 m): corta ruído do GPS e a variação inútil. */
+function roundCoord(n: number): number {
+  return Number(n.toFixed(5));
+}
+
+/**
+ * Normaliza um ponto vindo do telemóvel. Devolve null quando não é utilizável —
+ * coordenadas em falta, fora do planeta ou timestamps sem sentido são descartados
+ * em vez de gravados, porque um rasto com pontos falsos é pior do que sem ponto.
+ */
+function normTrackPoint(raw: unknown): { t: number; lat: number; lng: number; acc: number | null } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const p = raw as { t?: unknown; lat?: unknown; lng?: unknown; acc?: unknown };
+  const t = ts(p.t);
+  const lat = Number(p.lat);
+  const lng = Number(p.lng);
+  if (t == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  // Rejeita pontos no oceano a sul de Greenwich usados como "sem fix" pelo browser (0,0).
+  if (lat === 0 && lng === 0) return null;
+  const acc = Number(p.acc);
+  return { t, lat: roundCoord(lat), lng: roundCoord(lng), acc: Number.isFinite(acc) && acc >= 0 ? Math.round(acc) : null };
+}
+
+/**
+ * Grava pontos de rasto no turno aberto do utilizador. Pontos repetidos no mesmo
+ * segundo são ignorados pelo índice único, por isso reinserir um lote é seguro:
+ * a fila do telemóvel pode reenviar o mesmo lote após uma falha de rede.
+ */
+async function saveTrackPoints(userId: string, raws: unknown[]): Promise<{ saved: number; skipped: number; noShift: boolean }> {
+  const points = raws.map(normTrackPoint).filter((p): p is NonNullable<typeof p> => p != null);
+  const skipped = raws.length - points.length;
+  if (!points.length) return { saved: 0, skipped, noShift: false };
+
+  const [shift] = await db.select().from(d2dShifts).where(eq(d2dShifts.userId, userId)).orderBy(d2dShifts.start).limit(1);
+  if (!shift || shift.end != null) return { saved: 0, skipped, noShift: true };
+
+  let saved = 0;
+  // Inserções uma a uma para o índice único poder descartar duplicados em silêncio.
+  for (const p of points) {
+    const inserted = await db
+      .insert(d2dTracks)
+      .values({ shiftId: shift.id, userId, t: p.t, lat: p.lat, lng: p.lng, acc: p.acc })
+      .onConflictDoNothing()
+      .returning({ id: d2dTracks.id });
+    if (inserted.length) saved++;
+  }
+  return { saved, skipped, noShift: false };
 }
 
 function shiftJson(s: typeof d2dShifts.$inferSelect): Record<string, unknown> {
@@ -342,6 +404,92 @@ export function d2d(app: Hono) {
     const ctx = await resolveCtx(c.req.raw.headers);
     if (!ctx) return c.json({ error: "Sem sessão" }, 401);
     return c.json(await goalFor(ctx.employeeId));
+  });
+
+  // Recebe um lote de pontos de rasto GPS do turno aberto do utilizador.
+  // Vem aqui (e não pelo /api/d2d evento a evento) porque o telemóvel grava um
+  // ponto por minuto: um pedido por ponto seriam centenas de pedidos por turno.
+  app.post("/api/d2d/track", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    const body = (await c.req.json().catch(() => null)) as { points?: unknown } | null;
+    const raw = Array.isArray(body?.points) ? body!.points : null;
+    if (!raw) return c.json({ error: "Pontos inválidos" }, 400);
+    if (raw.length > MAX_TRACK_BATCH) return c.json({ error: "Lote demasiado grande" }, 413);
+    const result = await saveTrackPoints(ctx.userId, raw);
+    return c.json({ ok: true, ...result }, 200);
+  });
+
+  // Rasto da equipa do chefe autenticado, dentro de uma janela de tempo.
+  // O `desde`/`ate` são ms e limitam o que se lê — sem janela isto puxaria
+  // meses de pontos para o mapa de uma só vez.
+  app.get("/api/d2d/rasto", async (c) => {
+    const ctx = await resolveCtx(c.req.raw.headers);
+    if (!ctx) return c.json({ error: "Sem sessão" }, 401);
+    const desde = ts(c.req.query("desde"));
+    const ate = ts(c.req.query("ate"));
+    if (desde == null || ate == null) return c.json({ error: "Janela de tempo inválida" }, 400);
+    if (ate < desde) return c.json({ error: "Janela de tempo inválida" }, 400);
+
+    const { emps, empToUser } = await loadPeople();
+    const isAdminish = ctx.role === "admin" || ctx.role === "diretor";
+    const scope = ctx.employeeId != null ? [ctx.employeeId, ...descendants(ctx.employeeId, emps)] : [];
+    const isChefe = d2dRole(ctx.role) === "chefe";
+
+    // Que utilizadores pode ver quem está autenticado: um comercial vê-se só a si,
+    // um chefe vê a sua cadeia abaixo, admin/diretor veem tudo.
+    // O próprio utilizador entra SEMPRE na lista: uma conta de admin pode não ter
+    // funcionário associado (employee_id nulo) e desapareceria do seu próprio rasto.
+    const allowed: string[] = [ctx.userId];
+    const addUser = (uid: string | undefined) => {
+      if (uid && !allowed.includes(uid)) allowed.push(uid);
+    };
+    if (isChefe) {
+      if (isAdminish) {
+        for (const uid of empToUser.values()) addUser(uid);
+      } else {
+        for (const emp of emps) {
+          if (!scope.includes(emp.id)) continue;
+          addUser(empToUser.get(emp.id));
+        }
+      }
+    }
+    if (!allowed.length) return c.json({ tracks: [] });
+
+    const points = await db
+      .select({ userId: d2dTracks.userId, shiftId: d2dTracks.shiftId, t: d2dTracks.t, lat: d2dTracks.lat, lng: d2dTracks.lng, acc: d2dTracks.acc })
+      .from(d2dTracks)
+      .where(and(inArray(d2dTracks.userId, allowed), gte(d2dTracks.t, desde), lte(d2dTracks.t, ate)))
+      .orderBy(d2dTracks.t);
+
+    const nameOf = new Map<string, string>();
+    for (const emp of emps) {
+      const uid = empToUser.get(emp.id);
+      if (uid) nameOf.set(uid, emp.name);
+    }
+    // Quem não tem funcionário ligado (contas de administração) é identificado
+    // pelo e-mail, para o mapa não mostrar uma linha sem dono.
+    const users = await db.select({ id: user.id, email: user.email }).from(user).where(inArray(user.id, allowed));
+    for (const u of users) if (!nameOf.has(u.id)) nameOf.set(u.id, u.email || "Sem nome");
+    nameOf.set(ctx.userId, ctx.name);
+
+    // Agrupa por (utilizador, turno): o mapa desenha uma linha por turno, para
+    // não ligar o fim de um dia ao início do dia seguinte com um traço em diagonal.
+    type Grp = { userId: string; name: string; shiftId: number; start: number; end: number; points: { t: number; lat: number; lng: number; acc: number | null }[] };
+    const groups = new Map<string, Grp>();
+    for (const p of points) {
+      const key = p.userId + ":" + p.shiftId;
+      let g = groups.get(key);
+      if (!g) {
+        g = { userId: p.userId, name: nameOf.get(p.userId) ?? "—", shiftId: p.shiftId, start: p.t, end: p.t, points: [] };
+        groups.set(key, g);
+      }
+      g.points.push({ t: p.t, lat: p.lat, lng: p.lng, acc: p.acc });
+      if (p.t < g.start) g.start = p.t;
+      if (p.t > g.end) g.end = p.t;
+    }
+
+    return c.json({ tracks: [...groups.values()] });
   });
 
   // Definir a meta do dia de um comercial (só chefia, pessoa a pessoa).
