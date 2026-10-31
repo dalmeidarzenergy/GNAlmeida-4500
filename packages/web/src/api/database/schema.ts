@@ -122,6 +122,47 @@ export const chargebackOverrides = sqliteTable("chargeback_overrides", {
   createdAt: createdAt(),
 });
 
+/** Adiantamentos a colaboradores: dinheiro entregue por conta de comissões futuras.
+ *  O valor é descontado mês a mês (saldo corrido) até estar liquidado. `repaid` guarda
+ *  devoluções registadas fora do auto (dinheiro devolvido pelo próprio colaborador). */
+export const advances = sqliteTable("advances", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  /** Data em que o adiantamento foi entregue (YYYY-MM-DD). */
+  date: text("date").notNull(),
+  /** Valor total emprestado. */
+  amount: real("amount").notNull().default(0),
+  /** Valor já devolvido pelo colaborador fora do auto (não conta como desconto mensal). */
+  repaid: real("repaid").notNull().default(0),
+  note: text("note"),
+  /** Quando true, deixa de aparecer como saldo pendente a descontar. */
+  settled: integer("settled", { mode: "boolean" }).notNull().default(false),
+  createdBy: text("created_by"),
+  createdAt: createdAt(),
+});
+
+/** Descontos de adiantamento aplicados num mês (o saldo corrido vai baixando aqui).
+ *  `source` = "auto" quando foi o botão "Verificar Adiantamento" nos Autos Finais a
+ *  aplicar o corte; "manual" quando foi registado à mão. */
+export const advanceDeductions = sqliteTable("advance_deductions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  month: text("month").notNull(),
+  employeeId: integer("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  advanceId: integer("advance_id").references(() => advances.id, { onDelete: "cascade" }),
+  amount: real("amount").notNull().default(0),
+  source: text("source").notNull().default("auto"),
+  note: text("note"),
+  createdBy: text("created_by"),
+  createdAt: createdAt(),
+}, (t) => [
+  index("idx_advance_ded_month").on(t.month),
+  index("idx_advance_ded_employee").on(t.employeeId),
+]);
+
 export const absences = sqliteTable("absences", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id")

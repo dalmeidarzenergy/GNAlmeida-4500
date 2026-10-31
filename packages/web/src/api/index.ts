@@ -10,6 +10,8 @@ import { chiefTablesRoute } from "./routes/chief-tables";
 import { paymentsRoute } from "./routes/payments";
 import { iberdrolaRoute, iberdrolaRoutes } from "./routes/iberdrola";
 import { rulesRoute } from "./routes/rules";
+import { advancesRoute } from "./routes/advances";
+import { filtragemRoute } from "./routes/filtragem";
 import { sales } from "./routes/sales";
 import { reports } from "./routes/reports";
 import { campaigns } from "./routes/campaigns";
@@ -35,6 +37,8 @@ export const router = {
   payments: paymentsRoute,
   iberdrola: iberdrolaRoute,
   rules: rulesRoute,
+  advances: advancesRoute,
+  filtragem: filtragemRoute,
   sales,
   reports,
   campaigns,

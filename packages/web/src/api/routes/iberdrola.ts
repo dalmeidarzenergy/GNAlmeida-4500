@@ -22,6 +22,8 @@ import {
   vncPenalties,
   commissionBlocks,
   chargebackOverrides,
+  advanceDeductions,
+  advances,
   userRoles,
   teams,
   teamMemberships,
@@ -125,6 +127,14 @@ type IberdrolaPerson = {
   chargebackForgiven: number;
   /** Chargeback efetivamente descontado depois das anulações. */
   chargebackNet: number;
+  /** Total devido antes de descontar adiantamentos (base do teto do adiantamento). */
+  dueBeforeAdvance: number;
+  /** Descontos de adiantamento aplicados neste mês (aparecem no PDF e no Excel do comercial). */
+  advanceDeductions: { id: number; advanceId: number | null; amount: number; source: string; note: string | null }[];
+  /** Total do adiantamento descontado este mês. */
+  advanceCut: number;
+  /** Saldo de adiantamento ainda por descontar depois deste mês. */
+  advancePending: number;
   /** Vendas que foram transferidas para outro comercial (troca de venda). */
   overridesOut: { idVenda: string; toName: string }[];
   /** Vendas que foram recebidas de outro comercial (troca de venda). */
@@ -364,6 +374,31 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const arr = cbOverridesByEmployee.get(cb.employeeId) ?? [];
     arr.push({ id: cb.id, kind: cb.kind, mode: cb.mode, value: cb.value, note: cb.note });
     cbOverridesByEmployee.set(cb.employeeId, arr);
+  }
+
+  // Descontos de adiantamento do mês, por comercial (entram no total a pagar e no PDF/Excel).
+  const advDeds = await db.select().from(advanceDeductions).where(eq(advanceDeductions.month, m));
+  const advDedsByEmployee = new Map<number, { id: number; advanceId: number | null; amount: number; source: string; note: string | null }[]>();
+  for (const ad of advDeds) {
+    const arr = advDedsByEmployee.get(ad.employeeId) ?? [];
+    arr.push({ id: ad.id, advanceId: ad.advanceId, amount: ad.amount, source: ad.source, note: ad.note });
+    advDedsByEmployee.set(ad.employeeId, arr);
+  }
+
+  // Saldo de adiantamentos por colaborador (todos os meses): total emprestado, devolvido e já descontado.
+  const advList = await db.select().from(advances);
+  const advAllDeds = await db.select().from(advanceDeductions);
+  const advanceTotalsByEmployee = new Map<number, { total: number; repaid: number; deducted: number }>();
+  for (const a of advList) {
+    const row = advanceTotalsByEmployee.get(a.employeeId) ?? { total: 0, repaid: 0, deducted: 0 };
+    row.total = round2(row.total + a.amount);
+    row.repaid = round2(row.repaid + a.repaid);
+    advanceTotalsByEmployee.set(a.employeeId, row);
+  }
+  for (const d of advAllDeds) {
+    const row = advanceTotalsByEmployee.get(d.employeeId) ?? { total: 0, repaid: 0, deducted: 0 };
+    row.deducted = round2(row.deducted + d.amount);
+    advanceTotalsByEmployee.set(d.employeeId, row);
   }
 
   // Penalidades VNC do mês, por comercial.
@@ -863,6 +898,26 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     // bloqueio. Não entra em `ruleEffects` de propósito: não pode aparecer no PDF nem no Excel
     // do comercial — é uma medida interna da direção.
     const dueBeforeBlock = round2(gross - chargebackNet + rulesDelta + medemTotal + ceGross - ceChargeback);
+
+    // Descontos de adiantamento do mês (saldo corrido). Entram no total devido antes do bloqueio,
+    // e aparecem no PDF e no Excel do comercial (diferente do bloqueio, que é interno).
+    const personAdvanceDeds = advDedsByEmployee.get(sellerId) ?? [];
+    let advCut = 0;
+    const advancesOut: { id: number; advanceId: number | null; amount: number; source: string; note: string | null }[] = [];
+    for (const ad of personAdvanceDeds) {
+      const remaining = round2(dueBeforeBlock - advCut);
+      if (remaining <= 0) break;
+      const cut = round2(Math.min(Math.max(0, ad.amount), remaining));
+      if (cut <= 0) continue;
+      advCut = round2(advCut + cut);
+      advancesOut.push({ ...ad, amount: cut });
+    }
+    const dueBeforeAdvance = dueBeforeBlock;
+    const dueAfterAdvance = round2(Math.max(0, dueBeforeAdvance - advCut));
+    // Saldo do adiantamento ainda por descontar. `advTotal.deducted` já inclui os descontos
+    // deste mês (vêm todos da mesma tabela), portanto não se subtrai `advCut` outra vez.
+    const advTotal = advanceTotalsByEmployee.get(sellerId) ?? { total: 0, repaid: 0, deducted: 0 };
+    const advancePendingAfter = round2(Math.max(0, advTotal.total - advTotal.repaid - advTotal.deducted));
     const personBlocks = blocksByEmployee.get(sellerId) ?? [];
     let blockCut = 0;
     const blocksOut: { id: number; kind: string; mode: string; value: number; cut: number; note: string | null }[] = [];
@@ -870,16 +925,15 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       let cut: number;
       if (bl.kind === "total") {
         // Bloqueio total: leva tudo a 0 €.
-        cut = round2(dueBeforeBlock - blockCut);
+        cut = round2(dueAfterAdvance - blockCut);
       } else {
-        cut = bl.mode === "pct" ? round2((dueBeforeBlock - blockCut) * (bl.value / 100)) : round2(bl.value);
+        cut = bl.mode === "pct" ? round2((dueAfterAdvance - blockCut) * (bl.value / 100)) : round2(bl.value);
       }
       if (cut <= 0) continue;
       blockCut = round2(blockCut + cut);
       blocksOut.push({ ...bl, cut });
     }
-    const dueFinal = round2(Math.max(0, dueBeforeBlock - blockCut));
-
+    const dueFinal = round2(Math.max(0, dueAfterAdvance - blockCut));
     people.push({
       ...base,
       bandSales: resTable ? mine.filter((e) => e.hasBTN).length : 0,
@@ -900,7 +954,11 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       chargebackOverrides: cbOverridesOut,
       chargebackForgiven: cbForgiven,
       chargebackNet,
+      advanceDeductions: advancesOut,
+      advanceCut: advCut,
+      advancePending: advancePendingAfter,
       due: dueFinal,
+      dueBeforeAdvance,
       ceBandSales,
       ceUnit,
       ceGross,
@@ -1159,6 +1217,77 @@ export const iberdrolaRoute = {
     .input(z.object({ id: z.number().int().positive() }))
     .handler(async ({ input }) => {
       await db.delete(chargebackOverrides).where(eq(chargebackOverrides.id, input.id));
+      return { removed: true };
+    }),
+
+  /** Desconta o saldo de adiantamento do colaborador no mês do auto.
+   *  `total` desconta todo o saldo pendente; `parcial` desconta só o valor em € ou a
+   *  percentagem do saldo indicada. Nunca passa o que o colaborador tem a receber (o
+   *  devido nunca fica negativo) nem o saldo pendente de adiantamento. */
+  advanceApply: requireRoles("admin", "diretor")
+    .input(z.object({
+      month,
+      employeeId: z.number().int().positive(),
+      mode: z.enum(["total", "parcial"]),
+      unit: z.enum(["eur", "pct"]).optional(),
+      value: z.number().min(0).optional(),
+      note: z.string().trim().max(300).optional(),
+    }))
+    .handler(async ({ input, context }) => {
+      const [emp] = await db.select({ id: employees.id, name: employees.name }).from(employees).where(eq(employees.id, input.employeeId));
+      if (!emp) return { ok: false as const, reason: "employee_not_found" as const };
+
+      // Saldo pendente = adiantamentos − devoluções − descontos de todos os meses.
+      const advList = await db.select().from(advances).where(eq(advances.employeeId, input.employeeId));
+      const allDeds = await db.select().from(advanceDeductions).where(eq(advanceDeductions.employeeId, input.employeeId));
+      const lent = round2(advList.reduce((s, a) => s + a.amount, 0));
+      const repaid = round2(advList.reduce((s, a) => s + a.repaid, 0));
+      const alreadyDeducted = round2(allDeds.reduce((s, d) => s + d.amount, 0));
+      const pending = round2(Math.max(0, lent - repaid - alreadyDeducted));
+      if (pending <= 0) return { ok: false as const, reason: "no_pending" as const };
+
+      const unit = input.mode === "total" ? "eur" : (input.unit ?? "eur");
+      const raw = input.mode === "total" ? pending : (input.value ?? 0);
+      if (input.mode === "parcial" && !(raw > 0)) {
+        throw new ORPCError("BAD_REQUEST", { message: "Indica um valor maior que 0 € ou uma percentagem maior que 0%." });
+      }
+      if (unit === "pct" && raw > 100) {
+        throw new ORPCError("BAD_REQUEST", { message: "A percentagem tem de ser no máximo 100%." });
+      }
+
+      // Teto real do mês: só se pode descontar até ao que o colaborador tem a receber
+      // nesse mês (mesma base do cálculo dos autos). Sem isto, um desconto sobre um mês
+      // sem comissão ficava registado como "descontado" sem nunca ter sido retido.
+      const calc = await buildCalc(input.month);
+      const person = calc.people.find((p) => p.employeeId === input.employeeId);
+      const dueThisMonth = round2(Math.max(0, person?.dueBeforeAdvance ?? 0));
+      const cap = round2(Math.min(dueThisMonth, pending));
+      if (cap <= 0) {
+        return { ok: false as const, reason: "nothing_due" as const, dueThisMonth, pending };
+      }
+
+      const wanted = unit === "pct" ? round2(cap * (raw / 100)) : round2(raw);
+      const amount = round2(Math.min(Math.max(0, wanted), cap));
+      if (amount <= 0) return { ok: false as const, reason: "no_pending" as const };
+
+      const [row] = await db.insert(advanceDeductions).values({
+        month: input.month,
+        employeeId: input.employeeId,
+        advanceId: advList.length === 1 ? advList[0].id : null,
+        amount,
+        source: "auto",
+        note: input.note ?? null,
+        createdBy: context.employeeId,
+      }).returning();
+
+      return { ok: true as const, deduction: { id: row.id, amount: row.amount }, pendingBefore: pending, pendingAfter: round2(pending - amount), employeeName: emp.name };
+    }),
+
+  /** Remove um desconto de adiantamento do mês (só admin/diretor). */
+  advanceRemove: requireRoles("admin", "diretor")
+    .input(z.object({ id: z.number().int().positive() }))
+    .handler(async ({ input }) => {
+      await db.delete(advanceDeductions).where(eq(advanceDeductions.id, input.id));
       return { removed: true };
     }),
 
@@ -1703,6 +1832,7 @@ export function iberdrolaRoutes(app: Hono) {
       rows.push(["Escalão", String(p.bandSales), "", "Gross", `${p.gross.toFixed(2)} €`, "", "Devido", `${p.due.toFixed(2)} €`]);
       rows.push(["Vendas", String(p.salesCount), "", "Chargeback", `${p.chargeback.toFixed(2)} €`]);
       if (p.chargebackForgiven > 0) rows.push(["", "", "", "Chargeback anulado", `-${p.chargebackForgiven.toFixed(2)} €`]);
+      if (p.advanceCut > 0) rows.push(["", "", "", "Adiantamento descontado", `-${p.advanceCut.toFixed(2)} €`]);
       rows.push([]);
 
       rows.push(["--- ESCALÃO ATINGIDO ---"]);
@@ -1771,6 +1901,18 @@ export function iberdrolaRoutes(app: Hono) {
           }
           rows.push(["Chargeback a descontar (apos anulacoes)", "", "", "", "", "", p.chargebackNet.toFixed(2)]);
         }
+      }
+
+      if (p.advanceCut > 0) {
+        rows.push([]);
+        rows.push(["--- ADIANTAMENTO ---"]);
+        rows.push(["Descricao", "", "", "Valor"]);
+        for (const ad of p.advanceDeductions) {
+          const desc = ad.source === "auto" ? "Desconto de adiantamento" : "Desconto de adiantamento (manual)";
+          rows.push([desc + (ad.note ? ` - ${ad.note}` : ""), "", "", (-ad.amount).toFixed(2)]);
+        }
+        rows.push(["TOTAL", "", "", (-p.advanceCut).toFixed(2)]);
+        rows.push(["Saldo por descontar", "", "", p.advancePending.toFixed(2)]);
       }
 
       if (p.medemLines && p.medemLines.length > 0) {

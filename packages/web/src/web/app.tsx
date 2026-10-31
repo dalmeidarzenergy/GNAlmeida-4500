@@ -25,10 +25,12 @@ const ReportsPage = lazy(() => import("./pages/reports"));
 const EvolutionPage = lazy(() => import("./pages/evolution"));
 const ComparisonPage = lazy(() => import("./pages/comparison"));
 const MedemPage = lazy(() => import("./pages/medem"));
+const FiltragemPage = lazy(() => import("./pages/filtragem"));
 const CommissionTablesPage = lazy(() => import("./pages/commission-tables"));
 const PaymentsPage = lazy(() => import("./pages/payments"));
 const IberdrolaPage = lazy(() => import("./pages/iberdrola"));
 const AutosPage = lazy(() => import("./pages/iberdrola-autos"));
+const AdiantamentosPage = lazy(() => import("./pages/adiantamentos"));
 const RegrasPage = lazy(() => import("./pages/regras"));
 const IncentivosPage = lazy(() => import("./pages/incentivos"));
 const UsersPage = lazy(() => import("./pages/users"));
@@ -48,6 +50,7 @@ const routes: [string, React.ComponentType][] = [
   ["/pagamentos", PaymentsPage],
   ["/auto-iberdrola", IberdrolaPage],
   ["/autos", AutosPage],
+  ["/adiantamentos", AdiantamentosPage],
   ["/regras", RegrasPage],
   ["/incentivos", IncentivosPage],
   ["/clientes", ClientsPage],
@@ -64,6 +67,7 @@ const routes: [string, React.ComponentType][] = [
   ["/evolucao", EvolutionPage],
   ["/comparativo", ComparisonPage],
   ["/medem", MedemPage],
+  ["/filtragem", FiltragemPage],
   ["/utilizadores", UsersPage],
   ["/terreno-d2d", D2DPage],
   ["/simulador-iberdrola", SimuladorPage],

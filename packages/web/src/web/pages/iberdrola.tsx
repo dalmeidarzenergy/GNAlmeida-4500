@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight, Ban, CircleSlash, ShieldAlert } from "lucide-react";
+import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight, Ban, CircleSlash, ShieldAlert, HandCoins } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
-import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams, useIberdrolaBlockAdd, useIberdrolaBlockRemove, useIberdrolaChargebackOverrideAdd, useIberdrolaChargebackOverrideRemove, useIberdrolaSwapQuote } from "../queries/iberdrola";
+import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams, useIberdrolaBlockAdd, useIberdrolaBlockRemove, useIberdrolaChargebackOverrideAdd, useIberdrolaChargebackOverrideRemove, useIberdrolaSwapQuote, useAdvanceBalance, useAdvanceApply, useAdvanceUnapply } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, fmtEur2, monthLabel, thisMonth } from "../lib/format";
@@ -438,6 +438,17 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const [cbValue, setCbValue] = useState("");
   const [cbNote, setCbNote] = useState("");
 
+  // Adiantamento (só admin/diretor): desconta o saldo pendente do colaborador neste mês.
+  const advBalance = useAdvanceBalance(employeeId, month);
+  const advApply = useAdvanceApply();
+  const advUnapply = useAdvanceUnapply();
+  const [advOpen, setAdvOpen] = useState(false);
+  const [advMode, setAdvMode] = useState<"total" | "parcial">("total");
+  const [advUnit, setAdvUnit] = useState<"eur" | "pct">("eur");
+  const [advValue, setAdvValue] = useState("");
+  const [advNote, setAdvNote] = useState("");
+  const [advWarn, setAdvWarn] = useState<string | null>(null);
+
   // Troca de venda
   const overrideList = useIberdrolaOverrideList(month);
   const overrideCreate = useIberdrolaOverrideCreate();
@@ -487,6 +498,10 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
   const cbRows = ((p as { chargebackOverrides?: { id: number; kind: string; mode: string; value: number; forgiven: number; note: string | null }[] }).chargebackOverrides ?? []);
   const cbForgiven = (p as { chargebackForgiven?: number }).chargebackForgiven ?? 0;
   const cbNet = (p as { chargebackNet?: number }).chargebackNet ?? p.chargeback;
+  const advRows = ((p as { advanceDeductions?: { id: number; advanceId: number | null; amount: number; source: string; note: string | null }[] }).advanceDeductions ?? []);
+  const advCut = (p as { advanceCut?: number }).advanceCut ?? 0;
+  const advPending = (p as { advancePending?: number }).advancePending ?? 0;
+  const advSaldo = advBalance.data?.pending ?? advPending;
 
   function medemTable(title: string, person: typeof p) {
     const lines = (person as any).medemLines as Array<{ idVenda: string; pontos: number; commission: number; total: number }> | undefined;
@@ -614,6 +629,36 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
           </div>
         </div>
       )}
+      {advRows.length > 0 && (
+        <div className="mb-4 rounded-[10px] border border-sky/40 bg-sky/10 px-4 py-3">
+          <div className="flex items-center gap-2 text-[12.5px] font-semibold text-sky">
+            <HandCoins size={14} /> Adiantamento descontado
+          </div>
+          <div className="mt-2 grid gap-1.5">
+            {advRows.map((a) => (
+              <div key={a.id} className="flex flex-wrap items-center gap-2 text-[12px] text-ink-2">
+                <span className="font-medium text-ink">{a.source === "auto" ? "Desconto do auto" : "Desconto manual"}</span>
+                <span className="num">-{fmtEur2(a.amount)}</span>
+                {a.note && <span className="text-ink-3">- {a.note}</span>}
+                {canBlock && a.source === "auto" && (
+                  <button
+                    type="button"
+                    className="ml-auto shrink-0 rounded-[6px] p-1 text-ink-2 hover:bg-rose/20 hover:text-rose"
+                    disabled={advUnapply.isPending}
+                    onClick={() => advUnapply.mutateAsync({ id: a.id })}
+                    title="Remover este desconto"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-[11px] text-ink-3">
+            Descontado este mes {fmtEur2(advCut)}. Saldo de adiantamento por descontar: {fmtEur2(advPending)}.
+          </div>
+        </div>
+      )}
       {canBlock && blockRows.length > 0 && (
         <div className="mb-4 rounded-[10px] border border-rose/40 bg-rose/10 px-4 py-3">
           <div className="flex items-center gap-2 text-[12.5px] font-semibold text-rose">
@@ -713,6 +758,16 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
                 title="Anula o desconto do chargeback (baixas) deste colaborador neste mês. Total ou parcial (valor ou %)."
               >
                 <Undo2 size={13} /> Anulação de Chargeback
+              </button>
+            )}
+            {canBlock && (
+              <button
+                type="button"
+                className="btn btn-ghost px-2.5 py-1 text-[12px]"
+                onClick={() => { setAdvOpen(true); setAdvMode("total"); setAdvUnit("eur"); setAdvValue(""); setAdvNote(""); }}
+                title="Desconta o adiantamento pendente deste colaborador neste mes. Total ou parcial (valor ou %)."
+              >
+                <HandCoins size={13} /> Verificar Adiantamento
               </button>
             )}
           </div>
@@ -1132,6 +1187,84 @@ function PersonDetail({ employeeId, people, month }: { employeeId: number; peopl
             {cbAdd.isPending && <Loader2 size={15} className="animate-spin" />} Anular chargeback
           </button>
         </div>
+      </Modal>
+
+
+      <Modal open={advOpen} onClose={() => setAdvOpen(false)} title="Verificar adiantamento">
+        <div className="text-[12.5px] text-ink-2">
+          Desconta o adiantamento pendente deste colaborador no total a receber deste mes. O desconto aparece no PDF e no Excel entregues ao comercial.
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3 rounded-[10px] border border-line bg-surface px-4 py-3 text-[12px]">
+          <div>Saldo pendente: <span className="num font-semibold text-ink">{fmtEur2(advSaldo)}</span></div>
+          <div>Ja descontado este mes: <span className="num font-semibold text-ink">{fmtEur2(advBalance.data?.deductedThisMonth ?? 0)}</span></div>
+          <div>A receber no auto: <span className="num font-semibold text-ink">{fmtEur2(p.due)}</span></div>
+        </div>        {advSaldo <= 0 ? (
+          <div className="mt-4 rounded-[8px] border border-line bg-surface px-3 py-2 text-[12px] text-ink-3">
+            Este colaborador nao tem adiantamento pendente por descontar.
+          </div>
+        ) : (
+          <>
+            <Field label="Tipo de desconto" className="mt-4">
+              <div className="flex gap-2">
+                <button type="button" className={advMode === "total" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"} onClick={() => setAdvMode("total")}>Desconto total</button>
+                <button type="button" className={advMode === "parcial" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"} onClick={() => setAdvMode("parcial")}>Desconto parcial</button>
+              </div>
+            </Field>
+            {advMode === "total" && (
+              <div className="mt-3 rounded-[8px] border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+                Desconta <span className="num font-semibold text-ink">{fmtEur2(advSaldo)}</span> deste mes (todo o saldo pendente).
+              </div>
+            )}
+            {advMode === "parcial" && (
+              <div className="mt-4 grid gap-3">
+                <Field label="Tipo de corte">
+                  <div className="flex gap-2">
+                    <button type="button" className={advUnit === "eur" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"} onClick={() => setAdvUnit("eur")}>Valor (EUR)</button>
+                    <button type="button" className={advUnit === "pct" ? "btn btn-volt px-3 py-1 text-[12px]" : "btn btn-ghost px-3 py-1 text-[12px]"} onClick={() => setAdvUnit("pct")}>Percentagem (%)</button>
+                  </div>
+                </Field>
+                <Field label={advUnit === "eur" ? "Valor a descontar (EUR)" : "Percentagem do saldo a descontar (%)"}>
+                  <input className="input num" type="number" inputMode="decimal" min="0" max={advUnit === "pct" ? 100 : undefined} step="0.01" value={advValue} onChange={(e) => setAdvValue(e.target.value)} placeholder={advUnit === "eur" ? "0.00" : "0"} autoFocus />
+                </Field>
+              </div>
+            )}
+            <div className="mt-3">
+              <Field label="Nota (opcional)">
+                <input className="input" maxLength={300} value={advNote} onChange={(e) => setAdvNote(e.target.value)} placeholder="Ex.: acordo de pagamento" />
+              </Field>
+            </div>
+            {advWarn && <div className="mt-3 rounded-[8px] border border-warn/40 bg-warn/10 px-3 py-2 text-[12px] text-ink-2">{advWarn}</div>}
+            {advApply.error && <div className="mt-3 text-[12px] text-danger">{errMsg(advApply.error)}</div>}
+            <div className="mt-4 flex items-center justify-end gap-2 pt-1">
+              <button type="button" className="btn btn-ghost" onClick={() => setAdvOpen(false)}>Cancelar</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={advApply.isPending || (advMode === "parcial" && !(parseFloat(advValue) > 0))}
+                onClick={async () => {
+                  const value = advMode === "parcial" ? parseFloat(advValue) : 0;
+                  if (advMode === "parcial" && !(value > 0)) return;
+                  setAdvWarn(null);
+                  const res = await advApply.mutateAsync({ month, employeeId, mode: advMode, unit: advUnit, value, note: advNote.trim() || undefined });
+                  const r = res as { ok?: boolean; reason?: string; dueThisMonth?: number } | undefined;
+                  if (r && r.ok === false) {
+                    setAdvWarn(
+                      r.reason === "nothing_due"
+                        ? `Este colaborador nao tem comissao a receber em ${month}, por isso nao ha nada de onde descontar. O saldo fica pendente para um mes com comissao.`
+                        : r.reason === "no_pending"
+                          ? "Este colaborador nao tem saldo de adiantamento pendente."
+                          : "Nao foi possivel aplicar o desconto.",
+                    );
+                    return;
+                  }
+                  setAdvOpen(false);
+                }}
+              >
+                {advApply.isPending && <Loader2 size={15} className="animate-spin" />} Descontar adiantamento
+              </button>
+            </div>
+          </>
+        )}
       </Modal>
 
       <Modal open={blockKind !== null} onClose={() => setBlockKind(null)} title={blockKind === "total" ? "Bloqueio total de comissao" : "Bloqueio parcial de comissao"}>

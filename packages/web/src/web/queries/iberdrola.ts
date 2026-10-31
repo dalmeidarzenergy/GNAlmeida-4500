@@ -136,3 +136,66 @@ export const useIberdrolaPdfTeams = () => useQuery({ ...orpc.iberdrola.pdfTeams.
 /** Elimina um PDF guardado (só admin/diretor). */
 export const useIberdrolaPdfRemove = () =>
   useMutation(orpc.iberdrola.pdfRemove.mutationOptions({ onSuccess: useInv() }));
+
+/* ------------------------------ Adiantamentos ------------------------------ */
+
+/** Invalida os adiantamentos e os autos (uma alteracao de saldo mexe nos dois). */
+function useInvAdvances() {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: orpc.advances.key() });
+    void qc.invalidateQueries({ queryKey: orpc.iberdrola.key() });
+  };
+}
+
+/** Lista de adiantamentos com saldo e totais. */
+export const useAdvances = () => useQuery(orpc.advances.list.queryOptions());
+
+/** Saldo pendente de adiantamento de um colaborador no mes (botao Verificar Adiantamento). */
+export const useAdvanceBalance = (employeeId: number, month: string) =>
+  useQuery({ ...orpc.advances.balance.queryOptions({ input: { employeeId, month } }), enabled: employeeId > 0 });
+
+/** Cria um adiantamento. */
+export const useAdvanceCreate = () =>
+  useMutation(orpc.advances.create.mutationOptions({ onSuccess: useInvAdvances() }));
+
+/** Altera um adiantamento. */
+export const useAdvanceUpdate = () =>
+  useMutation(orpc.advances.update.mutationOptions({ onSuccess: useInvAdvances() }));
+
+/** Elimina um adiantamento. */
+export const useAdvanceRemove = () =>
+  useMutation(orpc.advances.remove.mutationOptions({ onSuccess: useInvAdvances() }));
+
+/** Regista um desconto mensal a mao. */
+export const useAdvanceDeduct = () =>
+  useMutation(orpc.advances.deduct.mutationOptions({ onSuccess: useInvAdvances() }));
+
+/** Aplica o desconto de adiantamento ao auto de um comercial (total ou parcial). */
+export const useAdvanceApply = () =>
+  useMutation(orpc.iberdrola.advanceApply.mutationOptions({ onSuccess: useInvAdvances() }));
+
+/** Remove um desconto de adiantamento do auto. */
+export const useAdvanceUnapply = () =>
+  useMutation(orpc.iberdrola.advanceRemove.mutationOptions({ onSuccess: useInvAdvances() }));
+
+/* -------------------------------- Filtragem -------------------------------- */
+
+/** Opcoes dos filtros (colaboradores, meses, estados, equipas). */
+export const useFiltragemOptions = () => useQuery(orpc.filtragem.options.queryOptions());
+
+/** Corre os filtros da aba Filtragem. */
+export function useFiltragemRun(input: {
+  source: "autos" | "crm";
+  month?: string;
+  from?: string;
+  to?: string;
+  employeeIds: number[];
+  statuses: string[];
+  services: string[];
+  teamIds: number[];
+  q?: string;
+}) {
+  return useQuery({ ...orpc.filtragem.run.queryOptions({ input }), refetchOnMount: "always" });
+}
+

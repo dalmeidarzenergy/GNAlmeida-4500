@@ -22,6 +22,9 @@ type Person = {
   chargebackOverrides?: { kind: string; mode: string; value: number; forgiven: number; note: string | null }[];
   chargebackForgiven?: number;
   chargebackNet?: number;
+  advanceDeductions?: { id: number; advanceId: number | null; amount: number; source: string; note: string | null }[];
+  advanceCut?: number;
+  advancePending?: number;
   due: number;
   lines: { idVenda: string; service: string; base: number; dd: number; fe: number; pel: number; total: number }[];
   chargebackLines: { idVenda: string; service: string; base: number; dd: number; fe: number; pel: number; total: number }[];
@@ -88,6 +91,7 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
   td { padding: 6px 10px; border-bottom: 1px solid #eef2ec; color: #1c2320; }
   .r-num { text-align: right; }
   .t-pos { color: #3f8f1f; font-weight: 600; } .t-neg { color: #c0392b; } .t-svc { color: #5d6b62; }
+  .note { margin-top: 6px; font-size: 7.5pt; color: #5d6b62; }
   .tfoot td { background: #f2f6ef; font-weight: 600; border-top: 1px solid #dde6d8; }
   .footer { margin-top: 30px; padding-top: 12px; border-top: 1px solid #e2e9dd; font-size: 7pt; color: #7a867e; display: flex; justify-content: space-between; }
   @page { size: A4; margin: 10mm; }
@@ -187,6 +191,19 @@ export function buildIberdrolaPdf(p: Person, m: string): Buffer {
       html += `<tr class="tfoot"><td colspan="6">Chargeback a descontar depois das anulacoes</td><td class="num r-num t-neg">${eur(net)}</td></tr>`;
     }
     html += `</section>`;
+  }
+
+  const advCut = p.advanceCut ?? 0;
+  if (advCut > 0) {
+    html += `<section><div class="s-title">Adiantamento</div>
+<table><thead><tr><th>Descrição</th><th>Mês</th><th class="r-num">Valor</th></tr></thead><tbody>`;
+    for (const ad of p.advanceDeductions ?? []) {
+      const desc = ad.source === "auto" ? "Desconto de adiantamento" : "Desconto de adiantamento (manual)";
+      html += `<tr><td>${esc(desc)}${ad.note ? ` - ${esc(ad.note)}` : ""}</td><td class="num">—</td><td class="num r-num t-neg">${eur(ad.amount)}</td></tr>`;
+    }
+    html += `<tr class="tfoot"><td colspan="2">Total de adiantamento descontado</td><td class="num r-num t-neg">${eur(advCut)}</td></tr></tbody></table>`;
+    const pending = p.advancePending ?? 0;
+    html += `<div class="note">Saldo de adiantamento ainda por descontar depois deste mês: <strong>${eur(pending)}</strong>.</div></section>`;
   }
 
   html += `<div class="footer"><span>RZENERGY · Colaborador Oficial Iberdrola · Auto Iberdrola</span><span>Gerado em ${new Date().toLocaleDateString("pt-PT")}</span></div></body></html>`;

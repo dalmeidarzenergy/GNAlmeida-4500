@@ -26,6 +26,7 @@ export const MODULES = [
   { key: "chefes-equipa", label: "Escalões de Chefe de Equipa", group: "Recursos Humanos" },
   { key: "pagamentos", label: "Pagamentos", group: "Recursos Humanos" },
   { key: "auto-iberdrola", label: "Auto Iberdrola", group: "Pagamentos" },
+  { key: "adiantamentos", label: "Adiantamentos", group: "Pagamentos" },
   { key: "regras", label: "Regras", group: "Pagamentos" },
   { key: "incentivos", label: "Incentivos", group: "Pagamentos" },
   { key: "clientes", label: "Clientes", group: "Vendas" },
@@ -44,6 +45,7 @@ export const MODULES = [
   { key: "evolucao", label: "Evolução", group: "Análise" },
   { key: "comparativo", label: "Comparativo", group: "Análise" },
   { key: "medem", label: "Análise MEDEM", group: "Análise" },
+  { key: "filtragem", label: "Filtragem", group: "Análise" },
   { key: "utilizadores", label: "Utilizadores", group: "Análise" },
 ] as const;
 
@@ -67,6 +69,7 @@ const ACCESS: Record<ModuleKey, ModuleAccess> = {
   "chefes-equipa": { view: ["admin", "diretor", "rh"], edit: ["admin", "diretor", "rh"] },
   "pagamentos": { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor", "rh"] },
   "auto-iberdrola": { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor", "rh"] },
+  adiantamentos: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor", "rh"] },
   regras: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor", "rh"] },
   incentivos: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor", "rh"] },
   clientes: { view: ["admin", "diretor", "rh", "chefe", "vendedor"], edit: ["admin", "diretor", "rh"] },
@@ -85,6 +88,7 @@ const ACCESS: Record<ModuleKey, ModuleAccess> = {
   evolucao: { view: ["admin", "diretor", "rh", "chefe", "vendedor"], edit: ["admin", "diretor"] },
   comparativo: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor"] },
   medem: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor"] },
+  filtragem: { view: ["admin", "diretor", "rh", "chefe"], edit: ["admin", "diretor"] },
   utilizadores: { view: ["admin", "diretor", "backoffice"], edit: ["admin", "diretor"] },
 };
 
