@@ -674,11 +674,19 @@ function trackQLoad(){try{return JSON.parse(localStorage.getItem(TRACK_QK)||"[]"
 function trackQSave(q){try{localStorage.setItem(TRACK_QK,JSON.stringify(q.slice(-2000)))}catch(e){}}
 function trackActive(){return !!(S.shift&&!S.shift.end&&CFG.endpoint)}
 
-function trackPoint(p,forcar){if(!trackActive())return
+function trackPoint(p,forcar,ts){if(!trackActive())return
  if(!p||typeof p.lat!=="number"||typeof p.lng!=="number")return
- if(!forcar){var dt=Date.now()-TRACK_LAST_PUSH;if(dt<TRACK_MS-5000&&distM(TRACK_LAST,p)<TRACK_MIN_MOVE)return}
- TRACK_LAST={lat:p.lat,lng:p.lng};TRACK_LAST_PUSH=Date.now()
- var q=trackQLoad();q.push({t:TRACK_LAST_PUSH,lat:p.lat,lng:p.lng,acc:p.acc==null?null:Math.round(p.acc)});trackQSave(q);trackSync();updateTrackUI()}
+ var agora=Date.now()
+ // O timestamp tem de ser o da LEITURA, nao o do momento em que decidimos guardar:
+ // com maximumAge alto o browser devolve posicoes antigas e isso falseava as paragens.
+ var t=(typeof ts==="number"&&ts>0&&ts<=agora+5000)?ts:agora
+ var dt=agora-TRACK_LAST_PUSH
+ var andou=TRACK_LAST?distM(TRACK_LAST,p):Infinity
+ // Grava se ja passou o intervalo, se andou o suficiente, ou se nos pediram para forcar.
+ // Sem o "andou" nunca registariamos mudancas pequenas de posicao.
+ if(!forcar&&dt<TRACK_MS-5000&&andou<TRACK_MIN_MOVE)return
+ TRACK_LAST={lat:p.lat,lng:p.lng};TRACK_LAST_PUSH=agora
+ var q=trackQLoad();q.push({t:t,lat:p.lat,lng:p.lng,acc:p.acc==null?null:Math.round(p.acc)});trackQSave(q);trackSync();updateTrackUI()}
 
 async function trackSync(){if(!CFG.endpoint||TRACK_SENDING)return
  var q=trackQLoad();if(!q.length){updateTrackUI();return}
@@ -694,9 +702,9 @@ async function trackSync(){if(!CFG.endpoint||TRACK_SENDING)return
 function trackStart(){if(!CFG.endpoint||TRACK_WATCH||!navigator.geolocation)return
  TRACK_LAST=null;TRACK_LAST_PUSH=0
  try{TRACK_WATCH=navigator.geolocation.watchPosition(
-   function(pos){trackPoint({lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6),acc:pos.coords.accuracy})},
+   function(pos){trackPoint({lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6),acc:pos.coords.accuracy},false,pos.timestamp)},
    function(){updateTrackUI()},
-   {enableHighAccuracy:true,timeout:30000,maximumAge:60000})}catch(e){}
+   {enableHighAccuracy:true,timeout:30000,maximumAge:0})}catch(e){}
  trackSync();updateTrackUI()}
 
 function trackStop(){if(TRACK_WATCH!=null){try{navigator.geolocation.clearWatch(TRACK_WATCH)}catch(e){}TRACK_WATCH=null}
@@ -705,7 +713,7 @@ function trackStop(){if(TRACK_WATCH!=null){try{navigator.geolocation.clearWatch(
 setInterval(function(){if(!trackActive())return
  if(Date.now()-TRACK_LAST_PUSH<TRACK_MS-5000)return
  if(!navigator.geolocation)return
- try{navigator.geolocation.getCurrentPosition(function(pos){trackPoint({lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6),acc:pos.coords.accuracy},true)},function(){},{enableHighAccuracy:true,timeout:20000,maximumAge:30000})}catch(e){}
+ try{navigator.geolocation.getCurrentPosition(function(pos){trackPoint({lat:+pos.coords.latitude.toFixed(6),lng:+pos.coords.longitude.toFixed(6),acc:pos.coords.accuracy},false,pos.timestamp)},function(){},{enableHighAccuracy:true,timeout:20000,maximumAge:0})}catch(e){}
 },15000);
 
 setInterval(function(){if(trackActive())trackSync()},120000);
@@ -1005,13 +1013,86 @@ function htDist(g){
  return d;
 }
 
+/* Paragens: pontos consecutivos a menos de PARADO_RAIO metros entre si.
+ * Se o conjunto durar >= PARADO_MIN, conta como uma paragem no mesmo local.
+ * O centro e a media dos pontos (o GPS oscila, a media estabiliza o pin). */
+var PARADO_RAIO = 30;
+var PARADO_MIN = 180000;
+var PARADO_GAP = 600000;
+function htParadas(g){
+ var pts = (g.points || []).slice().sort(function(a, b){ return a.t - b.t });
+ var out = [], grupo = [];
+ function fechar(){
+  if (grupo.length < 2){ grupo = []; return }
+  var ini = grupo[0].t, fim = grupo[grupo.length - 1].t;
+  var dur = fim - ini;
+  if (dur >= PARADO_MIN){
+   var la = 0, ln = 0;
+   grupo.forEach(function(p){ la += p.lat; ln += p.lng });
+   out.push({ t: ini, fim: fim, dur: dur, lat: la / grupo.length, lng: ln / grupo.length, n: grupo.length });
+  }
+  grupo = [];
+ }
+ for (var i = 0; i < pts.length; i++){
+  var p = pts[i];
+  if (!grupo.length){ grupo = [p]; continue }
+  var ref = grupo[grupo.length - 1];
+  var longe = distM(ref, p) > PARADO_RAIO;
+  var salto = (p.t - ref.t) > PARADO_GAP;
+  if (longe || salto){ fechar(); grupo = [p] } else { grupo.push(p) }
+ }
+ fechar();
+ return out;
+}
+function htTagParadas(g){
+ var pd = htParadas(g);
+ if (!pd.length) return "";
+ var tp = 0; pd.forEach(function(x){ tp += x.dur });
+ return " - " + pd.length + " paragem" + (pd.length === 1 ? "" : "s") + " (" + htDur(tp) + ")";
+}
+function htDur(ms){
+ var m = Math.round(ms / 60000);
+ if (m < 60) return m + " min";
+ var hh = Math.floor(m / 60), mm = m % 60;
+ return hh + "h" + (mm ? htpad(mm) : "");
+}
+
+
+var HT_EQUIPA = null;
+async function htCarregaEquipa(){
+ if (HT_EQUIPA) return HT_EQUIPA;
+ var list = null;
+ try {
+  if (CFG.endpoint) { var r = await fetch(CFG.endpoint + "/equipa"); list = await r.json() }
+ } catch (e) {}
+ if (!Array.isArray(list)) {
+  list = (typeof TEAM !== "undefined" && Array.isArray(TEAM)) ? TEAM : [];
+ }
+ HT_EQUIPA = list;
+ return list;
+}
+async function htSemTurno(){
+ var L = await htCarregaEquipa();
+ if (!Array.isArray(L) || !L.length) return "";
+ var com = L.filter(function(c){ return c.role !== "chefe" });
+ if (!com.length) com = L;
+ var h = "<div class=\"card\" style=\"margin-top:10px\"><b>Comerciais sem rasto neste periodo</b><div class=\"tag\" style=\"margin-top:6px\">";
+ com.forEach(function(c){
+  var temRasto = (HT || []).some(function(g){ return g.userId === c.id || g.name === c.name });
+  var treino = c.shift && c.shift.start ? ("<span style=\"color:var(--mu)\"> - ultimo turno " + dstr(c.shift.start) + "</span>") : " <span style=\"color:var(--mu)\">- sem turno iniciado</span>";
+  h += "<div style=\"padding:4px 0\">" + esc(c.name) + (temRasto ? " <span style=\"color:var(--ac)\">- tem rasto no mes</span>" : treino) + "</div>";
+ });
+ h += "</div></div>";
+ return h;
+}
 function htRender(){
  var box = htid("hGps");
  if (!box) return;
  var nt = htid("hNote");
- if (nt) nt.textContent = "Um ponto por minuto enquanto a app esteve aberta. Se o ecra bloqueou, o percurso tem buracos - nao serve como prova de presenca.";
+ if (nt) nt.textContent = "Um ponto por minuto enquanto a app esteve aberta. As bolas tracejadas sao paragens (mais de 3 min no mesmo local), com o tempo ao lado. Se o ecra bloqueou, o percurso tem buracos.";
  if (!HT || !HT.length){
-  box.innerHTML = "<p class=\"tag\">Sem rasto GPS neste periodo.</p>";
+  box.innerHTML = "<p class=\"tag\">Ainda sem rasto GPS neste periodo. Os percursos comecam a aparecer quando o comercial abre o turno na app (Iniciar trabalho) e a deixa aberta com o ecra ligado.</p>";
+  htSemTurno().then(function(extra){ box.innerHTML += extra });
   if (htid("hRes")) htid("hRes").innerHTML = "<p class=\"tag\">Sem dados.</p>";
   return;
  }
@@ -1027,7 +1108,7 @@ function htRender(){
   var dd = new Date(g.start); dd.setHours(0, 0, 0, 0);
   dias[dd.getTime()] = 1;
   var on = HT_VIS[g.userId] !== false;
-  h += "<div class=\"door\" data-h=\"" + i + "\" style=\"cursor:pointer\"><div><b style=\"color:" + htCor(i) + "\">" + esc(g.name) + "</b><div class=\"tag\">" + dstr(g.start) + " " + hm(g.start) + "-" + hm(g.end) + " - " + g.points.length + " pontos - " + (dist / 1000).toFixed(1) + " km</div></div><span>" + (on ? "&#9679;" : "&#9675;") + "</span></div>";
+  h += "<div class=\"door\" data-h=\"" + i + "\" style=\"cursor:pointer\"><div><b style=\"color:" + htCor(i) + "\">" + esc(g.name) + "</b><div class=\"tag\">" + dstr(g.start) + " " + hm(g.start) + "-" + hm(g.end) + " - " + g.points.length + " pontos - " + (dist / 1000).toFixed(1) + " km" + htTagParadas(g) + "</div></div><span>" + (on ? "&#9679;" : "&#9675;") + "</span></div>";
  });
  if (!h) h = "<p class=\"tag\">Este comercial nao tem rasto neste periodo.</p>";
  box.innerHTML = h;
@@ -1039,7 +1120,9 @@ function htRender(){
   };
  });
  if (htid("hRes")){
-  htid("hRes").innerHTML = "<div class=\"stats\"><div><b>" + nv + "</b><span>Percursos</span></div><div><b>" + Object.keys(quem).length + "</b><span>Comerciais</span></div><div><b>" + Object.keys(dias).length + "</b><span>Dias</span></div><div><b>" + (tot / 1000).toFixed(1) + "</b><span>KM</span></div><div><b>" + tp + "</b><span>Pontos</span></div></div>";
+  var nPar = 0, totPar = 0;
+  HT.forEach(function(g){ if (q && g.userId !== q) return; htParadas(g).forEach(function(x){ nPar++; totPar += x.dur }) });
+  htid("hRes").innerHTML = "<div class=\"stats\"><div><b>" + nv + "</b><span>Percursos</span></div><div><b>" + Object.keys(quem).length + "</b><span>Comerciais</span></div><div><b>" + Object.keys(dias).length + "</b><span>Dias</span></div><div><b>" + (tot / 1000).toFixed(1) + "</b><span>KM</span></div><div><b>" + tp + "</b><span>Pontos</span></div><div><b>" + nPar + "</b><span>Paragens</span></div><div><b>" + htDur(totPar) + "</b><span>Tempo parado</span></div></div>";
  }
 }
 
@@ -1083,6 +1166,14 @@ function htDraw(){
    var f = proj(g.points[g.points.length - 1].lat, g.points[g.points.length - 1].lng, HT_M.z);
    out += "<circle cx='" + (f.x - tx0) + "' cy='" + (f.y - ty0) + "' r='5' fill='#fff' stroke='" + cor + "' stroke-width='3'/>";
   }
+  // Paragens: circulo tracejado no local, com o tempo ao lado.
+  htParadas(g).forEach(function(x){
+   var c = proj(x.lat, x.lng, HT_M.z);
+   var cx = c.x - tx0, cy2 = c.y - ty0;
+   var r = Math.min(26, 10 + Math.log(x.dur / 60000 + 1) * 5);
+   out += "<circle cx='" + cx.toFixed(1) + "' cy='" + cy2.toFixed(1) + "' r='" + r.toFixed(1) + "' fill='" + cor + "' fill-opacity='0.16' stroke='" + cor + "' stroke-width='2' stroke-dasharray='4 3'/>";
+   out += "<text x='" + cx.toFixed(1) + "' y='" + cy2.toFixed(1) + "' text-anchor='middle' dominant-baseline='central' style='fill:#fff;font:600 10px system-ui;paint-order:stroke;stroke:#000;stroke-width:3px;stroke-linejoin:round'>" + htDur(x.dur) + "</text>";
+  });
  }
  svg.innerHTML = out;
 }
