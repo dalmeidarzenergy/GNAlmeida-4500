@@ -190,10 +190,18 @@ export function useFiltragemRun(input: {
   month?: string;
   from?: string;
   to?: string;
+  dateMode?: "venda" | "estado";
   employeeIds: number[];
   statuses: string[];
   services: string[];
   teamIds: number[];
+  passedStatuses?: string[];
+  enteredStatuses?: string[];
+  leftStatuses?: string[];
+  statusOnDate?: string[];
+  swapped?: "todos" | "com" | "sem";
+  fromEmployeeIds?: number[];
+  minDaysInStatus?: number | null;
   q?: string;
 }) {
   return useQuery({ ...orpc.filtragem.run.queryOptions({ input }), refetchOnMount: "always" });

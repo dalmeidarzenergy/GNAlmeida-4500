@@ -1,3 +1,4 @@
+// BUILD:1
 import { useMemo, useState } from "react";
 import { Filter, Download, Users, Loader2 } from "lucide-react";
 import { PageHeader, Empty, Field, Stat, TableSkeleton } from "../components/ui/kit";
@@ -49,7 +50,7 @@ function MultiSelect({ label, options, value, onChange, width = "w-64" }: { labe
 export default function FiltragemPage() {
   const options = useFiltragemOptions();
 
-  const [source, setSource] = useState<"autos" | "crm">("autos");
+  const [source, setSource] = useState<"autos" | "crm">("crm");
   const [month, setMonth] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -59,19 +60,40 @@ export default function FiltragemPage() {
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [q, setQ] = useState("");
 
+  // Historico da venda (so a base do CRM tem historico de estados).
+  const [dateMode, setDateMode] = useState<"venda" | "estado">("venda");
+  const [passedStatuses, setPassedStatuses] = useState<string[]>([]);
+  const [enteredStatuses, setEnteredStatuses] = useState<string[]>([]);
+  const [leftStatuses, setLeftStatuses] = useState<string[]>([]);
+  const [statusOnDate, setStatusOnDate] = useState<string[]>([]);
+  const [swapped, setSwapped] = useState<"todos" | "com" | "sem">("todos");
+  const [fromEmployeeIds, setFromEmployeeIds] = useState<string[]>([]);
+  const [minDays, setMinDays] = useState("");
+
   const statusOptions = source === "autos" ? (options.data?.autoStatuses ?? []) : (options.data?.salesStatuses ?? []);
+  // Estados que ja nao estao em uso continuam a existir no historico.
+  const historyStatusOptions = options.data?.historyStatuses ?? statusOptions;
 
   const input = useMemo(() => ({
     source,
     month: source === "autos" && month ? month : undefined,
     from: from || undefined,
     to: to || undefined,
+    dateMode,
     employeeIds: employeeIds.map(Number),
     statuses,
     services,
     teamIds: teamIds.map(Number),
+    passedStatuses: source === "crm" ? passedStatuses : [],
+    enteredStatuses: source === "crm" ? enteredStatuses : [],
+    leftStatuses: source === "crm" ? leftStatuses : [],
+    statusOnDate: source === "crm" ? statusOnDate : [],
+    swapped: source === "crm" && swapped !== "todos" ? swapped : undefined,
+    fromEmployeeIds: source === "crm" ? fromEmployeeIds.map(Number) : [],
+    minDaysInStatus: minDays === "" ? undefined : Number(minDays),
     q: q.trim() || undefined,
-  }), [source, month, from, to, employeeIds, statuses, services, teamIds, q]);
+  }), [source, month, from, to, dateMode, employeeIds, statuses, services, teamIds,
+       passedStatuses, enteredStatuses, leftStatuses, statusOnDate, swapped, fromEmployeeIds, minDays, q]);
 
   const run = useFiltragemRun(input);
   const d = run.data;
@@ -85,13 +107,34 @@ export default function FiltragemPage() {
     setServices([]);
     setTeamIds([]);
     setQ("");
+    setDateMode("venda");
+    setPassedStatuses([]);
+    setEnteredStatuses([]);
+    setLeftStatuses([]);
+    setStatusOnDate([]);
+    setSwapped("todos");
+    setFromEmployeeIds([]);
+    setMinDays("");
   }
 
   /** Exporta o resultado filtrado para CSV. */
   function exportCsv() {
     if (!d) return;
-    const head = ["ID venda", "Colaborador", "Cliente", "Data", "Mês", "Estado", "Serviço"];
-    const lines = d.rows.map((r) => [r.idVenda, r.employeeName, r.clientName ?? "", r.date, r.month ?? "", r.status, r.service]);
+    const head = [
+      "ID venda", "Colaborador", "Cliente", "Data", "Mês", "Estado", "Serviço", "Percurso", "Dias no estado atual", "Comercial anterior",
+    ];
+    const lines = d.rows.map((r) => [
+      r.idVenda,
+      r.employeeName,
+      r.clientName ?? "",
+      r.date,
+      r.month ?? "",
+      r.status,
+      r.service,
+      (r.timeline ?? []).map((s) => `${s.status} (${s.on})`).join(" > "),
+      r.daysInCurrent ?? "",
+      (r.fromEmployees ?? []).join(", "),
+    ]);
     const csv = [head, ...lines].map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
@@ -108,6 +151,15 @@ export default function FiltragemPage() {
     statuses.length && `Estado: ${statuses.join(", ")}`,
     services.length && `Serviço: ${services.join(", ")}`,
     teamIds.length && `${teamIds.length} equipa${teamIds.length === 1 ? "" : "s"}`,
+    source === "crm" && dateMode === "estado" && "Datas: mudança de estado",
+    source === "crm" && passedStatuses.length && `Passou por: ${passedStatuses.join(", ")}`,
+    source === "crm" && enteredStatuses.length && `Entrou em: ${enteredStatuses.join(", ")}`,
+    source === "crm" && leftStatuses.length && `Saiu de: ${leftStatuses.join(", ")}`,
+    source === "crm" && statusOnDate.length && `Estado à data: ${statusOnDate.join(", ")}`,
+    source === "crm" && swapped === "com" && "Trocou de comercial",
+    source === "crm" && swapped === "sem" && "Nunca trocou de comercial",
+    source === "crm" && fromEmployeeIds.length && `Veio de: ${fromEmployeeIds.length} colaborador${fromEmployeeIds.length === 1 ? "" : "es"}`,
+    source === "crm" && minDays && `Mín. ${minDays} dias num estado`,
     q.trim() && `Pesquisa: ${q.trim()}`,
   ].filter(Boolean) as string[];
 
@@ -183,6 +235,56 @@ export default function FiltragemPage() {
           </Field>
         </div>
 
+        {source === "crm" && (
+          <div className="mt-4 border-t border-line pt-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="font-display text-[12.5px] font-semibold">Histórico da venda</div>
+                <div className="text-[11px] text-ink-3">Filtra pelo percurso da venda ao longo do tempo, não só pelo estado em que está hoje.</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11.5px] text-ink-3">Datas referem-se a</span>
+                <div className="flex gap-1.5">
+                  <button type="button" className={`btn ${dateMode === "venda" ? "btn-volt" : "btn-ghost"} px-3 py-1.5 text-[12px]`} onClick={() => setDateMode("venda")}>Data da venda</button>
+                  <button type="button" className={`btn ${dateMode === "estado" ? "btn-volt" : "btn-ghost"} px-3 py-1.5 text-[12px]`} onClick={() => setDateMode("estado")}>Data da mudança de estado</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label="Passou por um destes estados">
+                <MultiSelect label="Qualquer estado" width="w-60" value={passedStatuses} onChange={setPassedStatuses} options={historyStatusOptions.map((s) => ({ value: s, label: s }))} />
+              </Field>
+              <Field label="Entrou num destes estados no intervalo">
+                <MultiSelect label="Nenhum" width="w-60" value={enteredStatuses} onChange={setEnteredStatuses} options={historyStatusOptions.map((s) => ({ value: s, label: s }))} />
+              </Field>
+              <Field label="Saiu de um destes estados no intervalo">
+                <MultiSelect label="Nenhum" width="w-60" value={leftStatuses} onChange={setLeftStatuses} options={historyStatusOptions.map((s) => ({ value: s, label: s }))} />
+              </Field>
+              {dateMode === "estado" && (
+                <Field label={to ? `Estado em que estava a ${to.split("-").reverse().join("/")}` : "Estado à data (preenche o Até)"}>
+                  <MultiSelect label="Qualquer estado" width="w-60" value={statusOnDate} onChange={setStatusOnDate} options={historyStatusOptions.map((s) => ({ value: s, label: s }))} />
+                </Field>
+              )}
+              <Field label="Trocas de comercial">
+                <select className="input h-10 w-52" value={swapped} onChange={(e) => setSwapped(e.target.value as "todos" | "com" | "sem")}>
+                  <option value="todos">Indiferente</option>
+                  <option value="com">Trocou de comercial</option>
+                  <option value="sem">Nunca trocou de comercial</option>
+                </select>
+              </Field>
+              {swapped === "com" && (
+                <Field label="Veio de (comercial anterior)">
+                  <MultiSelect label="Qualquer comercial" width="w-64" value={fromEmployeeIds} onChange={setFromEmployeeIds} options={(options.data?.employees ?? []).map((e) => ({ value: String(e.id), label: e.name }))} />
+                </Field>
+              )}
+              <Field label="Mínimo de dias num estado">
+                <input type="number" min={0} placeholder="ex.: 30" className="input num h-10 w-32" value={minDays} onChange={(e) => setMinDays(e.target.value)} />
+              </Field>
+            </div>
+          </div>
+        )}
+
         {activeFilters.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line pt-3">
             <span className="text-[11.5px] text-ink-3">Filtros ativos:</span>
@@ -219,6 +321,14 @@ export default function FiltragemPage() {
             </div>
           </div>
 
+          {source === "crm" && !!d?.byDays.length && (
+            <div className="card mt-5 p-5">
+              <div className="mb-1 font-display text-[13px] font-semibold">Tempo médio em cada estado (dias)</div>
+              <div className="mb-3 text-[11px] text-ink-3">Média sobre {d.byDays.reduce((m, x) => Math.max(m, x.samples), 0)} amostras de permanência fechada. Não inclui o estado atual, que ainda não terminou.</div>
+              <BarsChart data={[...d.byDays].sort((a, b) => b.days - a.days).map((x) => ({ nome: x.name, valor: x.days }))} dataKey="valor" xKey="nome" money={false} color="#f59e0b" />
+            </div>
+          )}
+
           <div className="card mt-5 overflow-hidden">
             <div className="flex items-center justify-between border-b border-line px-5 py-3">
               <div>
@@ -240,6 +350,7 @@ export default function FiltragemPage() {
                       <th className="px-4 py-2.5 font-medium">Mês</th>
                       <th className="px-4 py-2.5 font-medium">Estado</th>
                       <th className="px-4 py-2.5 font-medium">Serviço</th>
+                      {source === "crm" && <th className="px-4 py-2.5 font-medium">Percurso da venda</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
@@ -252,6 +363,28 @@ export default function FiltragemPage() {
                         <td className="px-4 py-2 text-ink-2">{r.month ? monthLabel(r.month) : "—"}</td>
                         <td className="px-4 py-2">{r.status}</td>
                         <td className="px-4 py-2 text-ink-2">{r.service || "—"}</td>
+                        {source === "crm" && (
+                          <td className="px-4 py-2">
+                            {r.timeline?.length ? (
+                              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11.5px] text-ink-2">
+                                {r.timeline.map((s, i) => (
+                                  <span key={`${s.status}-${s.on}-${i}`} className="flex items-center gap-1.5">
+                                    {i > 0 && <span className="text-ink-3">→</span>}
+                                    <span className="rounded-full bg-ink/5 px-2 py-[2px]" title={s.on.split("-").reverse().join("/") + (s.days != null ? ` · ${s.days} dias` : " · em curso")}>
+                                      {s.status}
+                                    </span>
+                                  </span>
+                                ))}
+                                {r.daysInCurrent != null && <span className="text-ink-3">· há {r.daysInCurrent} dias em {r.status}</span>}
+                              </div>
+                            ) : (
+                              <span className="text-ink-3">Sem histórico</span>
+                            )}
+                            {r.swapped && !!r.fromEmployees.length && (
+                              <div className="mt-1 text-[11px] text-amber-600">Veio de {r.fromEmployees.join(", ")}</div>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
