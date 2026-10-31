@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal,
+  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -40,7 +40,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: "Gestão Territorial",
-    items: [{ to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin }],
+    items: [
+      { to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin },
+      { to: "/historico-gps", key: "terreno-d2d", label: "Histórico GPS", icon: Route },
+    ],
   },
   {
     group: "Apoio Comercial",
