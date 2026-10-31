@@ -129,16 +129,30 @@ function useSidebar() {
   return { collapsed, pinned, expanded, hovering, setHovering, togglePin } as const;
 }
 
-
 export function AppShell({ children }: { children: ReactNode }) {
   const me = useMe();
   const [loc, navigate] = useLocation();
   const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(true);
+  const [hovering, setHovering] = useState(false);
   const qc = useQueryClient();
   const role = (me.data?.role ?? "vendedor") as Role;
   const permissions = me.data?.permissions;
   const [theme, toggleTheme] = useTheme();
-  const { pinned, expanded, setHovering, togglePin } = useSidebar();
+
+  const expanded = pinned || hovering;
+  const togglePin = () => setPinned(!pinned);
+
+  /** No telemovel o menu e uma gaveta: abre no botao do cabecalho. Em ecra
+   * estreito o rail lateral colapsa sozinho (ver `data-shell` no styles.css) e
+   * os nomes das abas aparecem na gaveta; em ecra grande fica aberto. */
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const sync = () => document.documentElement.setAttribute("data-shell", mq.matches ? "mobile" : "desktop");
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   const signOut = async () => {
     await authClient.signOut();
@@ -151,6 +165,10 @@ export function AppShell({ children }: { children: ReactNode }) {
    * `hover` nunca acontece (o toque nao dispara mouseenter) e o botao de fixar
    * esta escondido — por isso a gaveta ficaria sempre so com icones. Na gaveta
    * (`drawer`) o menu aparece sempre aberto, com o nome das abas.
+   *
+   * Em ecra grande o menu fica sempre aberto por omissao (chega para veres os
+   * nomes das abas, incluindo as de baixo); o botao de fixar permite voltar a
+   * fecha-lo se quiseres mais espaco.
    */
 
   const renderSidebar = (drawer = false) => {
@@ -234,7 +252,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">{renderSidebar()}</div>
+      <div className="fixed inset-y-0 left-0 z-30 hidden w-[var(--sidebar-w,248px)] transition-[width] duration-200 lg:block">{renderSidebar()}</div>
       {open && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div className="animate-in slide-in-from-left duration-200">{renderSidebar(true)}</div>
