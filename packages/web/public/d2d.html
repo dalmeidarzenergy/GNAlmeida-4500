@@ -72,6 +72,10 @@ pre{white-space:pre-wrap;font:13px/1.45 ui-monospace,Menlo,monospace;background:
 .pin{position:absolute;width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);transform:translate(-50%,-50%);padding:0;cursor:pointer}
 .pin.sel{width:32px;height:32px}
 .mb{width:40px;height:40px;padding:0;font-size:20px}
+#hmap{height:62vh;min-height:320px;position:relative;overflow:hidden;touch-action:none;cursor:grab;background-image:linear-gradient(var(--bd) 1px,transparent 1px),linear-gradient(90deg,var(--bd) 1px,transparent 1px);background-size:40px 40px}
+#htiles{position:absolute;inset:0}
+#htiles img{position:absolute;width:256px;height:256px;max-width:none;user-select:none;-webkit-user-drag:none}
+.hctrl{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px;z-index:5}
 .bar2{display:flex;align-items:center;gap:8px;font-size:14px;margin:8px 0}.bar2>span{width:104px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar2>b{min-width:62px;text-align:right;font-weight:600;white-space:nowrap}
 .tr{flex:1;background:var(--bg);border-radius:6px;height:14px;overflow:hidden}.tr>i{display:block;height:100%;border-radius:6px}
 .stk{display:flex;height:100%;border-radius:6px;overflow:hidden}.stk i{display:block;height:100%}
@@ -238,9 +242,27 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
     </div>
   </section>
   <section id="v-ter" class="hide">
+    <div class="row" style="margin-bottom:10px"><button class="sb on" id="tTab1">Territ&#243;rios</button><button class="sb" id="tTab2">Hist&#243;rico GPS</button></div>
+    <div id="t-ter">
     <button class="pri" id="btnTerXls" style="margin:0 0 12px">📥 Exportar territórios (Excel)</button>
     <div class="tag" style="margin-bottom:10px">Zonas, ruas e portas trabalhadas nos turnos — tu e a tua equipa.</div>
     <div id="terList"></div>
+    </div>
+    <div id="t-hist" class="hide">
+      <div id="thFilt" style="margin-top:12px"></div>
+      <div class="card" style="padding:0;overflow:hidden;position:relative;margin-top:12px">
+        <div id="hmap">
+          <div id="htiles"></div>
+          <svg id="htrk" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3"></svg>
+          <div id="hpins"></div>
+          <div class="hctrl"><button class="mb" id="hzIn" aria-label="Aproximar">+</button><button class="mb" id="hzOut" aria-label="Afastar">&#8722;</button><button class="mb" id="hzFit" aria-label="Ver todas">&#9678;</button></div>
+        </div>
+
+        <div style="position:absolute;left:6px;bottom:4px;font-size:11px;color:var(--mu)">&#169; OpenStreetMap</div>
+      </div>
+      <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b>Percursos</b><button id="hBtnAll" class="x" style="color:var(--ac)">Todos</button></div><div class="tag" style="margin-top:4px" id="hNote"></div><div id="hGps" style="margin-top:8px"></div></div>
+      <div class="card"><b>Resumo do per&#237;odo</b><div id="hRes" style="margin-top:6px"></div></div>
+    </div>
   </section>
 </main>
 <nav><button data-v="equipa" class="hide">Equipa</button><button data-v="turno" class="on">Turno</button><button data-v="portas">Portas</button><button data-v="mapa">Mapa</button><button data-v="rel">Relat.</button><button data-v="ter">Territ.</button><button data-v="hist">Histór.</button><button data-v="caixa">Caixa<b id="cxBadge" class="badge hide"></b></button></nav>
@@ -592,7 +614,7 @@ $("btnXlsAll").onclick=function(){exportXls(allSessions(),"D2D-historico")};
 var H_T=["Zona","Rua","Nº porta","Resultado","Cliente","Contacto","Notas","Comercial","Data"];
 function terRecords(){var o=[];allSessions().forEach(function(s){(s.doors||[]).forEach(function(d){o.push({zona:d.zona||(s.sh&&s.sh.zone)||"Sem zona",rua:d.rua||"",d:d,who:s.who})})});return o}
 function terPortaText(r){var d=r.d,line=["<b>"+esc(d.num)+"</b> · "+esc(nm(d.res))];if(d.cli)line.push("👤 "+esc(d.cli));if(d.tel)line.push("📞 "+esc(d.tel));if(d.nota)line.push(esc(d.nota));if(d.docs&&d.docs.length)line.push("📎"+d.docs.length);line.push(dLabel(d.t)+" "+hm(d.t));if(READONLY)line.push(esc(r.who));return line.join(" · ")}
-function renderTer(){var box=$("terList"),recs=terRecords();box.innerHTML="";
+function renderTer(){terSubTab();var box=$("terList"),recs=terRecords();box.innerHTML="";
  if(!recs.length){box.innerHTML="<div class='card'><p class='tag' style='margin:0'>Ainda sem territórios trabalhados. Ficam aqui as zonas, ruas e portas de todos os turnos.</p></div>";return}
  var byZ={};recs.forEach(function(r){(byZ[r.zona]=byZ[r.zona]||[]).push(r)});
  Object.keys(byZ).sort(function(a,b){return a<b?-1:a>b?1:0}).forEach(function(z){var rs=byZ[z],byR={};rs.forEach(function(r){(byR[r.rua||"Sem rua"]=byR[r.rua||"Sem rua"]||[]).push(r)});
@@ -849,6 +871,325 @@ $("btnClear").onclick=function(){var b=$("btnClear");if(!b.dataset.c){b.dataset.
  delete b.dataset.c;b.textContent="Limpar turno atual";S={shift:null,doors:[],streets:[],history:S.history};curRua=null;save();render();toast("Turno atual apagado (o histórico mantém-se)")};
 setInterval(function(){var s=S.shift;if(s&&!s.end){var m=Math.floor((Date.now()-s.start)/60000);$("clock").textContent=String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0")}},1000);
 load();$("nome").textContent=USER.name||"Comercial (teste)";render();applyRole();setSync();flush();hydrate();countDocs();loadMeta();pollCaixa();setInterval(pollCaixa,(CFG.endpoint?(CFG.syncSeconds||30):5)*1000);setInterval(flush,(CFG.syncSeconds||30)*1000);window.addEventListener("online",flush);document.addEventListener("visibilitychange",function(){if(!document.hidden)flush()});$("sync").onclick=function(){flush();hydrate()};window.addEventListener("beforeunload",function(e){if(CFG.endpoint&&(PDn||OB.length)){e.preventDefault();e.returnValue=""}});
+/* ------------------------------------------------------------
+ * HISTORICO GPS (sub-aba de Territorio)
+ * ------------------------------------------------------------
+ * O mapa do dia so mostra o turno de hoje. Aqui o mesmo rasto
+ * e pedido para qualquer dia ou mes, para se poder ver o
+ * percurso de um comercial ou da equipa toda em periodos
+ * passados.
+ *
+ * Um comercial ve apenas o proprio percurso; um chefe ve a sua
+ * equipa (o servidor em /rasto decide o que cada um pode ver).
+ * O aviso sobre buracos no rasto e o mesmo do mapa do dia:
+ * o GPS so grava enquanto a app esteve aberta.
+ */
+var HT = null;
+var HT_VIS = {};
+var HT_M = { z: 16, cx: 0, cy: 0, moved: false };
+var HT_T = {};
+var HT_MES = "";
+var HT_DIA = "";
+function htid(i){ return document.getElementById(i) }
+function htpad(n){ return n < 10 ? "0" + n : "" + n }
+function htIso(d){ return d.getFullYear() + "-" + htpad(d.getMonth() + 1) + "-" + htpad(d.getDate()) }
+function htMesAtual(){ var d = new Date(); return d.getFullYear() + "-" + htpad(d.getMonth() + 1) }
+
+/* Janela de tempo que os filtros representam. O mes manda; o dia,
+   quando escolhido, corta para esse unico dia dentro do mes. */
+function htJanela(){
+ var mes = HT_MES || htMesAtual();
+ if (htid("hMes") && htid("hMes").value) mes = htid("hMes").value;
+ else if (HT_DIA) HT_DIA = "";
+ var dia = HT_DIA || "";
+ if (dia){
+  var q = dia.split("-");
+  var d0 = new Date(Number(q[0]), Number(q[1]) - 1, Number(q[2]), 0, 0, 0, 0);
+  return { desde: d0.getTime(), ate: d0.getTime() + 86400000 - 1, mes: mes, dia: dia };
+ }
+ var p = mes.split("-");
+ var i0 = new Date(Number(p[0]), Number(p[1]) - 1, 1, 0, 0, 0, 0);
+ var i1 = new Date(Number(p[0]), Number(p[1]), 1, 0, 0, 0, 0);
+ return { desde: i0.getTime(), ate: i1.getTime() - 1, mes: mes, dia: "" };
+}
+
+var HT_NOMES = ["janeiro","fevereiro","marco","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+function htMesLabel(mes){
+ var p = mes.split("-");
+ return (HT_NOMES[Number(p[1]) - 1] || mes) + " de " + p[0];
+}
+
+/* Selector de filtros: mes, dia e comercial. */
+function htFiltros(){
+ var box = htid("thFilt");
+ if (!box) return;
+ var j = htJanela();
+ var meses = [];
+ var hoje = new Date();
+ for (var i = 0; i < 24; i++){
+  var d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+  meses.push(d.getFullYear() + "-" + htpad(d.getMonth() + 1));
+ }
+ if (meses.indexOf(j.mes) < 0) meses.unshift(j.mes);
+ var h = "<div class=\"card\">";
+ h += "<div style=\"display:flex;gap:8px\">";
+ h += "<div style=\"flex:1\"><label for=\"hMes\">Mes</label><select id=\"hMes\">";
+ meses.forEach(function(m){ h += "<option value=\"" + m + "\"" + (m === j.mes ? " selected" : "") + ">" + htMesLabel(m) + "</option>"; });
+ h += "</select></div>";
+ h += "<div style=\"flex:1\"><label for=\"hDia\">Dia</label><select id=\"hDia\"></select></div></div>";
+ if (READONLY || ISLEAD){
+  h += "<div style=\"margin-top:8px\"><label for=\"hQuem\">Comercial</label><select id=\"hQuem\"></select></div>";
+  h += "<p class=\"tag\" style=\"margin:6px 0 0\">Ves a equipa toda ou escolhes uma pessoa.</p>";
+ } else {
+  h += "<p class=\"tag\" style=\"margin:8px 0 0\">Estes sao os teus percursos. Para veres a equipa precisas de conta de chefe.</p>";
+ }
+ h += "</div>";
+ box.innerHTML = h;
+ var sm = htid("hMes");
+ if (sm) sm.onchange = function(){ var d = htid("hDia"); if (d) d.value = ""; htFiltros(); htLoad(); };
+ var sq = htid("hQuem");
+ if (sq) sq.onchange = function(){ htVis(); htRender(); htDraw(); htFit(); };
+ htDiaOpcoes();
+}
+
+/* O seletor de dia mostra so os dias com rasto no mes escolhido. */
+function htDiaOpcoes(){
+ var sd = htid("hDia");
+ if (!sd) return;
+ var j = htJanela();
+ var DIAS = ["dom","seg","ter","qua","qui","sex","sab"];
+ var com = {};
+ (HT || []).forEach(function(g){ com[htIso(new Date(g.start))] = 1 });
+ var p = j.mes.split("-");
+ var ultimo = new Date(Number(p[0]), Number(p[1]), 0).getDate();
+ var hojeIso = htIso(new Date());
+ var h = "<option value=\"\">Todo o mes</option>";
+ for (var dia = 1; dia <= ultimo; dia++){
+  var iso = j.mes + "-" + htpad(dia);
+  if (iso > hojeIso) continue;
+  if (!com[iso]) continue;
+  var dd = new Date(Number(p[0]), Number(p[1]) - 1, dia);
+  h += "<option value=\"" + iso + "\"" + (iso === j.dia ? " selected" : "") + ">" + htpad(dia) + "/" + htpad(dd.getMonth() + 1) + " - " + DIAS[dd.getDay()] + "</option>";
+ }
+ sd.innerHTML = h;
+ sd.onchange = function(){ HT_DIA = (HT_DIA === sd.value) ? "" : (sd.value || ""); htLoad(); };
+}
+
+/* Preenche a lista de comerciais com quem tem rasto no periodo pedido. */
+function htQuem(){
+ var sq = htid("hQuem");
+ if (!sq) return "";
+ var antes = sq.value, vistos = [], nomes = {};
+ (HT || []).forEach(function(g){
+  if (!nomes[g.userId]){ nomes[g.userId] = g.name; vistos.push(g.userId); }
+ });
+ vistos.sort(function(a, b){ return nomes[a] < nomes[b] ? -1 : nomes[a] > nomes[b] ? 1 : 0 });
+ var h = "<option value=\"\">Equipa toda (" + vistos.length + ")</option>";
+ vistos.forEach(function(u){ h += "<option value=\"" + esc(u) + "\">" + esc(nomes[u]) + "</option>"; });
+ sq.innerHTML = h;
+ if (antes && vistos.indexOf(antes) >= 0) sq.value = antes;
+ return sq.value;
+}
+
+function htVis(){
+ var q = htid("hQuem") ? htid("hQuem").value : "";
+ HT_VIS = {};
+ (HT || []).forEach(function(g){ HT_VIS[g.userId] = !q || g.userId === q });
+}
+
+function htCor(i){ return TRK_CORES[i % TRK_CORES.length] }
+
+function htDist(g){
+ var d = 0;
+ for (var i = 1; i < g.points.length; i++) d += distM(g.points[i - 1], g.points[i]);
+ return d;
+}
+
+function htRender(){
+ var box = htid("hGps");
+ if (!box) return;
+ var nt = htid("hNote");
+ if (nt) nt.textContent = "Um ponto por minuto enquanto a app esteve aberta. Se o ecra bloqueou, o percurso tem buracos - nao serve como prova de presenca.";
+ if (!HT || !HT.length){
+  box.innerHTML = "<p class=\"tag\">Sem rasto GPS neste periodo.</p>";
+  if (htid("hRes")) htid("hRes").innerHTML = "<p class=\"tag\">Sem dados.</p>";
+  return;
+ }
+ var q = htid("hQuem") ? htid("hQuem").value : "";
+ var h = "", tot = 0, tp = 0, nv = 0, quem = {}, dias = {};
+ HT.forEach(function(g, i){
+  var dist = htDist(g);
+  if (q && g.userId !== q) return;
+  tot += dist;
+  nv++;
+  tp += g.points.length;
+  quem[g.userId] = g.name;
+  var dd = new Date(g.start); dd.setHours(0, 0, 0, 0);
+  dias[dd.getTime()] = 1;
+  var on = HT_VIS[g.userId] !== false;
+  h += "<div class=\"door\" data-h=\"" + i + "\" style=\"cursor:pointer\"><div><b style=\"color:" + htCor(i) + "\">" + esc(g.name) + "</b><div class=\"tag\">" + dstr(g.start) + " " + hm(g.start) + "-" + hm(g.end) + " - " + g.points.length + " pontos - " + (dist / 1000).toFixed(1) + " km</div></div><span>" + (on ? "&#9679;" : "&#9675;") + "</span></div>";
+ });
+ if (!h) h = "<p class=\"tag\">Este comercial nao tem rasto neste periodo.</p>";
+ box.innerHTML = h;
+ box.querySelectorAll("[data-h]").forEach(function(el){
+  el.onclick = function(){
+   var g = HT[Number(el.dataset.h)];
+   HT_VIS[g.userId] = HT_VIS[g.userId] === false;
+   htRender(); htDraw();
+  };
+ });
+ if (htid("hRes")){
+  htid("hRes").innerHTML = "<div class=\"stats\"><div><b>" + nv + "</b><span>Percursos</span></div><div><b>" + Object.keys(quem).length + "</b><span>Comerciais</span></div><div><b>" + Object.keys(dias).length + "</b><span>Dias</span></div><div><b>" + (tot / 1000).toFixed(1) + "</b><span>KM</span></div><div><b>" + tp + "</b><span>Pontos</span></div></div>";
+ }
+}
+
+function htDraw(){
+ var svg = htid("htrk"), m = htid("hmap");
+ if (!svg || !m) return;
+ if (!HT || !HT.length){ svg.innerHTML = ""; return }
+ var W = m.clientWidth, H = m.clientHeight;
+ var tx0 = HT_M.cx - W / 2, ty0 = HT_M.cy - H / 2;
+ var n = Math.pow(2, HT_M.z), need = {}, tl = htid("htiles");
+ for (var x = Math.floor(tx0 / 256); x <= Math.floor((tx0 + W) / 256); x++)
+  for (var y = Math.floor(ty0 / 256); y <= Math.floor((ty0 + H) / 256); y++){
+   if (y < 0 || y >= n) continue;
+   var k = HT_M.z + "/" + x + "/" + y, im = HT_T[k];
+   if (!im){
+    im = document.createElement("img"); im.alt = ""; im.draggable = false;
+    im.src = "https://tile.openstreetmap.org/" + HT_M.z + "/" + (((x % n) + n) % n) + "/" + y + ".png";
+    tl.appendChild(im); HT_T[k] = im;
+   }
+   need[k] = 1;
+   im.style.left = (x * 256 - tx0) + "px";
+   im.style.top = (y * 256 - ty0) + "px";
+  }
+ Object.keys(HT_T).forEach(function(k){ if (!need[k]){ HT_T[k].remove(); delete HT_T[k] } });
+ var out = "";
+ for (var i = 0; i < HT.length; i++){
+  var g = HT[i];
+  if (HT_VIS[g.userId] === false) continue;
+  if (!g.points.length) continue;
+  var cor = htCor(i), pts = [];
+  for (var j = 0; j < g.points.length; j++){
+   var p = proj(g.points[j].lat, g.points[j].lng, HT_M.z);
+   pts.push((p.x - tx0).toFixed(1) + "," + (p.y - ty0).toFixed(1));
+  }
+  if (pts.length > 1) out += "<polyline points='" + pts.join(" ") + "' fill='none' stroke='" + cor + "' stroke-width='3' stroke-linejoin='round' stroke-linecap='round' opacity='0.85'/>";
+  var a = proj(g.points[0].lat, g.points[0].lng, HT_M.z);
+  out += "<circle cx='" + (a.x - tx0) + "' cy='" + (a.y - ty0) + "' r='5' fill='" + cor + "' stroke='#fff' stroke-width='2'/>";
+  if (pts.length > 1){
+   var f = proj(g.points[g.points.length - 1].lat, g.points[g.points.length - 1].lng, HT_M.z);
+   out += "<circle cx='" + (f.x - tx0) + "' cy='" + (f.y - ty0) + "' r='5' fill='#fff' stroke='" + cor + "' stroke-width='3'/>";
+  }
+ }
+ svg.innerHTML = out;
+}
+
+function htFit(){
+ var m = htid("hmap");
+ if (!m) return;
+ var W = m.clientWidth, H = m.clientHeight, pts = [];
+ (HT || []).forEach(function(g){
+  if (HT_VIS[g.userId] === false) return;
+  g.points.forEach(function(p){ pts.push(p) });
+ });
+ if (!pts.length){
+  HT_M.z = 11;
+  var c0 = proj(39.5, -8, 11);
+  HT_M.cx = c0.x; HT_M.cy = c0.y;
+  htDraw(); return;
+ }
+ var la = pts.map(function(p){ return p.lat }), ln = pts.map(function(p){ return p.lng });
+ var mxa = Math.max.apply(0, la), mna = Math.min.apply(0, la);
+ var mxn = Math.max.apply(0, ln), mnn = Math.min.apply(0, ln);
+ var z = 18;
+ for (; z > 3; z--){ var a = proj(mxa, mnn, z), b = proj(mna, mxn, z); if (b.x - a.x < W - 80 && b.y - a.y < H - 80) break }
+ var c = proj((mxa + mna) / 2, (mxn + mnn) / 2, z);
+ HT_M.z = z; HT_M.cx = c.x; HT_M.cy = c.y;
+ htDraw();
+}
+
+function htZoom(dz){
+ var z = HT_M.z + dz;
+ if (z < 3 || z > 19) return;
+ var f = Math.pow(2, dz);
+ HT_M.z = z; HT_M.cx *= f; HT_M.cy *= f;
+ htDraw();
+}
+
+async function htLoad(){
+ var box = htid("hGps");
+ if (!CFG.endpoint){
+  if (box) box.innerHTML = "<p class=\"tag\">Sem ligacao ao servidor.</p>";
+  return;
+ }
+ var j = htJanela();
+ HT_MES = j.mes;
+ if (box) box.innerHTML = "<p class=\"tag\">A carregar o historico...</p>";
+ try{
+  var r = await api("/rasto?desde=" + j.desde + "&ate=" + j.ate);
+  if (!r.ok){ if (box) box.innerHTML = "<p class=\"tag\">Nao foi possivel carregar o historico.</p>"; return }
+  var d = await r.json();
+  HT = (d && d.tracks) || [];
+ }catch(e){
+  if (box) box.innerHTML = "<p class=\"tag\">Sem ligacao.</p>";
+  return;
+ }
+ var q = htid("hQuem") ? htid("hQuem").value : "";
+ htQuem();
+ if (htid("hQuem") && q) htid("hQuem").value = q;
+ htDiaOpcoes();
+ htVis();
+ htRender();
+ htFit();
+}
+
+function htAbrir(){
+ htFiltros();
+ htLoad();
+ setTimeout(function(){ htDraw(); }, 60);
+}
+
+function terSubTab(){var b=htid("t-hist");if(b&&b.dataset.init){var t1=htid("tTab1"),t2=htid("tTab2");return}
+ if(htid("t-hist")) htid("t-hist").dataset.init="1";}
+function terSub(k){
+ var a = htid("t-ter"), b = htid("t-hist"), t1 = htid("tTab1"), t2 = htid("tTab2");
+ if (a) a.classList.toggle("hide", k !== "ter");
+ if (b) b.classList.toggle("hide", k !== "hist");
+ if (t1) t1.classList.toggle("on", k === "ter");
+ if (t2) t2.classList.toggle("on", k === "hist");
+ if (HT_MES && (!htid("hMes") || htid("hMes").value !== HT_MES)){ HT_MES = ""; HT_DIA = ""; }
+ if (k === "hist") setTimeout(htAbrir, 0);
+}
+
+(function(){
+ var m = htid("hmap");
+ if (m){
+  var dr = null;
+  m.addEventListener("pointerdown", function(e){ dr = { x: e.clientX, y: e.clientY, cx: HT_M.cx, cy: HT_M.cy }; HT_M.moved = false });
+  window.addEventListener("pointermove", function(e){
+   if (!dr) return;
+   var dx = e.clientX - dr.x, dy = e.clientY - dr.y;
+   if (Math.abs(dx) + Math.abs(dy) > 5) HT_M.moved = true;
+   if (HT_M.moved){ HT_M.cx = dr.cx - dx; HT_M.cy = dr.cy - dy; htDraw() }
+  });
+  window.addEventListener("pointerup", function(){ dr = null });
+  m.addEventListener("wheel", function(e){ e.preventDefault(); htZoom(e.deltaY < 0 ? 1 : -1) }, { passive: false });
+ }
+ var zi = htid("hzIn"), zo = htid("hzOut"), zf = htid("hzFit");
+ if (zi) zi.onclick = function(){ htZoom(1) };
+ if (zo) zo.onclick = function(){ htZoom(-1) };
+ if (zf) zf.onclick = function(){ htFit() };
+ var ba = htid("hBtnAll");
+ if (ba) ba.onclick = function(){
+  var q = htid("hQuem"); if (q) q.value = "";
+  htVis(); htRender(); htDraw(); htFit();
+ };
+ var t1 = htid("tTab1"), t2 = htid("tTab2");
+ if (t1) t1.onclick = function(){ terSub("ter") };
+ if (t2) t2.onclick = function(){ terSub("hist") };
+})();
+
 </script>
 </body>
 </html>
