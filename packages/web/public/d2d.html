@@ -295,7 +295,7 @@ $("gSave").onclick=async function(){var p=parseInt($("gPortas").value,10),v=pars
  var b=this;b.disabled=true;try{var r=await api("/meta",{method:"POST",body:JSON.stringify({employeeId:GOAL.employeeId,portas:p,vendas:v})});if(r.ok){$("goalM").classList.add("hide");await loadTeam();toast("Meta de "+GOAL.name+" atualizada ✔")}else if(r.status===401||r.status===403){toast("Sem permissão para alterar esta meta.")}else if(r.status===422){toast("Não podes definir a meta dessa pessoa.")}else{toast("Não foi possível guardar a meta.")}}catch(e){toast("Sem ligação.")}b.disabled=false};
 var q=new URLSearchParams(location.search);
 var USER=Object.assign({id:q.get("id")||"",name:q.get("nome")||"",role:q.get("role")||""},CFG.user||{});var ISLEAD=USER.role==="chefe";
-window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate();loadMeta();if(d.view&&["turno","portas","mapa","rel","ter","hist","equipa","caixa"].indexOf(d.view)>=0){view(d.view)}else if(!d.view&&ISLEAD){view("ter")}if(d.view==="ter"&&d.sub==="hist"){terSub("hist")}if(d.dia){HT_DIA=d.dia}if(d.mes){HT_MES=d.mes}}if(d&&d.type==="theme"&&d.theme){document.documentElement.setAttribute("data-theme",d.theme)}if(d&&d.type==="safe-area"&&typeof d.bottom==="number"){document.documentElement.style.setProperty("--safe-bottom",d.bottom+"px")}});
+window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:user"&&d.user){USER=d.user;if(d.endpoint){CFG.endpoint=d.endpoint;setSync();flush();}if(d.goal)CFG.goal=d.goal;ownerCheck();$("nome").textContent=USER.name||"Comercial (teste)";applyRole();hydrate();loadMeta();if(d.view&&["turno","portas","mapa","rel","ter","hist","equipa","caixa"].indexOf(d.view)>=0){view(d.view)}if(d.view==="ter"){terSub(d.sub==="hist"?"hist":"ter")}if(d.dia){HT_DIA=d.dia}if(d.mes){HT_MES=d.mes}}if(d&&d.type==="theme"&&d.theme){document.documentElement.setAttribute("data-theme",d.theme)}if(d&&d.type==="safe-area"&&typeof d.bottom==="number"){document.documentElement.style.setProperty("--safe-bottom",d.bottom+"px")}});
 function emit(tipo,dados){var ev={tipo:tipo,user:USER,hora:Date.now(),dados:dados};try{window.dispatchEvent(new CustomEvent("d2d",{detail:ev}));if(window.parent&&window.parent!==window)window.parent.postMessage({type:"d2d:event",event:ev},"*")}catch(e){}if(CFG.endpoint){try{fetch(CFG.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(ev)})}catch(e){}}}
 var curRua=null,showForm=false;
 function load(){try{var r=localStorage.getItem("d2d");if(r)S=JSON.parse(r)}catch(e){}S.streets=S.streets||[];S.history=S.history||[];normalizeZonas();ownerCheck()}
@@ -1046,7 +1046,8 @@ function htRender(){
 function htDraw(){
  var svg = htid("htrk"), m = htid("hmap");
  if (!svg || !m) return;
- if (!HT || !HT.length){ svg.innerHTML = ""; return }
+ var vazio = !HT || !HT.length;
+ if (vazio) svg.innerHTML = "";
  var W = m.clientWidth, H = m.clientHeight;
  var tx0 = HT_M.cx - W / 2, ty0 = HT_M.cy - H / 2;
  var n = Math.pow(2, HT_M.z), need = {}, tl = htid("htiles");
@@ -1064,6 +1065,7 @@ function htDraw(){
    im.style.top = (y * 256 - ty0) + "px";
   }
  Object.keys(HT_T).forEach(function(k){ if (!need[k]){ HT_T[k].remove(); delete HT_T[k] } });
+ if (vazio) { svg.innerHTML = ""; return }
  var out = "";
  for (var i = 0; i < HT.length; i++){
   var g = HT[i];
