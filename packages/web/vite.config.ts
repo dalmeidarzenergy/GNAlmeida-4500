@@ -14,6 +14,18 @@ export default defineConfig(({ mode }) => {
   Object.assign(process.env, env);
 
   return {
+    build: {
+      // Nomes de ficheiro com conteudo: se o conteudo muda, o nome muda.
+      // Sem isto o index pode manter o nome antigo e ficar preso em cache
+      // de longa duracao, servindo uma versao velha do site indefinidamente.
+      rollupOptions: {
+        output: {
+          entryFileNames: "assets/[name]-[hash]-v2.js",
+          chunkFileNames: "assets/[name]-[hash]-v2.js",
+          assetFileNames: "assets/[name]-[hash]-v2[extname]",
+        },
+      },
+    },
     // All env files live at the repo root — keep Vite's own env loading there too,
     // so packages/web/.env* files can never shadow the root .env.
     envDir: root,
