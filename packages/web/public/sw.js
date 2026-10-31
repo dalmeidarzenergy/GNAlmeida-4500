@@ -4,7 +4,7 @@
 //   - Assets estáticos: cache primeiro (os ficheiros do build têm nomes com hash).
 //   - API e autenticação (/api/): sempre pela rede, nunca em cache.
 
-const CACHE_NAME = "d2dconsulting-v3";
+const CACHE_NAME = "d2dconsulting-v4";
 
 // Nota: as splash screens NÃO entram no precache — são ~560 KB de imagens que
 // a maioria dos dispositivos nunca usa (só o iOS em modo standalone). São
@@ -57,6 +57,25 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() => caches.match(request).then((hit) => hit || caches.match("/"))),
+    );
+    return;
+  }
+
+  // HTML fora da navegação top-level (ex.: /d2d.html carregado num iframe):
+  // rede primeiro, como as navegações. Se ficasse na regra "cache primeiro"
+  // abaixo, uma copia antiga do ficheiro ficava presa em cache indefinidamente
+  // e as atualizacoes da pagina nunca chegavam ao utilizador.
+  if (url.pathname.endsWith(".html")) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request)),
     );
     return;
   }
