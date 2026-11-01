@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { usePaymentAutoDetail, usePaymentBreakdown } from "../queries/payments";
 import { PageHeader, Empty, Pill } from "../components/ui/kit";
 import UnlockBoard from "../components/unlock-board";
+import { MonthPicker } from "../components/ui/month-picker";
 import { fmtEur, today } from "../lib/format";
 
 type AutoLine = {
@@ -112,7 +113,7 @@ function PaymentForm({ initial, onClose, defaultMonth }: { initial: PayRow | nul
         </select>
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Mes"><input type="month" className="input num" value={month} onChange={(e) => setMonth(e.target.value)} /></Field>
+        <Field label="Mes"><MonthPicker value={month} onChange={setMonth} /></Field>
         <Field label="Tipo">
           <select className="input" value={kind} onChange={(e) => setKind(e.target.value as PayKind)}>
             {KINDS.map((k) => (<option key={k.key} value={k.key}>{k.label}</option>))}
@@ -429,7 +430,7 @@ export default function PaymentsPage() {
   return (
     <div className="p-5 lg:p-7">
       <PageHeader eyebrow="PAGAMENTOS" title="Previsão de Pagamentos" subtitle="Previsão por comercial e por mes, calculada a partir das vendas registadas no CRM.">
-        <input aria-label="Mes" type="month" className="input num w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <MonthPicker aria-label="Mes" className="w-48" value={month} onChange={setMonth} />
       </PageHeader>
 
       <div className="mt-4">

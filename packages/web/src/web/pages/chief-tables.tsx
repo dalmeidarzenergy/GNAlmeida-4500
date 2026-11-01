@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useChiefCalc, useChiefTables, useRemoveChiefTable, useSaveChiefTable } from "../queries/chief-tables";
 import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill } from "../components/ui/kit";
+import { MonthPicker } from "../components/ui/month-picker";
 import { errMsg, fmtEur, today } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useChiefTables>["data"]>[number];
@@ -199,7 +200,7 @@ function ChiefCalcPanel() {
           <div className="font-display text-[15px] font-semibold">Escalão de chefe de equipa</div>
           <div className="text-[11.5px] text-ink-3">O escalão de equipa apura-se pelas vendas LUZ/Dual BTN da equipa em fornecimento no mês (as do próprio chefe contam; o GÁS não conta para o escalão). Cada venda paga-se pelo escalão atingido: € LUZ nas LUZ/Dual BTN e € GÁS nas de GÁS. As baixas do mês descontam o que já foi pago (chargeback), igual aos vendedores.</div>
         </div>
-        <input aria-label="Mês" type="month" className="input num w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <MonthPicker aria-label="Mês" className="w-48" value={month} onChange={setMonth} />
       </div>
       {calc.isLoading ? (
         <div className="p-5"><div className="skeleton h-24 rounded-[12px]" /></div>

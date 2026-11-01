@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Download, FileText, Trash2, Filter, Loader2, Eye } from "lucide-react";
 import { Empty, Field, Pagination, PageHeader, TableSkeleton } from "../components/ui/kit";
 import { ConfirmDeleteModal } from "../components/bulk-select";
+import { MonthPicker } from "../components/ui/month-picker";
 import { useIberdrolaPdfList, useIberdrolaPdfSellers, useIberdrolaPdfTeams, useIberdrolaPdfRemove } from "../queries/iberdrola";
 import { useMe } from "../queries/me";
 import { errMsg, fmtDate, monthLabel } from "../lib/format";
@@ -115,10 +116,10 @@ export default function Autos() {
           </select>
         </Field>
         <Field label="De">
-          <input type="month" className="input num w-44" value={from} onChange={(e) => reset(() => setFrom(e.target.value))} />
+          <MonthPicker clearable className="w-48" value={from} onChange={(v) => reset(() => setFrom(v))} />
         </Field>
         <Field label="Até">
-          <input type="month" className="input num w-44" value={to} onChange={(e) => reset(() => setTo(e.target.value))} />
+          <MonthPicker clearable className="w-48" value={to} onChange={(v) => reset(() => setTo(v))} />
         </Field>
         {(seller || leader || from || to) && (
           <button

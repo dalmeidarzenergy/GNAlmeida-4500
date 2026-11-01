@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { FileSpreadsheet, Upload, Trash2, Loader2, Wallet, Undo2, Check, Download, Eye, Pencil, Scale, Unlock, ArrowLeftRight, Ban, CircleSlash, ShieldAlert, HandCoins } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Stat, Modal } from "../components/ui/kit";
+import { MonthPicker } from "../components/ui/month-picker";
 import { useIberdrolaImports, useIberdrolaImport, useIberdrolaCalc, useSaveIberdrola, useRemoveIberdrola, useSetIberdrolaMonth, useIberdrolaForceCommissionsSet, useIberdrolaVncAdd, useIberdrolaVncRemove, useIberdrolaOverrideList, useIberdrolaOverrideCreate, useIberdrolaOverrideRemove, useIberdrolaStaffList, useIberdrolaTeams, useIberdrolaBlockAdd, useIberdrolaBlockRemove, useIberdrolaChargebackOverrideAdd, useIberdrolaChargebackOverrideRemove, useIberdrolaSwapQuote, useAdvanceBalance, useAdvanceApply, useAdvanceUnapply } from "../queries/iberdrola";
 import { useRules, useRuleAssignments, useSaveRuleAssignments } from "../queries/rules";
 import { useMe } from "../queries/me";
@@ -143,7 +144,7 @@ function Historico({ canEdit }: { canEdit: boolean }) {
               <div className="text-[11.5px] text-ink-3">O ficheiro tem as folhas <span className="text-ink">auto</span> (vendas), <span className="text-ink">chargeback</span> (baixas) e <span className="text-ink">Medem</span> (pontos).</div>
             </div>
             <Field label="Mês de referência">
-              <input type="month" className="input num w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
+              <MonthPicker className="w-48" value={month} onChange={setMonth} />
             </Field>
             <button type="button" className="btn btn-volt" disabled={save.isPending} onClick={() => input.current?.click()}>
               {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Carregar ficheiro
@@ -325,7 +326,7 @@ function Finais() {
     <div>
       <div className="flex items-center gap-3">
         <Field label="Mês">
-          <input type="month" className="input num w-44" value={month} onChange={(e) => { setMonth(e.target.value); setSelected(null); setTeamLeader(""); }} />
+          <MonthPicker className="w-48" value={month} onChange={(v) => { setMonth(v); setSelected(null); setTeamLeader(""); }} />
         </Field>
         <Field label="Chefe de equipa">
           <select className="input w-56" value={teamLeader} onChange={(e) => { setTeamLeader(e.target.value); setSelected(null); }}>

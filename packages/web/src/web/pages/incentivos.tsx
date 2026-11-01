@@ -1,6 +1,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { Plus, Trash2, Loader2, Calculator, Check, X, ChevronDown, ChevronUp, FileSpreadsheet } from "lucide-react";
 import { PageHeader, Empty, Field, Tabs, Modal, Stat } from "../components/ui/kit";
+import { MonthPicker } from "../components/ui/month-picker";
 import {
   useIncentives,
   useIncentive,
@@ -549,7 +550,7 @@ function IncentiveDetail({ id, onBack, canEdit, onEdit }: { id: number; onBack: 
         <div className="flex items-center justify-between gap-4 mb-4">
           <div className="font-display text-[17px] font-semibold">Cálculo</div>
           <div className="flex items-center gap-3">
-            <input className="input h-10 w-44" type="month" value={calcMonth} onChange={(e) => setCalcMonth(e.target.value)} />
+            <MonthPicker className="w-48" value={calcMonth} onChange={setCalcMonth} />
             <button className="btn btn-primary" onClick={() => { setShowCalc(true); recalc(); }}>
               <Calculator size={15} /> Calcular
             </button>
