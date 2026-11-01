@@ -143,8 +143,8 @@ function Historico({ canEdit }: { canEdit: boolean }) {
               <div className="font-display text-[15px] font-semibold">Carregar Excel da Iberdrola</div>
               <div className="text-[11.5px] text-ink-3">O ficheiro tem as folhas <span className="text-ink">auto</span> (vendas), <span className="text-ink">chargeback</span> (baixas) e <span className="text-ink">Medem</span> (pontos).</div>
             </div>
-            <Field label="Mês de referência">
-              <MonthPicker className="w-48" value={month} onChange={setMonth} />
+            <Field label="Mês de referência" className="w-full sm:w-auto">
+              <MonthPicker className="w-full sm:w-48" value={month} onChange={setMonth} />
             </Field>
             <button type="button" className="btn btn-volt" disabled={save.isPending} onClick={() => input.current?.click()}>
               {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Carregar ficheiro
@@ -324,12 +324,12 @@ function Finais() {
 
   return (
     <div>
-      <div className="flex items-center gap-3">
-        <Field label="Mês">
-          <MonthPicker className="w-48" value={month} onChange={(v) => { setMonth(v); setSelected(null); setTeamLeader(""); }} />
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Mês" className="w-full sm:w-auto">
+          <MonthPicker className="w-full sm:w-48" value={month} onChange={(v) => { setMonth(v); setSelected(null); setTeamLeader(""); }} />
         </Field>
-        <Field label="Chefe de equipa">
-          <select className="input w-56" value={teamLeader} onChange={(e) => { setTeamLeader(e.target.value); setSelected(null); }}>
+        <Field label="Chefe de equipa" className="w-full sm:w-auto">
+          <select className="input w-full sm:w-56" value={teamLeader} onChange={(e) => { setTeamLeader(e.target.value); setSelected(null); }}>
             <option value="">Todas as equipas</option>
             {(teams.data ?? []).map((t) => (
               <option key={t.id} value={String(t.id)}>{t.leaderName} — {t.name}</option>
