@@ -115,10 +115,10 @@ export default function Autos() {
           </select>
         </Field>
         <Field label="De">
-          <input type="month" className="input num w-40" value={from} onChange={(e) => reset(() => setFrom(e.target.value))} />
+          <input type="month" className="input num w-44" value={from} onChange={(e) => reset(() => setFrom(e.target.value))} />
         </Field>
         <Field label="Até">
-          <input type="month" className="input num w-40" value={to} onChange={(e) => reset(() => setTo(e.target.value))} />
+          <input type="month" className="input num w-44" value={to} onChange={(e) => reset(() => setTo(e.target.value))} />
         </Field>
         {(seller || leader || from || to) && (
           <button

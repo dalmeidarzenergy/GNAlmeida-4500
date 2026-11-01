@@ -199,7 +199,7 @@ function ChiefCalcPanel() {
           <div className="font-display text-[15px] font-semibold">Escalão de chefe de equipa</div>
           <div className="text-[11.5px] text-ink-3">O escalão de equipa apura-se pelas vendas LUZ/Dual BTN da equipa em fornecimento no mês (as do próprio chefe contam; o GÁS não conta para o escalão). Cada venda paga-se pelo escalão atingido: € LUZ nas LUZ/Dual BTN e € GÁS nas de GÁS. As baixas do mês descontam o que já foi pago (chargeback), igual aos vendedores.</div>
         </div>
-        <input aria-label="Mês" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <input aria-label="Mês" type="month" className="input num w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
       </div>
       {calc.isLoading ? (
         <div className="p-5"><div className="skeleton h-24 rounded-[12px]" /></div>

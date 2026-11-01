@@ -429,7 +429,7 @@ export default function PaymentsPage() {
   return (
     <div className="p-5 lg:p-7">
       <PageHeader eyebrow="PAGAMENTOS" title="Previsão de Pagamentos" subtitle="Previsão por comercial e por mes, calculada a partir das vendas registadas no CRM.">
-        <input aria-label="Mes" type="month" className="input num w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <input aria-label="Mes" type="month" className="input num w-44" value={month} onChange={(e) => setMonth(e.target.value)} />
       </PageHeader>
 
       <div className="mt-4">
