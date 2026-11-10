@@ -13,11 +13,17 @@ type Stage = (typeof STAGES)[number]["key"];
 function Stars({ value, onChange }: { value: number; onChange?: (v: number) => void }) {
   return (
     <div className="flex gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <button type="button" key={i} disabled={!onChange} onClick={() => onChange?.(i)} className={onChange ? "cursor-pointer" : "cursor-default"}>
-          <Star size={onChange ? 18 : 11} className={i <= value ? "fill-amber text-amber" : "text-ink-3"} />
-        </button>
-      ))}
+      {[1, 2, 3, 4, 5].map((i) =>
+        onChange ? (
+          <button type="button" key={i} onClick={() => onChange(i)} className="cursor-pointer">
+            <Star size={18} className={i <= value ? "fill-amber text-amber" : "text-ink-3"} />
+          </button>
+        ) : (
+          <span key={i} aria-hidden="true">
+            <Star size={11} className={i <= value ? "fill-amber text-amber" : "text-ink-3"} />
+          </span>
+        ),
+      )}
     </div>
   );
 }
