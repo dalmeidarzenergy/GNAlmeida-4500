@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal,
+  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal, ChevronRight, Briefcase, Map, Headset, Banknote, PieChart, Settings,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -13,11 +13,15 @@ import { NotificationsBell } from "./notifications-bell";
 import type { Permissions, ModuleKey, Role } from "../../api/middleware/auth";
 export type { Role, Permissions };
 type NavItem = { to: string; key: ModuleKey; label: string; icon: typeof Users };
+type NavGroup = { group: string; icon: typeof Users; items: NavItem[] };
 
-const NAV: { group: string; items: NavItem[] }[] = [
-  { group: "Geral", items: [{ to: "/", key: "painel", label: "Painel", icon: LayoutDashboard }] },
+/** Titulo de cada grupo do menu, com o icone que o representa e que aparece
+ * sozinho no rail recolhido. "Geral" nao tem titulo clicavel: e um item solto. */
+const NAV: NavGroup[] = [
+  { group: "Geral", icon: LayoutDashboard, items: [{ to: "/", key: "painel", label: "Painel", icon: LayoutDashboard }] },
   {
     group: "Recursos Humanos",
+    icon: Briefcase,
     items: [
       { to: "/funcionarios", key: "funcionarios", label: "Funcionários", icon: Users },
       { to: "/departamentos", key: "departamentos", label: "Departamentos e cargos", icon: Building2 },
@@ -29,6 +33,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: "Vendas",
+    icon: ShoppingCart,
     items: [
       { to: "/clientes", key: "clientes", label: "Clientes", icon: Contact },
       { to: "/vendas", key: "vendas", label: "Vendas", icon: ShoppingCart },
@@ -40,6 +45,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: "Gestão Territorial",
+    icon: Map,
     items: [
       { to: "/terreno-d2d", key: "terreno-d2d", label: "Terreno D2D", icon: MapPin },
       { to: "/historico-gps", key: "terreno-d2d", label: "Histórico GPS", icon: Route },
@@ -47,6 +53,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: "Apoio Comercial",
+    icon: Headset,
     items: [
       { to: "/agenda", key: "agenda", label: "Agenda", icon: Calendar },
       { to: "/campanhas", key: "campanhas", label: "Campanhas", icon: Megaphone },
@@ -56,6 +63,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: "Pagamentos",
+    icon: Banknote,
     items: [
       { to: "/pagamentos", key: "pagamentos", label: "Previsão de Pagamentos", icon: Wallet },
       { to: "/auto-iberdrola", key: "auto-iberdrola", label: "Auto Iberdrola", icon: FileSpreadsheet },
@@ -67,6 +75,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: "Análise",
+    icon: PieChart,
     items: [
       { to: "/relatorios", key: "relatorios", label: "Relatórios", icon: BarChart3 },
       { to: "/evolucao", key: "evolucao", label: "Evolução", icon: TrendingUp },
@@ -77,6 +86,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: "Definições",
+    icon: Settings,
     items: [
       { to: "/comercializadores", key: "comercializadores", label: "Comercializadores", icon: Plug },
       { to: "/utilizadores", key: "utilizadores", label: "Utilizadores", icon: ShieldCheck },
@@ -163,6 +173,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   const expanded = pinned || hovering;
   const togglePin = () => setPinned(!pinned);
 
+  /** O menu e um acordeao: so um grupo fica aberto de cada vez. O grupo que
+   * contem a pagina atual abre sozinho, para nao perderes o contexto ao
+   * navegar. `openGroup` guarda o nome do grupo aberto (null = todos fechados). */
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  /** O grupo ativo e o que contem a pagina onde estamos. */
+  const activeGroup = NAV.find((g) =>
+    g.items.some((i) => (i.to === "/" ? loc === "/" : loc.startsWith(i.to))),
+  )?.group ?? null;
+
+  /** Ao mudar de pagina ou de permissoes, abre o grupo da pagina atual.
+   * Depende de `activeGroup` para o menu seguir a navegacao (links diretos,
+   * voltar atras do browser) sem o utilizador ter de clicar no titulo. */
+  useEffect(() => {
+    if (activeGroup) setOpenGroup(activeGroup);
+  }, [activeGroup]);
+
   /** No telemovel o menu e uma gaveta: abre no botao do cabecalho. Em ecra
    * estreito o rail lateral colapsa sozinho (ver `data-shell` no styles.css) e
    * os nomes das abas aparecem na gaveta; em ecra grande fica aberto. */
@@ -215,26 +242,77 @@ export function AppShell({ children }: { children: ReactNode }) {
         {NAV.map((g) => {
           const items = g.items.filter((i) => permissions?.[i.key]?.view !== false);
           if (!items.length) return null;
+
+          /** "Geral" e um item solto (so o Painel), sem titulo clicavel. */
+          if (g.items.length === 1 && g.group === "Geral") {
+            const i = items[0];
+            const Icon = i.icon;
+            const active = i.to === "/" ? loc === "/" : loc.startsWith(i.to);
+            return (
+              <div key={g.group} className="mt-2">
+                <Link
+                  to={i.to}
+                  onClick={() => setOpen(false)}
+                  title={wide ? undefined : i.label}
+                  className={`group relative mb-0.5 flex h-9 items-center gap-3 rounded-[9px] transition ${wide ? "px-3 text-[13px]" : "justify-center px-0"} ${active ? "bg-volt/10 font-medium text-volt" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
+                >
+                  {active && wide && <span className="absolute -left-3 top-1.5 h-6 w-[3px] rounded-r bg-volt" />}
+                  <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
+                  {wide && i.label}
+                </Link>
+              </div>
+            );
+          }
+
+          const GIcon = g.icon;
+          const isOpen = openGroup === g.group;
+          const hasActive = items.some((i) => (i.to === "/" ? loc === "/" : loc.startsWith(i.to)));
           return (
-            <div key={g.group} className="mt-5 first:mt-2">
-              {wide && <div className="label-mono mb-2 px-3">{g.group}</div>}
-              {items.map((i) => {
-                const active = i.to === "/" ? loc === "/" : loc.startsWith(i.to);
-                const Icon = i.icon;
-                return (
-                  <Link
-                    key={i.to}
-                    to={i.to}
-                    onClick={() => setOpen(false)}
-                    title={wide ? undefined : i.label}
-                    className={`group relative mb-0.5 flex h-9 items-center gap-3 rounded-[9px] transition ${wide ? "px-3 text-[13px]" : "justify-center px-0"} ${active ? "bg-volt/10 font-medium text-volt" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
-                  >
-                    {active && wide && <span className="absolute -left-3 top-1.5 h-6 w-[3px] rounded-r bg-volt" />}
-                    <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
-                    {wide && i.label}
-                  </Link>
-                );
-              })}
+            <div key={g.group} className="mt-1.5 first:mt-2">
+              {/* Titulo do grupo: botao que abre/fecha a lista de paginas.
+                  No rail recolhido mostra so o icone; ao clicar, o rail
+                  expande-se (setHovering) e o grupo abre. */}
+              <button
+                type="button"
+                title={g.group}
+                aria-expanded={wide ? isOpen : undefined}
+                onClick={() => {
+                  if (!wide) { setHovering(true); if (openGroup !== g.group) setOpenGroup(g.group); return; }
+                  setOpenGroup(isOpen ? null : g.group);
+                }}
+                className={`group flex h-9 w-full items-center gap-3 rounded-[9px] transition ${wide ? "px-3" : "justify-center px-0"} ${isOpen && wide ? "text-ink" : hasActive ? "text-volt" : "text-ink-2"} hover:bg-surface hover:text-ink`}
+              >
+                <GIcon size={wide ? 16 : 17} strokeWidth={hasActive ? 2.2 : 1.9} className="shrink-0" />
+                {wide && (
+                  <>
+                    <span className="label-mono flex-1 text-left text-[10.5px] !text-current">{g.group}</span>
+                    <ChevronRight size={14} className={`shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`} />
+                  </>
+                )}
+              </button>
+              {/* `grid-rows` anima a altura sem medir o conteudo. */}
+              {wide && (
+                <div className={`grid transition-all duration-200 ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+                  <div className="overflow-hidden">
+                    {items.map((i) => {
+                      const active = i.to === "/" ? loc === "/" : loc.startsWith(i.to);
+                      const Icon = i.icon;
+                      return (
+                        <Link
+                          key={i.to}
+                          to={i.to}
+                          onClick={() => setOpen(false)}
+                          className={`group relative mb-0.5 flex min-h-9 items-center gap-3 rounded-[9px] py-1.5 pl-9 pr-3 text-[13px] leading-snug transition ${active ? "bg-volt/10 font-medium text-volt" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
+                        >
+                          {active && <span className="absolute left-3 top-1.5 h-6 w-[3px] rounded-r bg-volt" />}
+                          <Icon size={16} strokeWidth={active ? 2.2 : 1.8} />
+                          {i.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
