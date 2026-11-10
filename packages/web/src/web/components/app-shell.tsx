@@ -89,10 +89,26 @@ export function canAccess(path: string, permissions: Permissions) {
   return true;
 }
 
+/** O logotipo tem duas versoes: a de tema claro (letras azul-escuras) e a de
+ * tema escuro (letras em ciano), porque o azul-escuro da marca sobre o fundo
+ * quase-preto da app nao passa no contraste minimo de leitura. */
+export function useBrandLogo() {
+  const [logo, setLogo] = useState("/icons/logo.png");
+  useEffect(() => {
+    const pick = () => setLogo(document.documentElement.getAttribute("data-theme") === "light" ? "/icons/logo.png" : "/icons/logo-dark.png");
+    pick();
+    const mo = new MutationObserver(pick);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => mo.disconnect();
+  }, []);
+  return logo;
+}
+
 export function Logo() {
+  const src = useBrandLogo();
   return (
     <div className="flex items-center gap-2.5">
-      <img src="/icons/logo.png" alt="D2D Consulting" className="h-9 w-auto shrink-0 object-contain" />
+      <img src={src} alt="D2D Consulting" className="h-9 w-auto shrink-0 object-contain" />
     </div>
   );
 }
@@ -142,6 +158,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const role = (me.data?.role ?? "vendedor") as Role;
   const permissions = me.data?.permissions;
   const [theme, toggleTheme] = useTheme();
+  const logoDark = useBrandLogo();
 
   const expanded = pinned || hovering;
   const togglePin = () => setPinned(!pinned);
@@ -184,7 +201,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       onMouseLeave={() => !drawer && setHovering(false)}
     >
       <div className={`flex h-16 items-center ${wide ? "justify-between px-5" : "justify-center"}`}>
-        {wide ? <Logo /> : <img src="/icons/logo.png" alt="D2D" className="h-7 w-auto shrink-0 object-contain" />}
+        {wide ? <Logo /> : <img src={logoDark} alt="D2D" className="h-7 w-auto shrink-0 object-contain" />}
         <button className={`btn-icon lg:hidden ${wide ? "" : "absolute right-2 top-2"}`} onClick={() => setOpen(false)}>
           <X size={16} />
         </button>
