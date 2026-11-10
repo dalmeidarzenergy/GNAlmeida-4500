@@ -587,7 +587,6 @@ $("btnNovoCom").onclick=openNew;$("nX").onclick=function(){$("newM").classList.a
 $("nSave").onclick=function(){var n=$("nNome").value.trim(),ct=$("nCont").value.trim();if(!n){toast("Indica o nome.");return}if(!ct){toast("Indica o e-mail ou telemóvel para o acesso.");return}var m={id:"novo-"+Date.now(),name:n,contact:ct,role:$("nRole").value,parentId:$("nPar").value||USER.id||null,shift:null,doors:[],streets:[],history:[]};TEAM.push(m);emit("comercial_criado",{id:m.id,name:m.name,contact:m.contact,role:m.role,parentId:m.parentId});$("newM").classList.add("hide");fillTeam();toast("✅ "+n+" adicionado à equipa")};
 function dstr(ts){return new Date(ts).toLocaleDateString("pt-PT")}
 function gmaps(p){return "https://www.google.com/maps/dir/?api=1&destination=" + p.lat + "," + p.lng + "&travelmode=driving"}
-function waze(p){return "https://waze.com/ul?ll=" + p.lat + "," + p.lng + "&navigate=yes"}
 function fname(p,ext,ts){return p+"-"+new Date(ts||Date.now()).toISOString().slice(0,10)+"."+ext}
 function curSessions(){if(ISLEAD&&curCom==="all"){var o=[];treeList().forEach(function(x){var c=x.c;if(c.shift||(c.doors||[]).length)o.push({who:c.name,sh:c.shift||{},doors:c.doors||[]})});return o}return[{who:S.shift?S.shift.name:(USER.name||""),sh:S.shift||{},doors:S.doors}]}
 function allSessions(){var o=[];function add(w,sh,d){o.push({who:w,sh:sh||{},doors:d||[]})}if(ISLEAD&&curCom==="all"){treeList().forEach(function(x){var c=x.c;(c.history||[]).forEach(function(e){add(c.name,e.shift,e.doors)});if(c.shift&&!c.shift.end)add(c.name,c.shift,c.doors)})}else{(S.history||[]).forEach(function(e){add(e.shift.name,e.shift,e.doors)});if(S.shift&&!S.shift.end)add(S.shift.name,S.shift,S.doors)}return o}
@@ -1140,17 +1139,17 @@ function htParagensTxt(g){
 }
 
 /* Botao LOC: abre a ultima posicao conhecida do comercial no Google Maps (e uma
- * variante para o Waze), sempre em nova aba. Nos percursos com paragens mostra
+ * sempre em nova aba. Nos percursos com paragens mostra
  * tambem atalhos para as 3 paragens mais recentes (onde ele esteve parado). */
 function htBtns(g, i){
  var alvo = null;
  if (g && g.points && g.points.length) alvo = g.points[g.points.length - 1];
  if (!alvo || alvo.lat == null || alvo.lng == null) return "";
- var out = "<div class=\"btnrow\" style=\"margin-top:2px\"><a class=\"locb\" target=\"_blank\" rel=\"noopener\" href=\"" + gmaps(alvo) + "\">&#128205;&nbsp;LOC</a><a class=\"locb\" target=\"_blank\" rel=\"noopener\" href=\"" + waze(alvo) + "\">Waze</a></div>";
+ var out = "<div class=\"btnrow\" style=\"margin-top:2px\"><a class=\"locb\" target=\"_blank\" rel=\"noopener\" href=\"" + gmaps(alvo) + "\">&#128205;&nbsp;Localiza&#231;&#227;o</a></div>";
  var pd = htParagensTxt(g), n = Math.min(pd.length, 3);
  for (var k = pd.length - 1; k >= pd.length - n; k--){
   var p = pd[k];
-  out += "<div class=\"btnrow\" style=\"margin-top:6px\"><span class=\"tag\">Paragem " + hm(p.t) + " (" + htDur(p.dur) + ")</span><a class=\"locb\" target=\"_blank\" rel=\"noopener\" href=\"" + gmaps(p) + "\">LOC</a><a class=\"locb\" target=\"_blank\" rel=\"noopener\" href=\"" + waze(p) + "\">Waze</a></div>";
+  out += "<div class=\"btnrow\" style=\"margin-top:6px\"><span class=\"tag\">Paragem " + hm(p.t) + " (" + htDur(p.dur) + ")</span><a class=\"locb\" target=\"_blank\" rel=\"noopener\" href=\"" + gmaps(p) + "\">Localiza&#231;&#227;o</a></div>";
  }
  return out;
 }
