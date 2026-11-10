@@ -12,14 +12,16 @@
 #     alfa é 0, senão os splash/icones ficam com uma caixa por trás.
 #   * NAO clarear o logo com -brightness-contrast: o azul da marca (#1F699E)
 #     e levantado para um cinza-azulado a ~58%, que se ve como um retangulo
-#     cinzento por tras/entre as letras. O azul original e legivel em #0c0e0d.
+#     cinzento por tras/entre as letras. Com fundo branco (BG=#ffffff) o azul
+#     escuro original tem pouco contraste, por isso o simbolo usado nos icones
+#     e a variante clara (out_symbol_light.png).
 #   * O ImageMagick escreve 16-bit por omissão, o que inflaciona os PNGs
 #     (9,4 MB para 17 splash). Forçar 8-bit + paleta reduz para ~1 MB.
 set -euo pipefail
 
 cd "$(dirname "$0")/packages/web/public"
 
-BG="#0c0e0d"
+BG="#ffffff"
 SPLASH_PCT=46     # largura do logo no splash, em % da largura do ecrã
 
 mkdir -p splash icons
