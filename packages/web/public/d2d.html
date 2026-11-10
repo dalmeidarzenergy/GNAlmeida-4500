@@ -50,7 +50,13 @@ a.lnk{display:block;text-align:center;text-decoration:none;color:var(--tx);borde
 .modal{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
 .modal.hide{display:none}
 .sheet{background:var(--card);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px))}
-nav button.on{color:var(--ac);font-weight:700}
+nav button.on{color:var(--ac);font-weight:700;background:color-mix(in srgb,var(--ac) 10%,transparent)}
+.perbar{display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.perbar button{flex:1 1 auto;border:1px solid var(--bd);background:var(--card);color:var(--mu);border-radius:999px;padding:8px 12px;font-size:12.5px;white-space:nowrap;cursor:pointer;transition:color .15s,border-color .15s,background .15s}
+.perbar button:hover{color:var(--tx)}
+.perbar button.on{color:var(--ac);border-color:var(--ac);background:color-mix(in srgb,var(--ac) 12%,var(--card));font-weight:700}
+.pertag{flex:1 1 100%;font-size:11.5px;color:var(--mu)}
+@media (max-width:400px){.perbar button{font-size:11px;padding:7px 9px}}
 .banner{display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--ok) 15%,var(--card));border:1px solid var(--ok);border-radius:14px;padding:12px;margin-bottom:12px}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--ok);flex:none}
 .big{font-size:28px;font-weight:700}
@@ -101,7 +107,7 @@ button{transition:transform .08s,background .15s,opacity .15s}button:not(.pin):a
 .dot{animation:pulse 1.6s infinite}
 #toast{animation:tin .22s ease-out}
 .chip{transition:background .15s}
-nav button{position:relative}nav button.on::after{content:"";position:absolute;left:22%;right:22%;top:0;height:3px;border-radius:0 0 3px 3px;background:var(--ac);animation:grow .25s ease-out}
+nav button{position:relative}nav button.on::after{content:"";position:absolute;left:16%;right:16%;top:0;height:3px;border-radius:0 0 3px 3px;background:var(--ac);animation:grow .25s ease-out}nav button:not(.on):hover{color:var(--tx)}
 .cf{position:fixed;top:60vh;width:8px;height:12px;border-radius:2px;z-index:30;pointer-events:none;animation:cf 1.3s ease-out forwards}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .syncb{font-size:12px;padding:4px 10px;border-radius:999px;color:var(--mu);white-space:nowrap}
@@ -180,6 +186,10 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
   </section>
 
   <section id="v-rel" class="hide">
+    <div class="perbar" id="perBar" role="group" aria-label="Período do relatório">
+      <button type="button" data-p="shift" class="on">Turno</button><button type="button" data-p="hoje">Hoje</button><button type="button" data-p="semana">Esta semana</button><button type="button" data-p="mes">Este mês</button><span id="perTag" class="pertag"></span>
+    </div>
+    <div class="card hide" id="emptyCard"><b id="emptyT"></b><p class="tag" id="emptyP" style="margin:6px 0 10px"></p><div id="emptyA"></div></div>
     <div class="card"><div class="stats" id="stats"></div></div>
     <div class="card"><div class="stats" id="kpis"></div></div>
     <div class="card hide" id="cardTeam"><b>Equipa</b><div class="tag">Toca num comercial para ver o relatório dele.</div><div id="cTeam" style="margin-top:6px"></div></div>
@@ -287,6 +297,10 @@ h1{letter-spacing:-.01em}.card{background:var(--card)}
 <script>
 var RES=[["ausente","Ninguém em casa","var(--mu)"],["recusa","Sem interesse","var(--no)"],["lead","Interessado","var(--wa)"],["voltar","Voltar mais tarde","var(--wa)"],["venda","Venda fechada","var(--ok)"],["cliente","Já cliente","var(--ac)"],["nt","Não tocar","var(--no)"]];
 var S={shift:null,doors:[],mgr:""},sel=null,$=function(i){return document.getElementById(i)};
+/* Filtro rapido de periodo no relatorio. "shift" = turno atual (valor de
+   sempre); "hoje"/"semana"/"mes" agregam o turno atual com o historico
+   dentro da janela. */
+var PER="shift";
 /* INTEGRAÇÃO: o site define window.D2D_CONFIG = {user:{id,name}, endpoint:"/api/d2d"} antes desta página, ou envia postMessage({type:"d2d:user",user:{id,name}}), ou usa ?id=..&nome=.. no URL. Cada ação emite o evento "d2d" (inicio, porta, fim). */
 var CFG=window.D2D_CONFIG||{};
 var META={portas:CFG.goal||40,vendas:5};
@@ -331,7 +345,7 @@ function render(){
  $("chips").innerHTML="";RES.forEach(function(x){var b=document.createElement("button");b.className="chip"+(sel===x[0]?" on":"");b.textContent=x[1];b.onclick=function(){sel=x[0];render()};$("chips").appendChild(b)});
  var l=$("list");l.innerHTML="";if(!S.doors.some(function(d){return d.rua===curRua}))l.innerHTML='<p class="tag">Ainda sem portas registadas.</p>';
  S.doors.filter(function(d){return d.rua===curRua}).reverse().forEach(function(d){var e=document.createElement("div");e.className="door";e.innerHTML="<div><b></b><div class='tag'></div></div>";e.querySelector("b").textContent="Porta "+d.num+" ✎";e.querySelector(".tag").textContent=nm(d.res)+" · "+hm(d.t)+(d.cli?" · "+d.cli:"")+(d.loc?" · 📍":"")+(d.docs&&d.docs.length?" · 📎"+d.docs.length:"");var x=document.createElement("button");x.className="x";x.textContent="✕";x.onclick=function(ev){ev.stopPropagation();(d.docs||[]).forEach(function(m){idbDel(m.id)});S.doors=S.doors.filter(function(z){return z.t!==d.t});save();render()};e.onclick=function(){openEdit(d,S.doors)};if(!READONLY)e.style.cursor="pointer";e.appendChild(x);l.appendChild(e)});
- var t=S.doors.length;$("stats").innerHTML="<div><b>"+t+"</b><span>Portas</span></div><div><b>"+(cnt("lead")+cnt("voltar"))+"</b><span>Leads</span></div><div><b>"+cnt("venda")+"</b><span>Vendas</span></div>";
+ var Pd=perDados();t=Pd.doors.length;var vendasP=Pd.doors.filter(function(d){return d.res==="venda"}).length,leadsP=Pd.doors.filter(function(d){return d.res==="lead"||d.res==="voltar"}).length;$("stats").innerHTML="<div><b>"+t+"</b><span>Portas</span></div><div><b>"+leadsP+"</b><span>Leads</span></div><div><b>"+vendasP+"</b><span>Vendas</span></div>";
  $("bars").innerHTML="";RES.forEach(function(x){var n=cnt(x[0]),p=t?n/t*100:0,e=document.createElement("div");e.className="bar";e.innerHTML="<span></span><i></i><span></span>";e.children[0].textContent=x[1];e.children[1].style.width="calc("+p.toFixed(0)+"% - 0px)";e.children[1].style.background=x[2];e.children[1].style.flex="0 0 "+Math.max(p*0.55,1)+"%";e.children[2].textContent=n;$("bars").appendChild(e)});
  $("txt").textContent=report();renderRuas();renderCharts();renderHist();checkClose();renderEq();if(!$("v-ter").classList.contains("hide"))renderTer();
 }
@@ -499,6 +513,42 @@ window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="d2d:t
 function applyRole(){if(!ISLEAD)return;S={shift:null,doors:[],streets:[],history:[]};curRua=null;["turno","portas"].forEach(function(k){document.querySelector('nav [data-v="'+k+'"]').classList.add("hide")});$("leadBar").classList.remove("hide");$("btnClear").classList.add("hide");document.querySelector('nav [data-v="equipa"]').classList.remove("hide");view("equipa");loadTeam()}
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function kpi(v,l){return "<div><b>"+v+"</b><span>"+l+"</span></div>"}
+
+/* --- Filtro rapido de periodo -------------------------------------------
+   Devolve a janela [d0, d1] em ms para o periodo escolhido, ou null quando o
+   periodo e o turno atual (sem filtragem por tempo). */
+function perJanela(){
+ var d=new Date(),y=d.getFullYear(),m=d.getMonth(),dia=d.getDate();
+ if(PER==="hoje")return{d0:new Date(y,m,dia,0,0,0,0).getTime(),d1:new Date(y,m,dia,23,59,59,999).getTime()};
+ if(PER==="semana"){var wd=(d.getDay()+6)%7,ini=new Date(y,m,dia-wd,0,0,0,0);return{d0:ini.getTime(),d1:new Date(y,m,dia,23,59,59,999).getTime()}};
+ if(PER==="mes")return{d0:new Date(y,m,1,0,0,0,0).getTime(),d1:new Date(y,m,dia,23,59,59,999).getTime()};
+ return null
+}
+/* Dados do relatorio ja filtrados pelo periodo. "shift" devolve o que sempre
+   devolveu (turno atual); os restantes somam o turno em curso ao historico
+   que cai dentro da janela. */
+function perDados(){
+ var j=perJanela();
+ if(!j)return{shift:S.shift,doors:S.doors,streets:S.streets,history:S.history};
+ var D=[],ST=[],H=[];
+ (S.history||[]).forEach(function(e){
+  var t=(e.shift&&e.shift.start)||e.id||0;
+  if(t>=j.d0&&t<=j.d1){H.push(e);(e.doors||[]).forEach(function(x){D.push(x)});(e.streets||[]).forEach(function(r){if(ST.indexOf(r)<0)ST.push(r)})}
+ });
+ /* O turno em curso entra se tiver comecado dentro da janela. */
+ var sh=S.shift,t0=(sh&&sh.start)||0;
+ var vivo=!!sh&&(!sh.end||sh.end>=j.d0)&&(!t0||t0<=j.d1);
+ if(vivo){D=D.concat(S.doors||[]);(S.streets||[]).forEach(function(r){if(ST.indexOf(r)<0)ST.push(r)})}
+ D.sort(function(a,b){return a.t-b.t});
+ return{shift:vivo?sh:(H.length?H[0].shift:null),doors:D,streets:ST,history:H}
+}
+/* Etiqueta legivel do periodo, usada nos estados vazios. */
+function perLabel(){
+ if(PER==="hoje")return "hoje";
+ if(PER==="semana")return "esta semana";
+ if(PER==="mes")return "este mês";
+ return "o turno atual"
+}
 function fmtDur(ms){var m=Math.max(0,Math.floor(ms/6e4));return Math.floor(m/60)+"h"+String(m%60).padStart(2,"0")}
 function hbar(l,n,mx,col,ex){return "<div class='bar2'><span>"+l+"</span><div class='tr'><i style='width:"+(mx?Math.max(n/mx*100,n?2:0):0)+"%;background:"+col+"'></i></div><b>"+n+(ex||"")+"</b></div>"}
 function segs(D){var s="";RES.forEach(function(x){var n=D.filter(function(d){return d.res===x[0]}).length;if(n)s+="<i style='flex:"+n+";background:"+PC[x[0]]+"'></i>"});return s}
@@ -513,10 +563,37 @@ function funnel(){var t=S.doors.length,c=cnt("lead")+cnt("voltar")+cnt("venda"),
 function donut(){var t=S.doors.length;if(!t)return "<p class='tag'>Sem dados.</p>";var r=40,C=2*Math.PI*r,off=0,h="<svg viewBox='0 0 110 110' width='130' height='130' role='img' aria-label='Distribuição dos resultados'><g transform='rotate(-90 55 55)'>";RES.forEach(function(x){var n=cnt(x[0]);if(!n)return;var L=n/t*C;h+="<circle cx='55' cy='55' r='"+r+"' fill='none' stroke='"+PC[x[0]]+"' stroke-width='18' stroke-dasharray='"+L+" "+(C-L)+"' stroke-dashoffset='"+(-off)+"'/>";off+=L});h+="</g><text x='55' y='60' text-anchor='middle' style='fill:var(--tx);font:700 20px system-ui'>"+t+"</text></svg>";var lg="";RES.forEach(function(x){var n=cnt(x[0]);lg+="<div class='lg' style='display:flex'><i style='background:"+PC[x[0]]+"'></i>"+x[1]+" · "+n+" ("+Math.round(n/t*100)+"%)</div>"});return "<div style='display:flex;align-items:center;gap:12px;flex-wrap:wrap'>"+h+"<div>"+lg+"</div></div>"}
 function streetChart(){var L=ruasList();if(!L.length)return "<p class='tag'>Sem ruas.</p>";var rows=L.map(function(r){return{r:r,D:ruaDoors(r)}}).sort(function(a,b){return b.D.length-a.D.length}),mx=Math.max(1,rows[0].D.length);return rows.map(function(o){var v=o.D.filter(function(d){return d.res==="venda"}).length;return "<div class='bar2'><span title='"+esc(o.r)+"'>"+esc(o.r)+"</span><div class='tr'><div class='stk' style='width:"+Math.max(o.D.length/mx*100,2)+"%'>"+segs(o.D)+"</div></div><b>"+o.D.length+" · "+v+"</b></div>"}).join("")}
 function teamChart(){var mx=Math.max.apply(0,[1].concat(TEAM.map(function(c){return(c.doors||[]).length})));return TEAM.map(function(c){var D=c.doors||[],v=D.filter(function(d){return d.res==="venda"}).length;return "<div class='bar2' data-id='"+esc(c.id)+"' style='cursor:pointer"+(c.id===curCom?";font-weight:700":"")+"'><span title='"+esc(c.name)+"'>"+esc(c.name)+"</span><div class='tr'><div class='stk' style='width:"+Math.max(D.length/mx*100,2)+"%'>"+segs(D)+"</div></div><b>"+D.length+" · "+v+"</b></div>"}).join("")}
-function renderCharts(){var t=S.doors.length,s=S.shift,end=s?(s.end||Date.now()):0,hrs=s?Math.max((end-s.start)/36e5,1/60):0;
+function renderPerBar(){
+ $("perBar").querySelectorAll("button").forEach(function(b){b.classList.toggle("on",b.dataset.p===PER)});
+ $("perTag").textContent=PER==="shift"?""
+  :"A mostrar "+perLabel()+" · "+(S.history||[]).filter(function(e){var j=perJanela(),t=(e.shift&&e.shift.start)||e.id||0;return j&&t>=j.d0&&t<=j.d1}).length+" turno(s)";
+ var P=perDados(),vazio=P.doors.length===0;
+ $("emptyCard").classList.toggle("hide",!vazio);
+ if(vazio){
+  var turno=!!(S.shift&&!S.shift.end);
+  if(PER==="shift"){
+   $("emptyT").textContent=turno?"Turno sem portas ainda":"Ainda sem turno iniciado";
+   $("emptyP").textContent=turno
+    ?"Regista a primeira porta para começares a ver as métricas do turno."
+    :"Seleciona uma zona ou inicia um turno para ver as métricas.";
+   $("emptyA").innerHTML=turno?'':'<button class="pri" id="emptyGo" type="button">▶ Iniciar turno</button>';
+   var g=$("emptyGo");if(g)g.onclick=function(){view("turno")};
+  }else{
+   $("emptyT").textContent="Sem dados "+perLabel();
+   $("emptyP").textContent="Não há portas registadas neste período. Alarga o período ou escolhe outro comercial.";
+   $("emptyA").innerHTML='<button type="button" id="emptyPer">Ver o turno atual</button>';
+   var q=$("emptyPer");if(q)q.onclick=function(){setPer("shift")};
+  }
+ }
+}
+function setPer(v){PER=v;render()}
+function renderCharts(){renderPerBar();var P=perDados();return withData(P,function(){
+ var t=S.doors.length,s=S.shift,end=s?(s.end||Date.now()):0,hrs=s?Math.max((end-s.start)/36e5,1/60):0;
  $("kpis").innerHTML=kpi(hrs&&t?(t/hrs).toFixed(1):"–","Portas/hora")+kpi(t?Math.round(cnt("venda")/t*100)+"%":"–","Conversão")+kpi(s?fmtDur(end-s.start):"–","Tempo de turno");
  var showT=ISLEAD&&TEAM.length>0;$("cardTeam").classList.toggle("hide",!showT);if(showT)$("cTeam").innerHTML=teamChart();
- $("cHour").innerHTML=hourChart();$("cFun").innerHTML=funnel();$("cDonut").innerHTML=donut();$("cStreet").innerHTML=streetChart();doorRows($("cDoors"),S.doors);animStats()}
+ $("cHour").innerHTML=hourChart();$("cFun").innerHTML=funnel();$("cDonut").innerHTML=donut();$("cStreet").innerHTML=streetChart();doorRows($("cDoors"),S.doors);animStats()
+})}
+$("perBar").onclick=function(e){var b=e.target.closest("button[data-p]");if(b)setPer(b.dataset.p)};
 $("cTeam").onclick=function(e){var r=e.target.closest("[data-id]");if(r){$("selCom").value=r.dataset.id;pickCom(r.dataset.id)}};
 var hSub=1,hOpen=null;
 function withData(e,fn){var o=[S.shift,S.doors,S.streets];S.shift=e.shift;S.doors=e.doors||[];S.streets=e.streets||[];try{return fn()}finally{S.shift=o[0];S.doors=o[1];S.streets=o[2]}}
