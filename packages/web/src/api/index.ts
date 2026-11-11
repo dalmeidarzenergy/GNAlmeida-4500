@@ -70,4 +70,16 @@ app.all("/api/campanhas", async (c) => {
   return res;
 });
 
+// Alinhar o catalogo com o CRM no arranque. Uma instalacao nova (ou uma BD
+// restaurada) semeia o catalogo a partir de public/campanhas.json, que tem
+// planos historicos sem campanha no CRM. Sem isto, esses planos ficavam
+// visiveis ate alguem criar ou editar uma campanha.
+syncCatalog()
+  .then(({ created, removed }) => {
+    if (created.length || removed.length) {
+      console.log(`[simulador] catalogo alinhado com o CRM: +${created.length} -${removed.length}`);
+    }
+  })
+  .catch((e) => console.error("[simulador] falha ao alinhar o catalogo:", e));
+
 export default app;

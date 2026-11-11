@@ -44,8 +44,10 @@ export async function syncCatalog() {
     const { created, removed } = await syncCatalogWith(simuladorStore);
     if (created.length) console.log(`syncCatalog: ${created.length} plano(s) novo(s) no catalogo do simulador:`, created.join(", "));
     if (removed.length) console.log(`syncCatalog: ${removed.length} plano(s) removido(s) (sem campanha):`, removed.join(", "));
+    return { created, removed };
   } catch (e) {
     console.error("syncCatalog:", e);
+    return { created: [], removed: [] };
   }
 }
 
