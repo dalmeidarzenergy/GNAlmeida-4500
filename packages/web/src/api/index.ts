@@ -22,6 +22,7 @@ import { simulador } from "./routes/simulador";
 import { incentivesRoutes } from "./routes/incentives";
 import { notificationsRoute } from "./routes/notifications";
 import { simuladorStore } from "./lib/simulador-store";
+import { simuladorCatalogo } from "./routes/simulador-catalogo";
 import { syncCatalog } from "./routes/campaigns";
 import { handle as aiHandle } from "./lib/simulador-ai.mjs";
 import { handle as campanhasHandle } from "./lib/simulador-campanhas.mjs";
@@ -46,6 +47,7 @@ export const router = {
   agenda,
   incentives: incentivesRoutes,
   notifications: notificationsRoute,
+  simuladorCatalogo,
 };
 
 export type AppRouter = typeof router;
@@ -62,7 +64,9 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.all("/api/ai", (c) => aiHandle(c.req.raw, process.env));
 app.all("/api/campanhas", async (c) => {
   const res = await campanhasHandle(c.req.raw, process.env, simuladorStore);
-  if (c.req.method === "POST" && res.ok) syncCatalog().catch(() => {});
+  // Nao usar fire-and-forget: a resposta fecha e a promise e abortada a meio,
+  // deixando a sincronizacao por concluir. Esperamos por ela.
+  if (c.req.method === "POST" && res.ok) await syncCatalog();
   return res;
 });
 

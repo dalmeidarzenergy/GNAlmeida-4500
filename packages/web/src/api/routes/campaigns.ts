@@ -8,6 +8,7 @@ import { SALE_COUNTED, SERVICE_LABELS } from "../shared/client-forms";
 import { deleteObject, localCampaignPdfUrl } from "../lib/s3";
 import { simuladorStore } from "../lib/simulador-store";
 import { writePublic } from "../lib/public-files";
+import { syncCatalogWith } from "../lib/sync-catalog";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().optional();
 const input = z.object({
@@ -34,34 +35,15 @@ async function assertCodeFree(code: string, exceptId?: number) {
   if (dup && dup.id !== exceptId) throw new ORPCError("BAD_REQUEST", { message: `Já existe uma campanha com o código ${code}.` });
 }
 
-/** Sincroniza as campanhas do CRM → catálogo do simulador.
- *  Planos cujo código (r) coincide com uma campanha ativa: ini = startDate, val = endDate.
- *  Campanha inativa ou eliminada: val = "1970-01-01" → ativa() devolve false.
- *  Planos sem campanha no CRM não são alterados. */
-const CATALOG_SEGMENTS = ["lr", "ln", "lc", "gr", "gn"] as const;
+/** Sincroniza as campanhas do CRM -> catalogo do simulador (ver lib/sync-catalog.ts).
+ *  Nao usar "fire-and-forget": quando a resposta HTTP fecha, o runtime aborta a
+ *  promise pendente a meio e a sincronizacao morre sem gravar nada. Por isso os
+ *  handlers fazem `await` a isto — a escrita e curta (uma leitura + uma escrita). */
 export async function syncCatalog() {
   try {
-    const rows = await db.select({ code: tbl.code, startDate: tbl.startDate, endDate: tbl.endDate, active: tbl.active }).from(tbl);
-    const map = new Map(rows.map((c) => [c.code, c]));
-    const text = await simuladorStore.get();
-    if (!text) return;
-    const catalog = JSON.parse(text);
-    let changed = false;
-    for (const seg of CATALOG_SEGMENTS) {
-      if (!Array.isArray(catalog[seg])) continue;
-      for (const plan of catalog[seg]) {
-        const crm = map.get(plan.r);
-        if (!crm) continue;
-        const ini = crm.active ? (crm.startDate ?? null) : null;
-        const val = crm.active ? (crm.endDate ?? null) : "1970-01-01";
-        if (plan.ini !== ini || plan.val !== val) {
-          plan.ini = ini ?? undefined;
-          plan.val = val ?? undefined;
-          changed = true;
-        }
-      }
-    }
-    if (changed) await simuladorStore.set(JSON.stringify(catalog));
+    const { created, removed } = await syncCatalogWith(simuladorStore);
+    if (created.length) console.log(`syncCatalog: ${created.length} plano(s) novo(s) no catalogo do simulador:`, created.join(", "));
+    if (removed.length) console.log(`syncCatalog: ${removed.length} plano(s) removido(s) (sem campanha):`, removed.join(", "));
   } catch (e) {
     console.error("syncCatalog:", e);
   }
@@ -107,7 +89,7 @@ export const campaigns = {
     const v = clean(input);
     await assertCodeFree(v.code);
     const [row] = await db.insert(tbl).values(v).returning();
-    syncCatalog(); // fire-and-forget: atualiza o catálogo do simulador
+    await syncCatalog(); // atualiza o catálogo do simulador
     return row;
   }),
   update: requireEdit("campanhas").input(input.extend({ id: z.number() })).handler(async ({ input }) => {
@@ -123,14 +105,14 @@ export const campaigns = {
         await db.run(sql`update sales set details = json_set(details, ${key}, ${v.code}) where json_extract(details, ${key}) = ${old.code}`);
       }
     }
-    syncCatalog();
+    await syncCatalog();
     return { ok: true };
   }),
   remove: requireEdit("campanhas").input(z.object({ id: z.number() })).handler(async ({ input }) => {
     const [old] = await db.select({ pdfKey: tbl.pdfKey }).from(tbl).where(eq(tbl.id, input.id));
     await db.delete(tbl).where(eq(tbl.id, input.id));
     await deleteObject(old?.pdfKey);
-    syncCatalog();
+    await syncCatalog();
     return { ok: true };
   }),
 };

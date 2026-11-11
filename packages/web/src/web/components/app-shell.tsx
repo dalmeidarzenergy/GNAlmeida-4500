@@ -89,6 +89,7 @@ const NAV: NavGroup[] = [
     icon: Settings,
     items: [
       { to: "/comercializadores", key: "comercializadores", label: "Comercializadores", icon: Plug },
+      { to: "/catalogo-simulador", key: "catalogo-simulador", label: "Catálogo do simulador", icon: SlidersHorizontal },
       { to: "/utilizadores", key: "utilizadores", label: "Utilizadores", icon: ShieldCheck },
     ],
   },
