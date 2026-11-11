@@ -43,6 +43,10 @@ if (existsSync(dbPath)) {
     };
     ensureColumn("sales", "ready", "integer NOT NULL DEFAULT 0");
     ensureColumn("sales", "alerts_disabled", "integer NOT NULL DEFAULT 0");
+    // Propostas: origem (RES/NEG ou Medem) e cópia do PDF para a aba Propostas.
+    ensureColumn("simulador_propostas", "source", "text NOT NULL DEFAULT 'res-neg'");
+    ensureColumn("simulador_propostas", "pdf_base64", "text");
+    ensureColumn("simulador_propostas", "pdf_name", "text");
   } finally {
     db.close();
   }

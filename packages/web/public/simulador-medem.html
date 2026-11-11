@@ -179,9 +179,61 @@ Promise.all([loadLogo(LOGO_IBER,'/logos/iberdrola-colaborador.png'),loadLogo(LOG
 
 function imgData(im){
   try{
-    var c=document.createElement('canvas');c.width=im.naturalWidth||im.width;c.height=im.naturalHeight||im.height;
-    var x=c.getContext('2d');x.drawImage(im,0,0);return c.toDataURL('image/png');
+    // Reduz o logo para ~700px de largura antes de o embutir. Os originais tem
+    // 1567px e 1024px de largura; como no PDF so ocupam 46 mm, o excesso fazia
+    // o ficheiro passar de 5 MB sem qualquer ganho visivel.
+    var MAXW=700;
+    var ow=im.naturalWidth||im.width, oh=im.naturalHeight||im.height;
+    var s=Math.min(1,MAXW/ow);
+    var c=document.createElement('canvas');
+    c.width=Math.round(ow*s);c.height=Math.round(oh*s);
+    var x=c.getContext('2d');
+    x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';
+    x.drawImage(im,0,0,c.width,c.height);
+    return c.toDataURL('image/png');
   }catch(e){return ''}
+}
+// Guarda a proposta do Medem no servidor, com copia do PDF, para aparecer na aba
+// Propostas. O Medem era 100% manual/sem guardar; passou a registar a proposta
+// quando o PDF e descarregado. Falhas aqui nao impedem a descarga.
+function saveProposta(blob, d){
+  if(!blob || !blob.size) return;
+  var s = snap();
+  var id = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  var nome = (s.cli || '').trim() || '(sem nome)';
+  var fr = new FileReader();
+  fr.onload = function(){
+    try{
+      var b64 = String(fr.result).split(',')[1] || '';
+      if(!b64) return;
+      var payload = {
+        id: id,
+        clientName: nome,
+        clientNif: (s.nif || '').trim(),
+        segment: 'BTE/MT',
+        bestPlan: 'Proposta Iberdrola',
+        saving: d.totA - d.totI,
+        source: 'medem',
+        pdfName: 'comparacao-bte-mt.pdf',
+        pdfBase64: b64,
+        data: { id: id, ts: new Date().toISOString(), f: s },
+      };
+      fetch('/api/simulador-propostas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(function(){});
+    }catch(e){}
+  };
+  fr.readAsDataURL(blob);
+}
+
+// Le os campos de texto do formulario (cliente/comercial).
+function snap(){
+  var o={};
+  var ids=['cli','nif','cpe','com','pot','tar','prp','cnm','cem','ctl','mor'];
+  for(var i=0;i<ids.length;i++){var e=document.getElementById(ids[i]);o[ids[i]]=e?e.value:''}
+  return o;
 }
 function hoje(){var d=new Date();var p=function(n){return (n<10?'0':'')+n};return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()}
 /* Desenha o logo dentro de uma caixa de 46x11 mm, ancorado a esquerda ou a direita,
@@ -304,6 +356,9 @@ $('pdf').addEventListener('click',function(){
   doc.setDrawColor(GREEN[0],GREEN[1],GREEN[2]);doc.setLineWidth(0.8);doc.line(M,yb,W-M,yb);
   if(rc.length){doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(40,50,44);doc.text(rc.join('  |  '),M,yb+5.5);}
 
+  const blob = doc.output('blob');
+  // Guarda a proposta (e o PDF) para a aba Propostas; nao bloqueia a descarga.
+  saveProposta(blob, d);
   doc.save('comparacao-bte-mt.pdf');
 });
 

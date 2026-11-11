@@ -629,7 +629,7 @@ export const simuladorCatalog = sqliteTable("simulador_catalog", {
   value: text("value").notNull(),
 });
 
-/** Propostas guardadas do Simulador RES/NEG. */
+/** Propostas guardadas dos simuladores (RES/NEG e Medem). */
 export const simuladorPropostas = sqliteTable("simulador_propostas", {
   id: text("id").primaryKey(),
   userId: text("user_id")
@@ -642,6 +642,12 @@ export const simuladorPropostas = sqliteTable("simulador_propostas", {
   segment: text("segment"),
   bestPlan: text("best_plan"),
   saving: real("saving"),
+  /** Origem da proposta: "res-neg" (simulador de campanhas) ou "medem" (BTE/MT). */
+  source: text("source").notNull().default("res-neg"),
+  /** Cópia do PDF gerado (base64, sem o prefixo data:), para re-descarregar na aba Propostas. */
+  pdfBase64: text("pdf_base64"),
+  /** Nome sugerido do ficheiro PDF. */
+  pdfName: text("pdf_name"),
   data: text("data", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
   createdAt: createdAt(),
 });

@@ -23,6 +23,7 @@ import { incentivesRoutes } from "./routes/incentives";
 import { notificationsRoute } from "./routes/notifications";
 import { simuladorStore } from "./lib/simulador-store";
 import { simuladorCatalogo } from "./routes/simulador-catalogo";
+import { propostas } from "./routes/propostas";
 import { syncCatalog } from "./routes/campaigns";
 import { handle as aiHandle } from "./lib/simulador-ai.mjs";
 import { handle as campanhasHandle } from "./lib/simulador-campanhas.mjs";
@@ -48,6 +49,7 @@ export const router = {
   incentives: incentivesRoutes,
   notifications: notificationsRoute,
   simuladorCatalogo,
+  propostas,
 };
 
 export type AppRouter = typeof router;

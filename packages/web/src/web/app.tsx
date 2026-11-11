@@ -41,6 +41,7 @@ const HistoricoGpsPage = lazy(() => import("./pages/historico-gps"));
 const SimuladorPage = lazy(() => import("./pages/simulador"));
 const SimuladorMedemPage = lazy(() => import("./pages/simulador-medem"));
 const CompletarIbanPage = lazy(() => import("./pages/completar-iban"));
+const PropostasPage = lazy(() => import("./pages/propostas"));
 
 const routes: [string, React.ComponentType][] = [
   ["/agenda", AgendaPage],
@@ -77,6 +78,7 @@ const routes: [string, React.ComponentType][] = [
   ["/historico-gps", HistoricoGpsPage],
   ["/simulador-res-neg", SimuladorPage],
   ["/simulador-medem", SimuladorMedemPage],
+  ["/propostas", PropostasPage],
   ["/completar-iban", CompletarIbanPage],
   ["/", Dashboard],
 ];
