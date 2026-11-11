@@ -1,5 +1,5 @@
 /**
- * Simulador Iberdrola — carrega a página standalone (public/simulador-iberdrola.html)
+ * Simulador RES/NEG — carrega a página standalone (public/simulador-res-neg.html)
  * num iframe em ecrã inteiro. Passa os dados do utilizador autenticado via postMessage
  * para que o simulador os use como dados do comercial e para o histórico centralizado.
  */
@@ -51,8 +51,8 @@ export default function SimuladorPage() {
     <div className="-mx-4 -my-8 h-[100dvh] overflow-x-hidden lg:-mx-8">
       <iframe
         ref={iframeRef}
-        src="/simulador-iberdrola.html"
-        title="Simulador Iberdrola"
+        src="/simulador-res-neg.html"
+        title="Simulador RES/NEG"
         className="h-full w-full border-0"
         allow="geolocation"
       />

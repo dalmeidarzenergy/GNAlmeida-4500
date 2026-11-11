@@ -39,6 +39,7 @@ const AgendaPage = lazy(() => import("./pages/agenda"));
 const D2DPage = lazy(() => import("./pages/d2d"));
 const HistoricoGpsPage = lazy(() => import("./pages/historico-gps"));
 const SimuladorPage = lazy(() => import("./pages/simulador"));
+const SimuladorMedemPage = lazy(() => import("./pages/simulador-medem"));
 const CompletarIbanPage = lazy(() => import("./pages/completar-iban"));
 
 const routes: [string, React.ComponentType][] = [
@@ -74,7 +75,8 @@ const routes: [string, React.ComponentType][] = [
   ["/utilizadores", UsersPage],
   ["/terreno-d2d", D2DPage],
   ["/historico-gps", HistoricoGpsPage],
-  ["/simulador-iberdrola", SimuladorPage],
+  ["/simulador-res-neg", SimuladorPage],
+  ["/simulador-medem", SimuladorMedemPage],
   ["/completar-iban", CompletarIbanPage],
   ["/", Dashboard],
 ];

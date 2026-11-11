@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt" data-theme="dark"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Simulador Iberdrola</title>
+<title>Simulador RES/NEG</title>
 <script>try{var d=parent.document.documentElement;var t=d.getAttribute("data-theme");if(t)document.documentElement.setAttribute("data-theme",t);new MutationObserver(function(){var nt=d.getAttribute("data-theme");if(nt)document.documentElement.setAttribute("data-theme",nt)}).observe(d,{attributes:true,attributeFilter:["data-theme"]})}catch(e){}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -31,7 +31,7 @@ input,select{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px
 .note{font-size:12px;color:var(--mu)}.hide{display:none}.nocur .sv,.nocur .ex{display:none}
 .tabs{display:flex;gap:6px;margin-bottom:12px}.tabs button{flex:1;padding:9px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:8px;font:inherit;cursor:pointer}.tabs button.on,.up button{background:var(--gl);border-color:var(--g);color:var(--gd);font-weight:600}.up{display:none;border:2px dashed var(--bd);border-radius:10px;padding:14px;margin-bottom:12px;text-align:center}.up button{margin-top:8px;padding:9px 16px;border:1px solid var(--g);border-radius:8px;font:inherit;cursor:pointer}.dl{display:none;margin:4px 0 14px;padding:10px 18px;border:1px solid var(--g);border-radius:8px;background:var(--gl);color:var(--gd);font:inherit;font-weight:600;cursor:pointer}#st{margin-top:8px;font-size:13px;color:var(--mu)}
 </style></head><body><main>
-<h1>Simulador de campanhas Iberdrola</h1>
+<h1>Simulador de campanhas RES/NEG</h1>
 <p class="s">Indica o consumo e o que pagas hoje e vê qual a campanha mais barata.</p>
 <div class="card"><div class="tabs"><button id="tM" class="on" onclick="tab(false)">Manual</button><button id="tH" onclick="tab(3)">Histórico</button><button id="tC" onclick="tab(2)">Campanhas</button></div>
 <div class="up" id="hp" style="text-align:left"><b>Histórico de propostas</b> <span class="note">(guardado neste browser)</span><div style="margin:6px 0"><input id="hq" type="text" placeholder="Pesquisar por nome ou NIF" oninput="renderHist()"></div><div id="hl"></div><div style="text-align:center;margin-top:8px"><button id="hclr" onclick="clearHist()">Apagar todo o histórico</button></div></div>

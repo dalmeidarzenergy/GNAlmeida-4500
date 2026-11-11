@@ -623,13 +623,13 @@ export const autoPdfs = sqliteTable("auto_pdfs", {
   uniqueIndex("uniq_auto_pdfs_month_employee").on(t.month, t.employeeId),
 ]);
 
-/** Catálogo do Simulador Iberdrola — armazenamento chave-valor (um único registo com todo o JSON). */
+/** Catálogo do Simulador RES/NEG — armazenamento chave-valor (um único registo com todo o JSON). */
 export const simuladorCatalog = sqliteTable("simulador_catalog", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
 });
 
-/** Propostas guardadas do Simulador Iberdrola. */
+/** Propostas guardadas do Simulador RES/NEG. */
 export const simuladorPropostas = sqliteTable("simulador_propostas", {
   id: text("id").primaryKey(),
   userId: text("user_id")

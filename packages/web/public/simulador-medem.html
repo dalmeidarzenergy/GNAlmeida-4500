@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="pt" data-theme="light"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador Medem</title>
+<script>try{var d=parent.document.documentElement;var t=d.getAttribute("data-theme");if(t)document.documentElement.setAttribute("data-theme",t);new MutationObserver(function(){var nt=d.getAttribute("data-theme");if(nt)document.documentElement.setAttribute("data-theme",nt)}).observe(d,{attributes:true,attributeFilter:["data-theme"]})}catch(e){}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+<style>
+:root{--bg:#f6f8f6;--card:#fff;--tx:#14231a;--mu:#5c6b62;--bd:#d9e2dc;--g:#00a046;--gd:#004a2b;--gl:#e6f5ec;--bad:#c0392b;--hd:#f2f6ef;color-scheme:light}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c0e0d;--card:#141715;--tx:#eef2ea;--mu:#9aa39b;--bd:#262b27;--g:#00a046;--gd:#7fd6a3;--gl:#16241b;--bad:#f05252;--hd:#1b211d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0c0e0d;--card:#141715;--tx:#eef2ea;--mu:#9aa39b;--bd:#262b27;--g:#00a046;--gd:#7fd6a3;--gl:#16241b;--bad:#f05252;--hd:#1b211d;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1080px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}p.s{color:var(--mu);margin:0 0 14px}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+@media(max-width:900px){.cards{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mu);margin:0 0 10px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+label{display:block;font-size:12px;color:var(--mu);margin-bottom:3px}
+input{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.kpis{grid-template-columns:1fr}}
+.kpi{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:13px 16px}
+.kpi .l{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mu);margin-bottom:5px}
+.kpi .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.kpi .v.pos{color:var(--g)}.kpi .v.neg{color:var(--bad)}
+.tw{overflow-x:auto;background:var(--card);border:1px solid var(--bd);border-radius:12px}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+th{background:var(--hd);text-align:left;padding:9px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mu)}
+td{padding:8px 12px;border-top:1px solid var(--bd);font-variant-numeric:tabular-nums}
+th.n,td.n{text-align:right}
+tr.sub td{background:var(--hd);font-weight:600}
+tr.tot td{background:var(--hd);font-weight:700;border-top:2px solid var(--g)}
+.pos{color:var(--g)}.neg{color:var(--bad)}
+.btns{display:flex;gap:10px;margin:14px 0 24px;flex-wrap:wrap}
+button{padding:11px 20px;border-radius:9px;font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--bd);background:var(--card);color:var(--tx)}
+button.go{background:var(--g);border-color:var(--g);color:#fff}
+.note{font-size:12px;color:var(--mu);margin-bottom:10px}
+</style></head><body><main>
+<h1>Simulador BTE / MT – Atual vs Iberdrola</h1>
+<p class="s">Compara a fatura atual com a proposta Iberdrola. Os campos vazios contam como 0.</p>
+
+<div class="cards">
+  <div class="card"><h2>Clienteliente e comercial</h2><div class="grid">
+    <div><label>Cliente</label><input id="cli" type="text" autocomplete="off"></div>
+    <div><label>NIF</label><input id="nif" type="text" autocomplete="off"></div>
+    <div><label>CPE</label><input id="cpe" type="text" autocomplete="off"></div>
+    <div><label>Comercializador atual</label><input id="com" type="text" autocomplete="off"></div>
+    <div style="grid-column:1/-1"><label>Morada de fornecimento</label><input id="mor" type="text" autocomplete="off"></div>
+    <div><label>Potência</label><input id="pot" type="text" autocomplete="off"></div>
+    <div><label>Tarifa</label><input id="tar" type="text" autocomplete="off"></div>
+    <div><label>N.º da proposta</label><input id="prp" type="text" autocomplete="off"></div>
+    <div><label>Nome do comercial</label><input id="cnm" type="text" autocomplete="off"></div>
+    <div><label>Email do comercial</label><input id="cem" type="email" autocomplete="off"></div>
+    <div><label>Contacto do comercial</label><input id="ctl" type="text" autocomplete="off"></div>
+  </div></div>
+
+  <div class="card"><h2>Consumos</h2><div class="grid">
+    <div><label>Dias do período</label><input id="dias" type="number" min="1" value="30"></div>
+    <div><label>Energia Ponta (kWh)</label><input id="kpo" type="number" min="0" step="any"></div>
+    <div><label>Energia Cheias (kWh)</label><input id="kch" type="number" min="0" step="any"></div>
+    <div><label>Energia Vazio Normal (kWh)</label><input id="kvn" type="number" min="0" step="any"></div>
+    <div><label>Energia Super Vazio (kWh)</label><input id="ksv" type="number" min="0" step="any"></div>
+  </div></div>
+
+  <div class="card"><h2>Fatura atual do cliente</h2><div class="grid">
+    <div><label>Energia Ponta (€/kWh)</label><input id="apo" type="number" min="0" step="any"></div>
+    <div><label>Energia Cheias (€/kWh)</label><input id="ach" type="number" min="0" step="any"></div>
+    <div><label>Energia Vazio Normal (€/kWh)</label><input id="avn" type="number" min="0" step="any"></div>
+    <div><label>Energia Super Vazio (€/kWh)</label><input id="asv" type="number" min="0" step="any"></div>
+    <div><label>Termo fixo / comercialização (€/dia)</label><input id="atf" type="number" min="0" step="any"></div>
+  </div></div>
+
+  <div class="card"><h2>Proposta Iberdrola</h2><div class="grid">
+    <div><label>Energia Ponta (€/kWh)</label><input id="ipo" type="number" min="0" step="any"></div>
+    <div><label>Energia Cheias (€/kWh)</label><input id="ich" type="number" min="0" step="any"></div>
+    <div><label>Energia Vazio Normal (€/kWh)</label><input id="ivn" type="number" min="0" step="any"></div>
+    <div><label>Energia Super Vazio (€/kWh)</label><input id="isv" type="number" min="0" step="any"></div>
+    <div><label>Termo fixo / comercialização (€/dia)</label><input id="itf" type="number" min="0" step="any"></div>
+  </div></div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="l" id="k1l">Poupança no período</div><div class="v" id="k1">—</div></div>
+  <div class="kpi"><div class="l">Poupança anual estimada</div><div class="v" id="k2">—</div></div>
+  <div class="kpi"><div class="l">Custo médio (cêntimos €/kWh)</div><div class="v" id="k3" style="font-size:15px">—</div></div>
+  <div class="kpi"><div class="l">Consumo total</div><div class="v" id="k4">—</div></div>
+</div>
+
+<div class="tw"><table id="cmp">
+<thead><tr><th>Rubrica</th><th class="n">Atual (€)</th><th class="n">Iberdrola (€)</th><th class="n">Diferença (€)</th><th class="n">Dif. (%)</th></tr></thead>
+<tbody id="cb"></tbody>
+</table></div>
+
+<div class="btns">
+  <button class="go" id="pdf">Descarregar PDF</button>
+  <button id="clr">Limpar tudo</button>
+</div>
+<div class="note">Todos os valores são sem IVA, sem taxas e sem impostos.</div>
+
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id)};
+// ids dos campos numericos, com o prefixo e a chave do periodo
+var PER=[['po','Ponta'],['ch','Cheias'],['vn','Vazio Normal'],['sv','Super Vazio']];
+var num=function(id){var v=parseFloat(($(id)||{}).value);return isNaN(v)?0:v};
+var txt=function(id){return (($(id)||{}).value||'').trim()};
+
+// Formato portugues: virgula decimal, ponto nos milhares
+function nf(v,d){if(d===undefined)d=2;return v.toLocaleString('pt-PT',{minimumFractionDigits:d,maximumFractionDigits:d})}
+function eur(v){return (v<0?'-':'')+nf(Math.abs(v),2)+' €'}
+
+function calc(){
+  var dias=num('dias')||0;
+  var res={dias:dias,periodos:[],subA:0,subI:0,tfA:0,tfI:0,totA:0,totI:0,kwh:0,porP:null};
+  PER.forEach(function(p){
+    var k=num('k'+p[0]), pa=num('a'+p[0]), pi=num('i'+p[0]);
+    var ca=k*pa, ci=k*pi;
+    res.periodos.push({nome:p[1],kwh:k,pa:pa,pi:pi,ca:ca,ci:ci,has:!!pa&&!!pi});
+    res.kwh+=k;
+  });
+  res.subA=res.periodos.reduce(function(s,r){return r.has?s+r.ca:s},0);
+  res.subI=res.periodos.reduce(function(s,r){return r.has?s+r.ci:s},0);
+  res.tfA=num('atf')*dias; res.tfI=num('itf')*dias;
+  res.totA=res.subA+res.tfA; res.totI=res.subI+res.tfI;
+  return res;
+}
+
+function render(){
+  var d=calc();
+  // Tabela de comparacao
+  var html='';
+  d.periodos.forEach(function(r){
+    var a=r.has?r.ca:null, i=r.has?r.ci:null;
+    var dif=(a===null||i===null)?null:(a-i);
+    var pct=(dif===null||!a)?null:(dif/a*100);
+    html+='<tr><td>Energia '+r.nome+'</td><td class="n">'+(a===null?'—':eur(a))+'</td><td class="n">'+(i===null?'—':eur(i))+'</td><td class="n '+cls(dif)+'">'+(dif===null?'—':eur(dif))+'</td><td class="n '+cls(dif)+'">'+(pct===null?'—':nf(pct,1)+'%')+'</td></tr>';
+  });
+  html+='<tr class="sub"><td>Subtotal energia ativa</td><td class="n">'+eur(d.subA)+'</td><td class="n">'+eur(d.subI)+'</td><td class="n '+cls(d.subA-d.subI)+'">'+eur(d.subA-d.subI)+'</td><td class="n">'+pct(d.subA,d.subI)+'</td></tr>';
+  html+='<tr class="sub"><td>Termo fixo</td><td class="n">'+eur(d.tfA)+'</td><td class="n">'+eur(d.tfI)+'</td><td class="n '+cls(d.tfA-d.tfI)+'">'+eur(d.tfA-d.tfI)+'</td><td class="n">'+pct(d.tfA,d.tfI)+'</td></tr>';
+  html+='<tr class="tot"><td>TOTAL</td><td class="n">'+eur(d.totA)+'</td><td class="n">'+eur(d.totI)+'</td><td class="n '+cls(d.totA-d.totI)+'">'+eur(d.totA-d.totI)+'</td><td class="n '+cls(d.totA-d.totI)+'">'+pct(d.totA,d.totI)+'</td></tr>';
+  $('cb').innerHTML=html;
+
+  // Indicadores: poupanca (positivo = Iberdrola mais barata)
+  var poup=d.totA-d.totI, tem=d.totA>0&&d.totI>0;
+  var anual=(d.dias>0)?poup*365/d.dias:0;
+  $('k1').textContent=tem?(poup<0?'':(poup===0?'':''))+(poup===0?'0.00 €':eur(Math.abs(poup))):'—';
+  $('k1').className='v '+(poup>0?'pos':poup<0?'neg':'');
+  $('k1l').textContent=poup<0?'Acréscimo no período':'Poupança no período';
+  $('k2').textContent=tem?(anual<0?'':'')+(anual===0?'0.00 €':eur(Math.abs(anual))):'—';
+  $('k2').className='v '+(anual>0?'pos':anual<0?'neg':'');
+  // custo medio  (total / kwh) em centimos
+  var cma=d.kwh?d.totA/d.kwh*100:null, cmi=d.kwh?d.totI/d.kwh*100:null;
+  $('k3').textContent=(cma===null?'—':nf(cma,2))+' / '+(cmi===null?'—':nf(cmi,2));
+  $('k4').textContent=d.kwh?nf(d.kwh,0)+' kWh':'—';
+}
+function cls(v){if(v===null||v===undefined||v===0)return '';return v>0?'neg':'pos'}
+function pct(a,i){if(!a)return '—';return nf((a-i)/a*100,1)+'%'}
+
+// ---- Listeners: recalcular em qualquer alteracao ----
+Array.prototype.forEach.call(document.querySelectorAll('input'),function(el){
+  el.addEventListener('input',render);
+});
+$('clr').addEventListener('click',function(){
+  Array.prototype.forEach.call(document.querySelectorAll('input'),function(el){
+    el.value = el.id==='dias' ? '30' : '';
+  });
+  render();
+});
+
+// ---- PDF (jsPDF + autotable), A4, 2 paginas ----
+var LOGO_IBER=new Image(), LOGO_RZ=new Image();
+function loadLogo(im,url){return new Promise(function(res){im.onload=function(){res()};im.onerror=function(){res()};im.src=url})}
+Promise.all([loadLogo(LOGO_IBER,'/logos/iberdrola-colaborador.png'),loadLogo(LOGO_RZ,'/logos/rzenergy.png')]).then(function(){});
+
+function imgData(im){
+  try{
+    var c=document.createElement('canvas');c.width=im.naturalWidth||im.width;c.height=im.naturalHeight||im.height;
+    var x=c.getContext('2d');x.drawImage(im,0,0);return c.toDataURL('image/png');
+  }catch(e){return ''}
+}
+function hoje(){var d=new Date();var p=function(n){return (n<10?'0':'')+n};return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()}
+/* Desenha o logo dentro de uma caixa de 46x11 mm, ancorado a esquerda ou a direita,
+   preservando a proporcao. Assim os dois logos ficam com a mesma altura e nao
+   colidem com a linha verde nem com o titulo. */
+function logoBox(doc,im,x,y,align){
+  if(!im||!im.naturalWidth)return;
+  var bw=46,bh=11;
+  var r=im.naturalHeight/im.naturalWidth;
+  var w=bw,h=bw*r;
+  if(h>bh){h=bh;w=bh/r;}
+  var x0 = align==='right' ? x-w : x;
+  doc.addImage(imgData(im),'PNG',x0,y,w,h);
+}
+
+$('pdf').addEventListener('click',function(){
+  var d=calc();
+  var jsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;if(!jsPDF)return;
+  var doc=new jsPDF({unit:'mm',format:'a4'});
+  var W=210, M=14, y=0;
+  var GREEN=[0,160,70], LIGHT=[230,245,236], GREY=[120,130,124];
+  var temAt=d.totA>0, temIb=d.totI>0;
+
+  // Cabeçalho: logos 46mm + linha verde
+  var lw=46, lh=12;
+  try{ logoBox(doc,LOGO_IBER,M,y+2,'left');}catch(e){}
+  try{ logoBox(doc,LOGO_RZ,W-M,y+2,'right');}catch(e){}
+  y+=lh+4;
+  doc.setDrawColor(GREEN[0],GREEN[1],GREEN[2]);doc.setLineWidth(0.8);doc.line(M,y,W-M,y);
+  y+=8;
+
+  // Titulo + data
+  doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(20,35,26);
+  doc.text('Comparação de proposta Iberdrola',M,y);
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(GREY[0],GREY[1],GREY[2]);
+  doc.text('Data: '+hoje(),W-M,y,{align:'right'});
+  y+=8;
+
+  // Linhas de dados: so as preenchidas
+  doc.setFontSize(9);doc.setTextColor(40,50,44);
+  function linha(s){doc.text(s,M,y);y+=5.4}
+  var l1=[];if(txt('cli'))l1.push('Cliente: '+txt('cli'));if(txt('nif'))l1.push('NIF: '+txt('nif'));
+  if(l1.length)linha(l1.join('  |  '));
+  if(txt('cpe'))linha('CPE: '+txt('cpe'));
+  if(txt('com'))linha('Comercializador atual: '+txt('com'));
+  if(d.kwh)linha('Consumo: '+nf(d.kwh,0)+' kWh em '+nf(d.dias,0)+' dias'+(temAt?'  |  Valor atual sem taxas: '+eur(d.totA)+' (por fatura)':''));
+  if(txt('mor'))linha('Morada de fornecimento: '+txt('mor'));
+  var l6=[];if(txt('pot'))l6.push('Potência: '+txt('pot'));if(txt('tar'))l6.push('Tarifa: '+txt('tar'));
+  if(l6.length)linha(l6.join('  |  '));
+  y+=2;
+
+  // Caixa verde (so se houver os dois totais)
+  if(temAt&&temIb){
+    var poup=d.totA-d.totI, anual=d.dias>0?poup*365/d.dias:0, mes=anual/12;
+    var n= txt('prp');
+    var titulo = poup>=0 ? ('Compensa mais: '+(n?('Proposta n.º '+n):'Proposta Iberdrola')) : ('Proposta: '+(n?('n.º '+n):'Iberdrola'));
+    var sub = poup>=0 ? ('Poupança de '+eur(Math.abs(anual))+'/ano ('+eur(Math.abs(mes))+'/mês)') : ('Acréscimo de '+eur(Math.abs(anual))+'/ano ('+eur(Math.abs(mes))+'/mês)');
+    doc.setFillColor(LIGHT[0],LIGHT[1],LIGHT[2]);doc.roundedRect(M,y,W-2*M,16,2,2,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(0,74,43);doc.text(titulo,M+4,y+6.5);
+    doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.text(sub,M+4,y+12);
+    y+=22;
+  }
+
+  // Tabela resumo
+  var mes2=(d.dias>0)?(d.totA-d.totI)*365/d.dias/12:0, ano2=(d.dias>0)?(d.totA-d.totI)*365/d.dias:0;
+  doc.autoTable({
+    startY:y,margin:{left:M,right:M},theme:'grid',
+    headStyles:{fillColor:GREEN,textColor:255,fontSize:8,fontStyle:'bold'},
+    bodyStyles:{fontSize:8.5},alternateRowStyles:{fillColor:[248,250,247]},
+    head:[['#','Proposta','Atual por fatura','Iberdrola por fatura','Poupança/mês','Poupança/ano']],
+    body:[['1', txt('prp')?('Proposta n.º '+txt('prp')):'Proposta Iberdrola', eur(d.totA), eur(d.totI),
+      {content:eur(Math.abs(mes2)),styles:{textColor:mes2<0?[192,57,43]:[63,143,31]}},
+      {content:eur(Math.abs(ano2)),styles:{textColor:ano2<0?[192,57,43]:[63,143,31]}}]],
+    columnStyles:{0:{cellWidth:8},4:{halign:'right'},5:{halign:'right'},2:{halign:'right'},3:{halign:'right'}}
+  });
+
+  // ---------------- Pagina 2 ----------------
+  doc.addPage();
+  var y2=0, lh2=12;
+  try{ logoBox(doc,LOGO_IBER,M,y2+2,'left');}catch(e){}
+  try{ logoBox(doc,LOGO_RZ,W-M,y2+2,'right');}catch(e){}
+  y2+=lh2+4;
+  doc.setDrawColor(GREEN[0],GREEN[1],GREEN[2]);doc.setLineWidth(0.8);doc.line(M,y2,W-M,y2);
+  y2+=8;
+  doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(20,35,26);
+  doc.text('Detalhe da poupança – proposta Iberdrola',M,y2);y2+=7;
+
+  var corpo=[];
+  d.periodos.forEach(function(r){
+    if(!r.kwh||(!r.pa&&!r.pi))return;
+    corpo.push(['Energia '+r.nome+' (€/kWh)',nf(r.kwh,0),nf(r.pa,4),nf(r.pi,4),eur(r.ca),eur(r.ci),
+      {content:eur(Math.abs(r.ca-r.ci)),styles:{textColor:(r.ca-r.ci)<0?[192,57,43]:[63,143,31]}}]);
+  });
+  if(corpo.length){
+    corpo.push([{content:'Subtotal energia',styles:{fontStyle:'bold'}},'','','',{content:eur(d.subA),styles:{fontStyle:'bold'}},{content:eur(d.subI),styles:{fontStyle:'bold'}},{content:eur(Math.abs(d.subA-d.subI)),styles:{fontStyle:'bold'}}]);
+  }
+  if(num('atf')||num('itf')){
+    corpo.push(['Termo fixo (€/dia)',nf(d.dias,0),nf(num('atf'),4),nf(num('itf'),4),eur(d.tfA),eur(d.tfI),
+      {content:eur(Math.abs(d.tfA-d.tfI)),styles:{textColor:(d.tfA-d.tfI)<0?[192,57,43]:[63,143,31]}}]);
+  }
+  corpo.push([{content:'Total por fatura',styles:{fontStyle:'bold'}},'','','',{content:eur(d.totA),styles:{fontStyle:'bold'}},{content:eur(d.totI),styles:{fontStyle:'bold'}},{content:eur(Math.abs(d.totA-d.totI)),styles:{fontStyle:'bold'}}]);
+
+  doc.autoTable({
+    startY:y2,margin:{left:M,right:M},theme:'grid',
+    headStyles:{fillColor:GREEN,textColor:255,fontSize:8,fontStyle:'bold'},
+    bodyStyles:{fontSize:8},styles:{cellPadding:2},
+    head:[['Rubrica','Qtd.','Preço Atual','Preço Iberdrola','Custo Atual','Custo Iberdrola','Poupança']],
+    body:corpo,
+    columnStyles:{1:{halign:'right'},2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{halign:'right'},6:{halign:'right'}}
+  });
+
+  var yf=doc.lastAutoTable.finalY+6;
+  doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(GREY[0],GREY[1],GREY[2]);
+  var nota=doc.splitTextToSize('Preços introduzidos manualmente, sem IVA. É apresentado "-" quando falta um preço. Valores sem IVA, taxas e impostos. Confirmar sempre as condições finais com a Iberdrola.',W-2*M);
+  doc.text(nota,M,yf);
+
+  // Filete verde + rodape do comercial
+  var rc=[];if(txt('cnm'))rc.push('Comercial: '+txt('cnm'));if(txt('cem'))rc.push('Email: '+txt('cem'));if(txt('ctl'))rc.push('Contacto: '+txt('ctl'));
+  var yb=Math.max(doc.internal.pageSize.getHeight()-24, yf+nota.length*3+6);
+  doc.setDrawColor(GREEN[0],GREEN[1],GREEN[2]);doc.setLineWidth(0.8);doc.line(M,yb,W-M,yb);
+  if(rc.length){doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(40,50,44);doc.text(rc.join('  |  '),M,yb+5.5);}
+
+  doc.save('comparacao-bte-mt.pdf');
+});
+
+render();
+})();
+</script>
+</main></body></html>
+body></html>

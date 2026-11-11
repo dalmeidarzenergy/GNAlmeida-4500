@@ -60,7 +60,7 @@ simulador(app);
 iberdrolaRoutes(app);
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
-// Simulador Iberdrola — backend routes
+// Simulador RES/NEG — backend routes
 app.all("/api/ai", (c) => aiHandle(c.req.raw, process.env));
 app.all("/api/campanhas", async (c) => {
   const res = await campanhasHandle(c.req.raw, process.env, simuladorStore);
