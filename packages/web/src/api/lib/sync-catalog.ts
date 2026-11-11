@@ -69,9 +69,11 @@ export async function syncCatalogWith(store: CatalogStore): Promise<{ created: s
   for (const c of rows as CrmCampaign[]) {
     const hit = byKey.get(matchKey(c.code));
     if (!hit) continue;
-    // Plano criado automaticamente e ainda sem precos: fica inativo ate alguem
-    // o completar na app de campanhas. Nao lhe tocamos nas datas.
-    if (hit.plan.novo) continue;
+    // Plano criado automaticamente e ainda sem precos: nao tem precos para vender,
+    // por isso fica inativo (val no passado) enquanto ninguem o preencher. Mas o
+    // estado de atividade do CRM manda sempre: se a campanha estiver desativada,
+    // o plano sai do simulador mesmo que ainda nao tenha precos.
+    if (hit.plan.novo && c.active) continue;
     const { ini, val } = activeState(c);
     if (hit.plan.ini !== ini || hit.plan.val !== val) {
       if (ini === undefined) delete hit.plan.ini;
@@ -85,6 +87,8 @@ export async function syncCatalogWith(store: CatalogStore): Promise<{ created: s
   // 2) Campanhas do CRM sem plano no catalogo: criar um plano novo.
   for (const c of rows as CrmCampaign[]) {
     if (byKey.has(matchKey(c.code))) continue;
+    // Campanha desativada no CRM nao deve criar plano nenhum no simulador.
+    if (!c.active) continue;
     const seg = segmentFor(c.service, c.clientType);
     if (!seg) continue;
     if (!Array.isArray(catalog[seg])) catalog[seg] = [];
