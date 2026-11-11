@@ -53,6 +53,24 @@ async function subordinateUserIds(employeeId: number | null): Promise<string[]> 
   return out;
 }
 
+/** Procura o funcionario correspondente a um utilizador, quando a conta nao tem
+ *  employee_id gravado (contas de admin sem ligacao direta). Tenta primeiro o
+ *  user_roles e, se falhar, liga pelo email do utilizador ao do funcionario. */
+async function resolveEmployeeId(userId: string): Promise<number | null> {
+  const [r] = await db
+    .select({ employeeId: userRoles.employeeId })
+    .from(userRoles)
+    .where(eq(userRoles.userId, userId));
+  if (r?.employeeId != null) return r.employeeId;
+
+  const [u] = await db.select({ email: user.email }).from(user).where(eq(user.id, userId));
+  if (!u?.email) return null;
+  const alvo = u.email.toLowerCase();
+  const todos = await db.select({ id: employees.id, email: employees.email }).from(employees);
+  const hit = todos.find((x) => x.email.toLowerCase() === alvo);
+  return hit?.id ?? null;
+}
+
 export const propostas = {
   /** Lista as propostas. `source` separa as de RES/NEG das do Medem. */
   list: requireView("propostas")
@@ -82,6 +100,8 @@ export const propostas = {
       };
 
       const sup = ctx.role === "admin" || ctx.role === "diretor";
+      // Um chefe pode nao ter employee_id na conta; sem isto via so as suas.
+      const myEmployeeId = ctx.employeeId ?? (sup ? null : await resolveEmployeeId(ctx.user.id));
       let rows: {
         id: string;
         userId: string;
@@ -104,7 +124,7 @@ export const propostas = {
           .orderBy(desc(simuladorPropostas.createdAt))
           .limit(200);
       } else {
-        const subs = await subordinateUserIds(ctx.employeeId);
+        const subs = await subordinateUserIds(myEmployeeId);
         const ids = [ctx.user.id, ...subs];
         const acc: typeof rows = [];
         for (const uid of ids) {
@@ -160,7 +180,8 @@ export const propostas = {
 
       let pode = ctx.role === "admin" || ctx.role === "diretor" || p.userId === ctx.user.id;
       if (!pode) {
-        const subs = await subordinateUserIds(ctx.employeeId);
+        const meu = ctx.employeeId ?? (await resolveEmployeeId(ctx.user.id));
+        const subs = await subordinateUserIds(meu);
         pode = subs.includes(p.userId);
       }
       if (!pode) throw new ORPCError("FORBIDDEN", { message: "Só podes apagar as tuas propostas" });

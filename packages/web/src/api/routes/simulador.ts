@@ -7,6 +7,7 @@ import { user, userRoles, employees, simuladorPropostas } from "../database/sche
 interface Ctx {
   userId: string;
   name: string;
+  email: string;
   role: string;
   employeeId: number | null;
 }
@@ -17,7 +18,7 @@ async function resolveCtx(headers: Headers): Promise<Ctx | null> {
   const [r] = await db.select().from(userRoles).where(eq(userRoles.userId, session.user.id));
   const role = r?.role ?? "vendedor";
   const name = session.user.name || session.user.email;
-  return { userId: session.user.id, name, role, employeeId: r?.employeeId ?? null };
+  return { userId: session.user.id, name, email: session.user.email || "", role, employeeId: r?.employeeId ?? null };
 }
 
 /** Carrega hierarquia (employees + ligações a utilizadores). */
@@ -64,12 +65,34 @@ function descendants(rootId: number, emps: { id: number; managerId: number | nul
 }
 
 /** Utilizadores que estão abaixo do utilizador autenticado na hierarquia. */
+/** Descobre o funcionario de um utilizador quando a conta nao tem employee_id
+ *  gravado (contas de admin). Sem isto, um chefe via so as propostas dele. */
+async function resolveEmployeeId(userId: string, email: string): Promise<number | null> {
+  const [r] = await db
+    .select({ employeeId: userRoles.employeeId })
+    .from(userRoles)
+    .where(eq(userRoles.userId, userId));
+  if (r?.employeeId != null) return r.employeeId;
+  const alvo = (email || "").toLowerCase();
+  if (!alvo) return null;
+  const todos = await db.select({ id: employees.id, email: employees.email }).from(employees);
+  return todos.find((x) => x.email.toLowerCase() === alvo)?.id ?? null;
+}
+
+/** employeeId do utilizador autenticado, resolvido pelo email quando a conta
+ *  nao o tem gravado (acontece nas contas de admin). */
+async function currentEmployeeId(ctx: Ctx): Promise<number | null> {
+  if (ctx.employeeId != null) return ctx.employeeId;
+  return resolveEmployeeId(ctx.userId, ctx.email);
+}
+
 async function subordinateUserIds(ctx: Ctx): Promise<string[]> {
-  if (ctx.employeeId == null) return [];
+  const employeeId = await currentEmployeeId(ctx);
+  if (employeeId == null) return [];
   const { emps, empToUser } = await loadPeople();
-  const scope = descendants(ctx.employeeId, emps);
+  const scope = descendants(employeeId, emps);
   // Inclui o próprio.
-  const mine = empToUser.get(ctx.employeeId);
+  const mine = empToUser.get(employeeId);
   const ids = mine ? [mine] : [];
   for (const eid of scope) {
     const uid = empToUser.get(eid);
