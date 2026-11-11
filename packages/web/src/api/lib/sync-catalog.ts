@@ -67,13 +67,14 @@ export async function syncCatalogWith(store: CatalogStore): Promise<{ created: s
 
   let changed = false;
   for (const c of rows as CrmCampaign[]) {
+    // Campanhas desativadas nao chegam aqui: o passo 3 remove o plano delas.
+    if (!c.active) continue;
     const hit = byKey.get(matchKey(c.code));
     if (!hit) continue;
     // Plano criado automaticamente e ainda sem precos: nao tem precos para vender,
-    // por isso fica inativo (val no passado) enquanto ninguem o preencher. Mas o
-    // estado de atividade do CRM manda sempre: se a campanha estiver desativada,
-    // o plano sai do simulador mesmo que ainda nao tenha precos.
-    if (hit.plan.novo && c.active) continue;
+    // por isso fica inativo enquanto ninguem o preencher. Nao lhe tocamos nas datas
+    // para nao apagar a validade que o utilizador definiu a mao.
+    if (hit.plan.novo) continue;
     const { ini, val } = activeState(c);
     if (hit.plan.ini !== ini || hit.plan.val !== val) {
       if (ini === undefined) delete hit.plan.ini;
@@ -92,9 +93,12 @@ export async function syncCatalogWith(store: CatalogStore): Promise<{ created: s
     const seg = segmentFor(c.service, c.clientType);
     if (!seg) continue;
     if (!Array.isArray(catalog[seg])) catalog[seg] = [];
+    // Modelo a clonar: primeiro plano da serie. Se o segmento ficar vazio (por
+    // exemplo, porque a unica campanha foi desativada), nao ha modelo na lista —
+    // nesse caso usamos uma estrutura minima so com o codigo, e o utilizador
+    // preenche os precos no formulario.
     const model = catalog[seg].find((p: any) => p && p.r) as any | undefined;
-    if (!model) continue;
-    const plan: any = JSON.parse(JSON.stringify(model));
+    const plan: any = model ? JSON.parse(JSON.stringify(model)) : { r: c.code, bd: 0, f: "Sem fidelização" };
     // Precos a zeros: o utilizador preenche na app.
     if (Array.isArray(plan.fx)) plan.fx = plan.fx.map(() => 0);
     if (Array.isArray(plan.gf)) plan.gf = plan.gf.map(() => 0);
@@ -119,16 +123,18 @@ export async function syncCatalogWith(store: CatalogStore): Promise<{ created: s
     changed = true;
   }
 
-  // 3) Planos que nasceram de uma campanha e cuja campanha ja nao existe: saem do
-  //    catalogo. So toca em planos marcados `novo` — os planos de origem nunca sao
-  //    removidos, nem que nao tenham campanha no CRM (decisao do utilizador).
-  const liveCodes = new Set((rows as CrmCampaign[]).map((c) => matchKey(c.code)));
+  // 3) O catalogo so mostra campanhas ATIVAS do CRM. Sai tudo o que nao tenha
+  //    uma campanha ativa correspondente: campanhas desativadas, campanhas
+  //    apagadas, e planos antigos sem campanha nenhuma. Nao ha excecoes.
+  const liveCodes = new Set(
+    (rows as CrmCampaign[]).filter((c) => c.active).map((c) => matchKey(c.code)),
+  );
   for (const seg of SEGMENTS) {
     const arr = catalog[seg];
     if (!Array.isArray(arr)) continue;
     for (let i = arr.length - 1; i >= 0; i--) {
       const plan = arr[i];
-      if (!plan || !plan.novo || !plan.r) continue;
+      if (!plan || !plan.r) continue;
       if (liveCodes.has(matchKey(plan.r))) continue;
       arr.splice(i, 1);
       removed.push(plan.r);
