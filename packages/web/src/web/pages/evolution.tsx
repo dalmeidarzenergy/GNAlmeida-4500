@@ -97,38 +97,43 @@ export default function EvolutionPage() {
               label={`Previsão de fecho · ${monthLabel(month)}`}
               value={d.previsao.previsto}
               accent="var(--amber)"
-              sub={`já em fornecimento ${d.previsao.real} + ${d.previsao.pendentesEntram} a entrar + ${d.previsao.aindaAssinam} a assinar`}
+              sub={`já em fornecimento ${d.previsao.real} + ${d.previsao.pendentesEntram} a entrar`}
             />
+            {d.previsao.target > 0 && (
+              <div className="rise card relative overflow-hidden p-5" style={{ animationDelay: "320ms" }}>
+                <div className="flex items-start justify-between">
+                  <div className="label-mono">Previsão vs. meta</div>
+                  <div
+                    className="num text-[13px] font-semibold"
+                    style={{ color: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)" }}
+                  >
+                    {Math.round((d.previsao.progresso ?? 0) * 100)}%
+                  </div>
+                </div>
+                <div
+                  className="num mt-4 text-[28px] font-semibold leading-none tracking-tight"
+                  style={{ color: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)" }}
+                >
+                  {d.previsao.previsto}
+                  <span className="text-[15px] font-normal text-ink-3"> / {d.previsao.target}</span>
+                </div>
+                <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-line">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(100, Math.round((d.previsao.progresso ?? 0) * 100))}%`,
+                      background: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)",
+                    }}
+                  />
+                </div>
+                <p className="mt-2.5 text-[12px] text-ink-2">
+                  {d.previsao.previsto >= d.previsao.target ? "Meta atingida." : `Faltam ${d.previsao.target - d.previsao.previsto} venda(s) para a meta.`}
+                </p>
+              </div>
+            )}
           </div>
           )}
 
-          {d.previsao.target > 0 && (
-            <div className="rise mb-4 card p-5">
-              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-                <div>
-                  <div className="label-mono">Previsão vs. meta do período</div>
-                  <div className="mt-1 font-display text-[15px] font-semibold">
-                    {d.previsao.previsto} de {d.previsao.target} vendas previstas
-                  </div>
-                </div>
-                <div className="num text-[15px] font-semibold" style={{ color: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)" }}>
-                  {Math.round((d.previsao.progresso ?? 0) * 100)}%
-                </div>
-              </div>
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-line">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(100, Math.round((d.previsao.progresso ?? 0) * 100))}%`,
-                    background: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)",
-                  }}
-                />
-              </div>
-              <p className="mt-2.5 text-[12px] text-ink-3">
-                Projeção ao ritmo atual: {d.previsao.projecao} · ciclo médio de fecho {d.previsao.ciclo} dia(s) (amostra de {d.previsao.amostra}) · faltam {d.previsao.janela.remaining} dia(s) úteis.
-              </p>
-            </div>
-          )}
 
           <div className="card rise mb-4 p-5">
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">

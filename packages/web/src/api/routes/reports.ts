@@ -16,11 +16,10 @@ const COUNTED = SALE_COUNTED;
 
 /**
  * Previsao de fecho do mes: quantas vendas se estima que fiquem "Em Fornecimento"
- * ate ao fim do mes. Parte de tres parcelas:
+ * ate ao fim do mes. Assenta so em contratos que ja existem, somando duas parcelas:
  *  1. as que ja estao em fornecimento (contam pelo dia em que entraram nesse estado);
  *  2. as pendentes que, ao ritmo normal de fecho da equipa/vendedor, ainda entram
- *     este mes (mede-se o tempo tipico entre a assinatura e a entrada em fornecimento);
- *  3. as que ainda nao foram assinadas mas se estima assinar nos dias uteis que faltam.
+ *     este mes (mede-se o tempo tipico entre a assinatura e a entrada em fornecimento).
  * A meta do mes (quando existe) da o progresso.
  */
 async function closeForecast(month: string, scope: SellerScope, services: string[], target = 0) {
@@ -28,7 +27,6 @@ async function closeForecast(month: string, scope: SellerScope, services: string
   const wd = monthWorkdays(month, today);
   const mesIni = `${month}-01`;
   const mesFim = `${month}-31`;
-  const noMes = and(gte(sales.date, mesIni), lte(sales.date, mesFim), sellerWhere(scope), inArray(sales.service, services));
 
   // 1) Ja em fornecimento dentro do mes.
   const jaEmFornecimento = (await suppliedOn(mesIni, mesFim, scope, services)).length;
@@ -68,30 +66,16 @@ async function closeForecast(month: string, scope: SellerScope, services: string
     if (idade >= ciclo || idade + ciclo <= wd.remaining + wd.elapsed) pendentesEntram++;
   }
 
-  // 3) Vendas que ainda se assinam ao ritmo medio dos dias uteis decorridos.
-  const assinadasMes = Number(
-    (
-      await db
-        .select({ n: sql<number>`count(*)` })
-        .from(sales)
-        .where(and(noMes, notInArray(sales.status, FORECAST_EXCLUDED)))
-    )[0]?.n ?? 0,
-  );
-  const porDia = wd.elapsed ? assinadasMes / wd.elapsed : 0;
-  const aindaAssinam = Math.round(porDia * wd.remaining);
-
-  const previsto = jaEmFornecimento + pendentesEntram + aindaAssinam;
+  const previsto = jaEmFornecimento + pendentesEntram;
   const ritmo = wd.elapsed ? jaEmFornecimento / wd.elapsed : 0;
   return {
     today,
     janela: { workdays: wd.total, elapsed: wd.elapsed, remaining: wd.remaining },
     real: jaEmFornecimento,
     ritmo,
-    projecao: Math.round(jaEmFornecimento + ritmo * wd.remaining),
     previsto,
     pendentes: pendentes.length,
     pendentesEntram,
-    aindaAssinam,
     ciclo,
     amostra: dias.length,
     target,
