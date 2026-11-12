@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Trash2, FileText, Loader2 } from "lucide-react";
+import { Download, Eye, Trash2, FileText, Loader2, ExternalLink, X } from "lucide-react";
 import { orpc } from "../lib/api";
 import { PageHeader, Empty, TableSkeleton, Tabs, Stat, SearchBox, Modal } from "../components/ui/kit";
 import { errMsg, fmtDate } from "../lib/format";
@@ -26,6 +26,7 @@ export default function PropostasPage() {
   const [tab, setTab] = useState<Aba>("res-neg");
   const [q, setQ] = useState("");
   const [toDelete, setToDelete] = useState<{ id: string; nome: string } | null>(null);
+  const [preview, setPreview] = useState<{ id: string; nome: string } | null>(null);
 
   const list = useQuery(orpc.propostas.list.queryOptions({ input: { source: tab } }));
   const rows = useMemo(() => list.data ?? [], [list.data]);
@@ -119,14 +120,24 @@ export default function PropostasPage() {
                     <td>
                       <div className="flex justify-end gap-1">
                         {r.hasPdf ? (
-                          <a
-                            className="btn-icon"
-                            aria-label="Descarregar PDF"
-                            title="Descarregar PDF"
-                            href={`/api/simulador-propostas/${encodeURIComponent(r.id)}/pdf`}
-                          >
-                            <Download size={14} />
-                          </a>
+                          <>
+                            <button
+                              className="btn-icon"
+                              aria-label="Pré-visualizar PDF"
+                              title="Pré-visualizar"
+                              onClick={() => setPreview({ id: r.id, nome: cliente(r.clientName, r.clientNif) })}
+                            >
+                              <Eye size={14} />
+                            </button>
+                            <a
+                              className="btn-icon"
+                              aria-label="Descarregar PDF"
+                              title="Descarregar PDF"
+                              href={`/api/simulador-propostas/${encodeURIComponent(r.id)}/pdf`}
+                            >
+                              <Download size={14} />
+                            </a>
+                          </>
                         ) : (
                           <span className="inline-flex h-8 items-center px-2 text-[11px] text-ink-3" title="Esta proposta não tem PDF guardado">
                             <FileText size={13} />
@@ -187,6 +198,49 @@ export default function PropostasPage() {
           </button>
         </div>
       </Modal>
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-6" onClick={() => setPreview(null)}>
+          <div
+            className="flex h-full w-full max-w-[1000px] flex-col overflow-hidden rounded-[14px] bg-surface shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+              <FileText size={15} className="shrink-0 text-rose" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13.5px] font-medium">Proposta de {preview.nome}</div>
+                <div className="text-[11.5px] text-ink-3">Pré-visualização</div>
+              </div>
+              <a
+                className="btn btn-ghost h-8 px-3 text-[12.5px]"
+                aria-label="Abrir num separador"
+                title="Abrir num separador"
+                href={`/api/simulador-propostas/${encodeURIComponent(preview.id)}/pdf?inline=1`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ExternalLink size={13} /> Abrir
+              </a>
+              <a
+                className="btn btn-ghost h-8 px-3 text-[12.5px]"
+                aria-label="Descarregar PDF"
+                title="Descarregar"
+                href={`/api/simulador-propostas/${encodeURIComponent(preview.id)}/pdf`}
+              >
+                <Download size={13} /> Descarregar
+              </a>
+              <button className="btn-icon" aria-label="Fechar" title="Fechar" onClick={() => setPreview(null)}>
+                <X size={15} />
+              </button>
+            </div>
+            <iframe
+              className="min-h-0 flex-1 bg-bg"
+              title={`Pré-visualização da proposta de ${preview.nome}`}
+              src={`/api/simulador-propostas/${encodeURIComponent(preview.id)}/pdf?inline=1`}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

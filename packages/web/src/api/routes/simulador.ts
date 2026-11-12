@@ -288,10 +288,13 @@ export function simulador(app: Hono) {
 
     const bytes = Buffer.from(p.pdfBase64, "base64");
     const nome = (p.pdfName || `proposta-${id}.pdf`).replace(/["\\\r\n]/g, "");
+    // ?inline=1 serve o PDF para visualização no browser (pré-visualizar sem
+    // descarregar). Sem o parâmetro, mantém-se o download como antes.
+    const inline = c.req.query("inline") === "1";
     return new Response(bytes, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${nome}"`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${nome}"`,
         "Content-Length": String(bytes.length),
         "Cache-Control": "no-store",
       },

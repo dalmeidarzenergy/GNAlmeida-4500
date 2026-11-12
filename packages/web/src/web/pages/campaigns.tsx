@@ -14,7 +14,7 @@ const STATE: Record<CampaignState, { label: string; color: string }> = {
   agendada: { label: "Agendada", color: "var(--sky)" },
   terminada: { label: "Terminada", color: "var(--ink-3)" },
 };
-const CLIENT_TYPE: Record<string, string> = { todos: "Todos os clientes", particular: "Particulares", empresa: "Empresas" };
+const CLIENT_TYPE: Record<string, string> = { todos: "Todos os clientes", particular: "Particulares", empresa: "Empresas", condominio: "Condomínios" };
 
 function period(c: Pick<Campaign, "startDate" | "endDate">) {
   if (!c.startDate && !c.endDate) return "Sem período definido";
@@ -86,7 +86,7 @@ function CampaignForm({ initial, onClose }: { initial: Campaign | null; onClose:
     code: initial?.code ?? "",
     name: initial?.name ?? "",
     service: initial?.service ?? "",
-    clientType: (initial?.clientType ?? "todos") as "todos" | "particular" | "empresa",
+    clientType: (initial?.clientType ?? "todos") as "todos" | "particular" | "empresa" | "condominio",
     startDate: initial?.startDate ?? "",
     endDate: initial?.endDate ?? "",
     active: initial?.active ?? true,

@@ -15,7 +15,7 @@ const input = z.object({
   code: z.string().trim().min(1, "Indique o código da campanha.").max(40).transform((s) => s.toUpperCase().replace(/\s+/g, "")),
   name: z.string().trim().nullable().optional(),
   service: z.enum(SERVICE_LABELS as [string, ...string[]]).nullable().optional(),
-  clientType: z.enum(["todos", "particular", "empresa"]).default("todos"),
+  clientType: z.enum(["todos", "particular", "empresa", "condominio"]).default("todos"),
   startDate: date,
   endDate: date,
   active: z.boolean().default(true),
