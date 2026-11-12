@@ -14,6 +14,107 @@ const FORECAST_COUNTED = ["Em Fornecimento", "Control", "Em Processo", "Prospeç
 const FORECAST_EXCLUDED = ["Baixa", "Pedido de Baixa", "Anulado"];
 const COUNTED = SALE_COUNTED;
 
+/**
+ * Previsao de fecho do mes: quantas vendas se estima que fiquem "Em Fornecimento"
+ * ate ao fim do mes. Parte de tres parcelas:
+ *  1. as que ja estao em fornecimento (contam pelo dia em que entraram nesse estado);
+ *  2. as pendentes que, ao ritmo normal de fecho da equipa/vendedor, ainda entram
+ *     este mes (mede-se o tempo tipico entre a assinatura e a entrada em fornecimento);
+ *  3. as que ainda nao foram assinadas mas se estima assinar nos dias uteis que faltam.
+ * A meta do mes (quando existe) da o progresso.
+ */
+async function closeForecast(month: string, scope: SellerScope, services: string[], target = 0) {
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
+  const wd = monthWorkdays(month, today);
+  const mesIni = `${month}-01`;
+  const mesFim = `${month}-31`;
+  const noMes = and(gte(sales.date, mesIni), lte(sales.date, mesFim), sellerWhere(scope), inArray(sales.service, services));
+
+  // 1) Ja em fornecimento dentro do mes.
+  const jaEmFornecimento = (await suppliedOn(mesIni, mesFim, scope, services)).length;
+
+  // 2) Pendentes: assinadas, ainda nao em fornecimento e nao anuladas.
+  const pendentes = await db
+    .select({ data: sales.date, details: sales.details })
+    .from(sales)
+    .where(and(sellerWhere(scope), inArray(sales.service, services), notInArray(sales.status, FORECAST_EXCLUDED), sql`${sales.status} <> 'Em Fornecimento'`));
+
+  // Tempo tipico (mediana) entre assinatura e entrada em fornecimento, nas vendas
+  // do mesmo ambito que ja fecharam. Exclui as absurdas (>1 ano).
+  const hist = await db
+    .select({ data: sales.date, details: sales.details, on: sql<string>`min(${saleStatusHistory.changedOn})` })
+    .from(sales)
+    .innerJoin(saleStatusHistory, and(eq(saleStatusHistory.saleId, sales.id), eq(saleStatusHistory.energy, "luz"), eq(saleStatusHistory.status, "Em Fornecimento")))
+    .where(and(sellerWhere(scope), inArray(sales.service, services), inArray(sales.status, COUNTED)))
+    .groupBy(sales.id);
+  const dias: number[] = [];
+  for (const h of hist) {
+    const d = daysBetween(sigDate(h.details, h.data), h.on);
+    if (d != null && d >= 0 && d <= 365) dias.push(d);
+  }
+  dias.sort((a, b) => a - b);
+  // Mediana: menos sensivel a casos extremos que a media.
+  const ciclo = dias.length ? dias[Math.floor(dias.length / 2)]! : 14;
+
+  // Uma pendente entra este mes se ainda houver janela para fechar: ou ja passou
+  // do ciclo tipico (esta atrasada, conta como fluxo que ainda pode entrar), ou
+  // esta dentro do prazo normal e o ciclo ainda caiba nos dias que faltam.
+  let pendentesEntram = 0;
+  for (const v of pendentes) {
+    const sg = sigDate(v.details, v.data);
+    if (sg > mesFim) continue;
+    const idade = daysBetween(sg, today);
+    if (idade == null || idade < 0) continue;
+    if (idade >= ciclo || idade + ciclo <= wd.remaining + wd.elapsed) pendentesEntram++;
+  }
+
+  // 3) Vendas que ainda se assinam ao ritmo medio dos dias uteis decorridos.
+  const assinadasMes = Number(
+    (
+      await db
+        .select({ n: sql<number>`count(*)` })
+        .from(sales)
+        .where(and(noMes, notInArray(sales.status, FORECAST_EXCLUDED)))
+    )[0]?.n ?? 0,
+  );
+  const porDia = wd.elapsed ? assinadasMes / wd.elapsed : 0;
+  const aindaAssinam = Math.round(porDia * wd.remaining);
+
+  const previsto = jaEmFornecimento + pendentesEntram + aindaAssinam;
+  const ritmo = wd.elapsed ? jaEmFornecimento / wd.elapsed : 0;
+  return {
+    today,
+    janela: { workdays: wd.total, elapsed: wd.elapsed, remaining: wd.remaining },
+    real: jaEmFornecimento,
+    ritmo,
+    projecao: Math.round(jaEmFornecimento + ritmo * wd.remaining),
+    previsto,
+    pendentes: pendentes.length,
+    pendentesEntram,
+    aindaAssinam,
+    ciclo,
+    amostra: dias.length,
+    target,
+    progresso: target > 0 ? previsto / target : null,
+  };
+}
+
+/** Data da assinatura do contrato (details.signatureDate), com a data da venda como recurso. */
+function sigDate(details: unknown, fallback: string): string {
+  const d = details as Record<string, unknown> | null;
+  const sg = d && typeof d.signatureDate === "string" ? d.signatureDate : null;
+  return sg && /^\d{4}-\d{2}-\d{2}/.test(sg) ? sg.slice(0, 10) : fallback;
+}
+
+/** Dias entre duas datas YYYY-MM-DD. */
+function daysBetween(a: string, b: string): number | null {
+  const pa = Date.parse(a + "T00:00:00Z");
+  const pb = Date.parse(b + "T00:00:00Z");
+  if (Number.isNaN(pa) || Number.isNaN(pb)) return null;
+  return Math.round((pb - pa) / 86400000);
+}
+
+
 /** Por defeito, os painéis, rankings e gráficos só contabilizam vendas LUZ e DUAL (MEDEM tem a sua própria aba). */
 const DEFAULT_SERVICES = ["LUZ", "DUAL"];
 const servicesInput = z.array(z.enum(SERVICE_LABELS as [string, ...string[]])).min(1).optional();
@@ -485,6 +586,12 @@ async function evolutionReport(granularity: "dia" | "semana" | "mes" | "todos", 
     forecastInserted: Math.round(mIns + avgIns * wd.remaining),
     forecastSupplied: Math.round(mSup + avgSup * wd.remaining),
   };
+  const [{ total: metaN } = { total: 0 }] = await db
+    .select({ total: sql<number>`coalesce(sum(${salesTargets.target}),0)` })
+    .from(salesTargets)
+    .where(and(eq(salesTargets.month, month), await targetWhere(sellerId, month)));
+  const meta = Number(metaN ?? 0);
+  const previsao = await closeForecast(month, sellerId, services, meta);
   const best = series.reduce<(typeof series)[number] | null>((m, x) => (x.inserted > (m?.inserted ?? 0) ? x : m), null);
   return {
     granularity,
@@ -498,6 +605,7 @@ async function evolutionReport(granularity: "dia" | "semana" | "mes" | "todos", 
     avgSupplied: series.length ? cumSup / series.length : 0,
     best: best ? { label: best.label, inserted: best.inserted } : null,
     pace,
+    previsao,
   };
 }
 

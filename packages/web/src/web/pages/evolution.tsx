@@ -78,7 +78,7 @@ export default function EvolutionPage() {
           </div>
 
           {gran !== "todos" && (
-          <div className="mb-4 grid gap-4 md:grid-cols-3">
+          <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Stat
               delay={160}
               label="Média diária de vendas"
@@ -87,19 +87,47 @@ export default function EvolutionPage() {
               sub={d.pace.elapsed ? `${d.pace.inserted} vendas em ${d.pace.elapsed} dia(s) úteis · ${dec(Math.round(d.pace.avgSupplied * 10) / 10)} em fornec./dia` : "ainda sem dias úteis decorridos"}
             />
             <Stat
-              delay={200}
-              label={`Previsão de fecho · ${monthLabel(month)}`}
-              value={d.pace.forecastInserted}
-              accent="var(--volt)"
-              sub={d.pace.remaining ? `vendas inseridas ao ritmo atual · ${d.pace.forecastSupplied} em fornec.` : `mês fechado · ${d.pace.supplied} em fornec.`}
-            />
-            <Stat
               delay={240}
               label="Dias úteis por trabalhar"
               value={d.pace.remaining}
-              sub={`de ${d.pace.workdays} dias úteis (seg. a sex.)${d.pace.holidays.length ? ` · feriado: ${d.pace.holidays.map((h) => `${h.date.slice(8, 10)}/${h.date.slice(5, 7)} ${h.name}`).join(", ")}` : ""}`}
+              sub={`de ${d.pace.workdays} dias úteis (seg. a sex.)`}
+            />
+            <Stat
+              delay={280}
+              label={`Previsão de fecho · ${monthLabel(month)}`}
+              value={d.previsao.previsto}
+              accent="var(--amber)"
+              sub={`já em fornecimento ${d.previsao.real} + ${d.previsao.pendentesEntram} a entrar + ${d.previsao.aindaAssinam} a assinar`}
             />
           </div>
+          )}
+
+          {d.previsao.target > 0 && (
+            <div className="rise mb-4 card p-5">
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <div className="label-mono">Previsão vs. meta do período</div>
+                  <div className="mt-1 font-display text-[15px] font-semibold">
+                    {d.previsao.previsto} de {d.previsao.target} vendas previstas
+                  </div>
+                </div>
+                <div className="num text-[15px] font-semibold" style={{ color: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)" }}>
+                  {Math.round((d.previsao.progresso ?? 0) * 100)}%
+                </div>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-line">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, Math.round((d.previsao.progresso ?? 0) * 100))}%`,
+                    background: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)",
+                  }}
+                />
+              </div>
+              <p className="mt-2.5 text-[12px] text-ink-3">
+                Projeção ao ritmo atual: {d.previsao.projecao} · ciclo médio de fecho {d.previsao.ciclo} dia(s) (amostra de {d.previsao.amostra}) · faltam {d.previsao.janela.remaining} dia(s) úteis.
+              </p>
+            </div>
           )}
 
           <div className="card rise mb-4 p-5">
