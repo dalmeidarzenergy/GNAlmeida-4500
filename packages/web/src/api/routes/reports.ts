@@ -22,64 +22,127 @@ const COUNTED = SALE_COUNTED;
  *     este mes (mede-se o tempo tipico entre a assinatura e a entrada em fornecimento).
  * A meta do mes (quando existe) da o progresso.
  */
-async function closeForecast(month: string, scope: SellerScope, services: string[], target = 0) {
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
-  const wd = monthWorkdays(month, today);
-  const mesIni = `${month}-01`;
-  const mesFim = `${month}-31`;
+/** Ciclo de fecho: quantos dias passam, em regra, entre a assinatura e a entrada em fornecimento. */
+type Ciclo = { mediana: number; p75: number; p90: number; amostra: number };
 
-  // 1) Ja em fornecimento dentro do mes.
-  const jaEmFornecimento = (await suppliedOn(mesIni, mesFim, scope, services)).length;
-
-  // 2) Pendentes: assinadas, ainda nao em fornecimento e nao anuladas.
-  const pendentes = await db
-    .select({ data: sales.date, details: sales.details })
-    .from(sales)
-    .where(and(sellerWhere(scope), inArray(sales.service, services), notInArray(sales.status, FORECAST_EXCLUDED), sql`${sales.status} <> 'Em Fornecimento'`));
-
-  // Tempo tipico (mediana) entre assinatura e entrada em fornecimento, nas vendas
-  // do mesmo ambito que ja fecharam. Exclui as absurdas (>1 ano).
+/** Mede o ciclo sobre as vendas que ja entraram em fornecimento. */
+async function cicloFecho(scope: SellerScope, services: string[]): Promise<Ciclo> {
   const hist = await db
-    .select({ data: sales.date, details: sales.details, on: sql<string>`min(${saleStatusHistory.changedOn})` })
+    .select({ data: sales.date, details: sales.details, entrou: sql<string>`min(${saleStatusHistory.changedOn})` })
     .from(sales)
     .innerJoin(saleStatusHistory, and(eq(saleStatusHistory.saleId, sales.id), eq(saleStatusHistory.energy, "luz"), eq(saleStatusHistory.status, "Em Fornecimento")))
     .where(and(sellerWhere(scope), inArray(sales.service, services), inArray(sales.status, COUNTED)))
     .groupBy(sales.id);
   const dias: number[] = [];
   for (const h of hist) {
-    const d = daysBetween(sigDate(h.details, h.data), h.on);
+    const d = daysBetween(sigDate(h.details, h.data), h.entrou.slice(0, 10));
     if (d != null && d >= 0 && d <= 365) dias.push(d);
   }
   dias.sort((a, b) => a - b);
-  // Mediana: menos sensivel a casos extremos que a media.
-  const ciclo = dias.length ? dias[Math.floor(dias.length / 2)]! : 14;
+  if (!dias.length) return { mediana: 14, p75: 21, p90: 30, amostra: 0 };
+  const at = (q: number) => dias[Math.min(dias.length - 1, Math.floor(dias.length * q))]!;
+  return { mediana: at(0.5), p75: at(0.75), p90: at(0.9), amostra: dias.length };
+}
 
-  // Uma pendente entra este mes se ainda houver janela para fechar: ou ja passou
-  // do ciclo tipico (esta atrasada, conta como fluxo que ainda pode entrar), ou
-  // esta dentro do prazo normal e o ciclo ainda caiba nos dias que faltam.
-  let pendentesEntram = 0;
-  for (const v of pendentes) {
-    const sg = sigDate(v.details, v.data);
+/**
+ * Uma venda pendente: ainda nao esta em fornecimento, mas pode entrar ate ao fim do mes.
+ */
+type Pendente = { idadeDias: number; status: string };
+
+/**
+ * Adianta que as vendas mais avancadas na "linha de montagem" fecham numa fracao do ciclo,
+ * e as que ainda estao a montante (prospeo, negociacao) so fecham no fim dele.
+ */
+const PESO_PROGRESSO: Record<string, number> = {
+  "Pedido de Fornecimento": 0.9,
+  "Backoffice": 0.8,
+  "Control": 0.7,
+  "Ativado": 0.9,
+  "Em Instalação": 0.9,
+  "Contrato Enviado": 0.6,
+  "Fechado": 0.6,
+  "Negociação": 0.4,
+  "Pré-Venda": 0.3,
+  "Orçamento Enviado": 0.3,
+  "Agendado": 0.25,
+  "Lead": 0.15,
+  "Não Contactado": 0.08,
+  "Prospeção": 0.1,
+  "Pendente": 0.15,
+};
+
+/**
+ * Probabilidade de uma pendente entrar em fornecimento ate ao fim do mes alvo.
+ *
+ * O horizonte e medido em SEMANAS, nao em dias uteis: a mediana do ciclo e 7 dias de calendario,
+ * pelo que em dias uteis cai perto de 5 — usar a janela util subestimava tudo.
+ */
+function probEntrada(p: Pendente, ctx: { horizonte: number; p75: number; peso: number }): number {
+  const idade = p.idadeDias;
+  if (idade < 0) return 0;
+  if (idade + ctx.p75 < ctx.horizonte) return ctx.peso;
+  const x = idade + ctx.p75 - ctx.horizonte;
+  return ctx.peso * 0.3 ** (x / 28);
+}
+async function closeForecast(month: string, scope: SellerScope, services: string[], target = 0) {
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
+  const wd = monthWorkdays(month, today);
+  const mesIni = `${month}-01`;
+  const mesFim = `${month}-31`;
+  const mesAtual = today.slice(0, 7);
+  const passado = month < mesAtual;
+  const futuro = month > mesAtual;
+
+  const ciclo = await cicloFecho(scope, services);
+  const real = (await suppliedOn(mesIni, mesFim, scope, services)).length;
+
+  // Num mes futuro ainda nao ha nada em fornecimento: tudo o que vai fechar
+  // tem de vir das pendentes. Num mes passado, o mes ja fechou e o real e final.
+  const pend = await db
+    .select({ id: sales.id, data: sales.date, details: sales.details, status: sales.status })
+    .from(sales)
+    .where(and(sellerWhere(scope), inArray(sales.service, services), notInArray(sales.status, FORECAST_EXCLUDED), sql`${sales.status} <> 'Em Fornecimento'`));
+
+  const hojeMs = Date.parse(today + "T00:00:00Z");
+  const fimMs = Date.parse(mesFim + "T00:00:00Z");
+  const hojeDias = Math.floor(hojeMs / 86400000);
+  const fimDias = Math.floor(fimMs / 86400000);
+  // O horizonte so pode ir do presente ate ao fim do mes alvo: para um mes
+  // futuro, e a distancia ate esse mes (nao um mes a contar de hoje).
+  const horizonte = Math.max(0, fimDias - hojeDias) + 4;
+  let entram = 0;
+  let elegiveis = 0;
+  for (const p of pend) {
+    // Num mes ja fechado so contam as vendas que entraram em fornecimento
+    // nesse mes: o que ficou pendente perdeu o comboio, nao se projeta.
+    if (passado) continue;
+    const sg = sigDate(p.details, p.data);
+    const sgMs = Date.parse(sg + "T00:00:00Z");
+    if (Number.isNaN(sgMs)) continue;
     if (sg > mesFim) continue;
-    const idade = daysBetween(sg, today);
-    if (idade == null || idade < 0) continue;
-    if (idade >= ciclo || idade + ciclo <= wd.remaining + wd.elapsed) pendentesEntram++;
+    const peso = PESO_PROGRESSO[p.status] ?? 0.1;
+    const prob = probEntrada(
+      { idadeDias: hojeDias - Math.floor(sgMs / 86400000), status: p.status },
+      { horizonte, p75: ciclo.p75, peso },
+    );
+    if (prob > 0.01) elegiveis++;
+    entram += prob;
   }
 
-  const previsto = jaEmFornecimento + pendentesEntram;
-  const ritmo = wd.elapsed ? jaEmFornecimento / wd.elapsed : 0;
+  const previsto = Math.round((real + entram) * 10) / 10;
   return {
     today,
+    estado: passado ? "fechado" : futuro ? "futuro" : "a decorrer",
     janela: { workdays: wd.total, elapsed: wd.elapsed, remaining: wd.remaining },
-    real: jaEmFornecimento,
-    ritmo,
+    real,
     previsto,
-    pendentes: pendentes.length,
-    pendentesEntram,
-    ciclo,
-    amostra: dias.length,
+    ciclo: ciclo.mediana,
+    amostra: ciclo.amostra,
+    pendentes: pend.length,
+    pendentesEntram: Math.round(entram * 10) / 10,
+    pendentesFora: pend.length - elegiveis,
     target,
-    progresso: target > 0 ? previsto / target : null,
+    progresso: target > 0 ? real / target : null,
   };
 }
 
@@ -97,7 +160,6 @@ function daysBetween(a: string, b: string): number | null {
   if (Number.isNaN(pa) || Number.isNaN(pb)) return null;
   return Math.round((pb - pa) / 86400000);
 }
-
 
 /** Por defeito, os painéis, rankings e gráficos só contabilizam vendas LUZ e DUAL (MEDEM tem a sua própria aba). */
 const DEFAULT_SERVICES = ["LUZ", "DUAL"];

@@ -43,6 +43,8 @@ export default function EvolutionPage() {
   const d = r.data;
   const g = GRAN[gran];
   const rows = d ? [...d.series].reverse() : [];
+  // Num mes fechado a meta compara-se com o fecho real; nos restantes, com a previsao.
+  const compara = d && d.previsao.estado === "fechado" ? d.previsao.real : (d ? d.previsao.previsto : 0);
 
   return (
     <div>
@@ -94,27 +96,35 @@ export default function EvolutionPage() {
             />
             <Stat
               delay={280}
-              label={`Previsão de fecho · ${monthLabel(month)}`}
-              value={d.previsao.previsto}
-              accent="var(--amber)"
-              sub={`já em fornecimento ${d.previsao.real} + ${d.previsao.pendentesEntram} a entrar`}
+              label={d.previsao.estado === "fechado" ? `Fecho real · ${monthLabel(month)}` : `Previsão de fecho · ${monthLabel(month)}`}
+              value={d.previsao.estado === "fechado" ? d.previsao.real : dec(d.previsao.previsto)}
+              accent={d.previsao.estado === "fechado" ? "var(--volt)" : "var(--amber)"}
+              sub={d.previsao.estado === "fechado" ? `mês fechado · ${d.previsao.real} contrato(s) entraram em fornecimento` : `já em fornecimento ${d.previsao.real} + ${dec(d.previsao.pendentesEntram)} a entrar`}
             />
             {d.previsao.target > 0 && (
-              <div className="rise card relative overflow-hidden p-5" style={{ animationDelay: "320ms" }}>
+              <div
+                className="rise card relative overflow-hidden p-5"
+                style={{ animationDelay: "320ms" }}
+              >
                 <div className="flex items-start justify-between">
-                  <div className="label-mono">Previsão vs. meta</div>
+                  <div className="label-mono">
+                    {d.previsao.estado === "fechado" ? "Fecho vs. meta" : "Previsão vs. meta"}
+                  </div>
                   <div
-                    className="num text-[13px] font-semibold"
-                    style={{ color: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)" }}
+                    className="num rounded-full px-2 py-0.5 text-[13px] font-semibold"
+                    style={{
+                      color: compara >= d.previsao.target ? "var(--volt)" : "var(--amber)",
+                      background: compara >= d.previsao.target ? "color-mix(in srgb, var(--volt) 16%, transparent)" : "color-mix(in srgb, var(--amber) 16%, transparent)",
+                    }}
                   >
-                    {Math.round((d.previsao.progresso ?? 0) * 100)}%
+                    {pct(d.previsao.progresso ?? 0)}
                   </div>
                 </div>
                 <div
                   className="num mt-4 text-[28px] font-semibold leading-none tracking-tight"
-                  style={{ color: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)" }}
+                  style={{ color: compara >= d.previsao.target ? "var(--volt)" : "var(--amber)" }}
                 >
-                  {d.previsao.previsto}
+                  {dec(compara)}
                   <span className="text-[15px] font-normal text-ink-3"> / {d.previsao.target}</span>
                 </div>
                 <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-line">
@@ -122,12 +132,18 @@ export default function EvolutionPage() {
                     className="h-full rounded-full transition-all"
                     style={{
                       width: `${Math.min(100, Math.round((d.previsao.progresso ?? 0) * 100))}%`,
-                      background: d.previsao.previsto >= d.previsao.target ? "var(--volt)" : "var(--amber)",
+                      background: compara >= d.previsao.target ? "var(--volt)" : "var(--amber)",
                     }}
                   />
                 </div>
                 <p className="mt-2.5 text-[12px] text-ink-2">
-                  {d.previsao.previsto >= d.previsao.target ? "Meta atingida." : `Faltam ${d.previsao.target - d.previsao.previsto} venda(s) para a meta.`}
+                  {d.previsao.estado === "fechado"
+                    ? d.previsao.real >= d.previsao.target
+                      ? "Meta atingida."
+                      : `Faltaram ${d.previsao.target - d.previsao.real} venda(s) para a meta.`
+                    : compara >= d.previsao.target
+                      ? `Meta ao alcance: entram ${dec(d.previsao.pendentesEntram)} das ${d.previsao.pendentes} em carteira.`
+                      : `Faltam ${dec(Math.round((d.previsao.target - compara) * 10) / 10)} venda(s); entram ${dec(d.previsao.pendentesEntram)} das ${d.previsao.pendentes} em carteira.`}
                 </p>
               </div>
             )}
