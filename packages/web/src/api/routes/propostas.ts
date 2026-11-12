@@ -71,6 +71,18 @@ async function resolveEmployeeId(userId: string): Promise<number | null> {
   return hit?.id ?? null;
 }
 
+/** Autor, chefe da equipa, ou admin/diretor. Usado para ver, editar e apagar. */
+async function podeMexer(
+  ctx: { user: { id: string }; role: string; employeeId: number | null },
+  donoId: string,
+): Promise<void> {
+  if (ctx.role === "admin" || ctx.role === "diretor" || donoId === ctx.user.id) return;
+  const meu = ctx.employeeId ?? (await resolveEmployeeId(ctx.user.id));
+  const subs = await subordinateUserIds(meu);
+  if (subs.includes(donoId)) return;
+  throw new ORPCError("FORBIDDEN", { message: "Sem permissão sobre esta proposta" });
+}
+
 export const propostas = {
   /** Lista as propostas. `source` separa as de RES/NEG das do Medem. */
   list: requireView("propostas")
@@ -167,6 +179,92 @@ export const propostas = {
       }));
     }),
 
+  /** Dados completos de uma proposta, para reabrir no simulador (inclui o `data`). */
+  get: requireView("propostas")
+    .input(z.object({ id: z.string().min(1) }))
+    .handler(async ({ input, context }) => {
+      const ctx = context as { user: { id: string }; role: string; employeeId: number | null };
+      const [p] = await db
+        .select({
+          id: simuladorPropostas.id,
+          userId: simuladorPropostas.userId,
+          authorName: simuladorPropostas.authorName,
+          clientName: simuladorPropostas.clientName,
+          clientNif: simuladorPropostas.clientNif,
+          segment: simuladorPropostas.segment,
+          bestPlan: simuladorPropostas.bestPlan,
+          saving: simuladorPropostas.saving,
+          source: simuladorPropostas.source,
+          pdfName: simuladorPropostas.pdfName,
+          hasPdf: simuladorPropostas.pdfName,
+          data: simuladorPropostas.data,
+          createdAt: simuladorPropostas.createdAt,
+        })
+        .from(simuladorPropostas)
+        .where(eq(simuladorPropostas.id, input.id));
+      if (!p) throw new ORPCError("NOT_FOUND", { message: "Proposta não encontrada" });
+      await podeMexer(ctx, p.userId);
+      return {
+        id: p.id,
+        authorName: p.authorName,
+        clientName: p.clientName,
+        clientNif: p.clientNif,
+        segment: p.segment,
+        bestPlan: p.bestPlan,
+        saving: p.saving,
+        source: p.source,
+        pdfName: p.pdfName,
+        hasPdf: !!p.hasPdf,
+        data: p.data,
+        createdAt: p.createdAt.toISOString(),
+        isOwn: p.userId === ctx.user.id,
+      };
+    }),
+
+  /** Edita os dados de topo de uma proposta (cliente, NIF, segmento, plano, poupança).
+   *  Os cálculos do simulador vivem em `data` e só mudam ao reabrir e gravar.
+   *  Autor, chefe da equipa, ou admin/diretor. */
+  update: requireView("propostas")
+    .input(
+      z.object({
+        id: z.string().min(1),
+        clientName: z.string().max(200).nullish(),
+        clientNif: z.string().max(20).nullish(),
+        segment: z.string().max(50).nullish(),
+        bestPlan: z.string().max(200).nullish(),
+        saving: z.number().nullish(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const ctx = context as { user: { id: string }; role: string; employeeId: number | null };
+      const [p] = await db
+        .select({ userId: simuladorPropostas.userId, data: simuladorPropostas.data })
+        .from(simuladorPropostas)
+        .where(eq(simuladorPropostas.id, input.id));
+      if (!p) throw new ORPCError("NOT_FOUND", { message: "Proposta não encontrada" });
+      await podeMexer(ctx, p.userId);
+
+      const norm = (v: string | null | undefined) => (v == null ? null : v.trim() || null);
+      const set: Record<string, unknown> = {
+        clientName: norm(input.clientName),
+        clientNif: norm(input.clientNif),
+        segment: norm(input.segment),
+        bestPlan: norm(input.bestPlan),
+        saving: typeof input.saving === "number" && Number.isFinite(input.saving) ? input.saving : 0,
+      };
+      // O `data` alimenta o simulador ao reabrir: mantem-se coerente com a lista.
+      const d = (p.data && typeof p.data === "object" ? { ...(p.data as Record<string, unknown>) } : {});
+      d.nome = set.clientName;
+      d.nif = set.clientNif ?? "";
+      d.seg = set.segment ?? "";
+      d.best = set.bestPlan ?? "";
+      d.sav = set.saving;
+      set.data = d;
+
+      await db.update(simuladorPropostas).set(set).where(eq(simuladorPropostas.id, input.id));
+      return { ok: true };
+    }),
+
   /** Apaga uma proposta. Pode apagar quem a criou, um chefe da equipa, ou admin/diretor. */
   remove: requireView("propostas")
     .input(z.object({ id: z.string().min(1) }))
@@ -177,14 +275,7 @@ export const propostas = {
         .from(simuladorPropostas)
         .where(eq(simuladorPropostas.id, input.id));
       if (!p) throw new ORPCError("NOT_FOUND", { message: "Proposta não encontrada" });
-
-      let pode = ctx.role === "admin" || ctx.role === "diretor" || p.userId === ctx.user.id;
-      if (!pode) {
-        const meu = ctx.employeeId ?? (await resolveEmployeeId(ctx.user.id));
-        const subs = await subordinateUserIds(meu);
-        pode = subs.includes(p.userId);
-      }
-      if (!pode) throw new ORPCError("FORBIDDEN", { message: "Só podes apagar as tuas propostas" });
+      await podeMexer(ctx, p.userId);
 
       await db.delete(simuladorPropostas).where(eq(simuladorPropostas.id, input.id));
       return { ok: true };

@@ -6,6 +6,14 @@
 import { useEffect, useRef } from "react";
 import { useMe } from "../queries/me";
 
+/** Repassa o `?proposta=<id>` do URL da app para o iframe, para o simulador
+ *  reabrir a proposta guardada em vez de arrancar em branco. */
+function srcComProposta(base: string): string {
+  if (typeof window === "undefined") return base;
+  const id = new URLSearchParams(window.location.search).get("proposta");
+  return id ? `${base}?proposta=${encodeURIComponent(id)}` : base;
+}
+
 export default function SimuladorPage() {
   const { data: me } = useMe();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -51,7 +59,7 @@ export default function SimuladorPage() {
     <div className="-mx-4 -my-8 h-[100dvh] overflow-x-hidden lg:-mx-8">
       <iframe
         ref={iframeRef}
-        src="/simulador-res-neg.html"
+        src={srcComProposta("/simulador-res-neg.html")}
         title="Simulador RES/NEG"
         className="h-full w-full border-0"
         allow="geolocation"

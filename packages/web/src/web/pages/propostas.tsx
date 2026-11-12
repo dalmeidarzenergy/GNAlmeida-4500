@@ -4,6 +4,7 @@ import { Download, Eye, Trash2, FileText, Loader2, ExternalLink, X } from "lucid
 import { orpc } from "../lib/api";
 import { PageHeader, Empty, TableSkeleton, Tabs, Stat, SearchBox, Modal } from "../components/ui/kit";
 import { errMsg, fmtDate } from "../lib/format";
+import { BotaoEditar, EditProposta, type PropostaEditavel } from "./proposta-editar";
 
 /** As duas origens de propostas guardadas: o simulador de campanhas e o Medem. */
 const ABAS = [
@@ -27,6 +28,7 @@ export default function PropostasPage() {
   const [q, setQ] = useState("");
   const [toDelete, setToDelete] = useState<{ id: string; nome: string } | null>(null);
   const [preview, setPreview] = useState<{ id: string; nome: string } | null>(null);
+  const [toEdit, setToEdit] = useState<PropostaEditavel | null>(null);
 
   const list = useQuery(orpc.propostas.list.queryOptions({ input: { source: tab } }));
   const rows = useMemo(() => list.data ?? [], [list.data]);
@@ -99,7 +101,7 @@ export default function PropostasPage() {
                   <th className="text-right">Poupança</th>
                   <th>Comercial</th>
                   <th>Data</th>
-                  <th className="w-[130px]"></th>
+                  <th className="w-[160px]"></th>
                 </tr>
               </thead>
               <tbody>
@@ -119,6 +121,19 @@ export default function PropostasPage() {
                     <td className="text-[12.5px] text-ink-3">{fmtDate(r.createdAt)}</td>
                     <td>
                       <div className="flex justify-end gap-1">
+                        <BotaoEditar
+                          onClick={() =>
+                            setToEdit({
+                              id: r.id,
+                              clientName: r.clientName,
+                              clientNif: r.clientNif,
+                              segment: r.segment,
+                              bestPlan: r.bestPlan,
+                              saving: r.saving,
+                              source: r.source,
+                            })
+                          }
+                        />
                         {r.hasPdf ? (
                           <>
                             <button
@@ -198,6 +213,8 @@ export default function PropostasPage() {
           </button>
         </div>
       </Modal>
+
+      <EditProposta proposta={toEdit} onClose={() => setToEdit(null)} />
 
       {preview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-6" onClick={() => setPreview(null)}>

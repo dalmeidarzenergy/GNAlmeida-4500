@@ -102,13 +102,27 @@ button.go{background:var(--g);border-color:var(--g);color:#fff}
 <div class="btns">
   <button class="go" id="pdf">Descarregar PDF</button>
   <button id="clr">Limpar tudo</button>
+  <button class="go" id="psave">Guardar proposta</button>
+  <button id="pnova">Guardar como nova</button>
+  <button id="plist">Propostas guardadas</button>
 </div>
 <div class="note">Todos os valores são sem IVA, sem taxas e sem impostos.</div>
+<div class="card" id="pbox" style="margin-top:12px">
+  <h2 id="pnm">Proposta</h2>
+  <div class="note" id="pst"></div>
+  <div id="plista" style="display:none;margin-top:8px">
+    <input id="pq" type="text" placeholder="Pesquisar por nome ou NIF">
+    <div id="pitens" style="margin-top:6px"></div>
+  </div>
+</div>
 
 <script>
 (function(){
 "use strict";
 var $=function(id){return document.getElementById(id)};
+// Id da proposta aberta. Vem de ?proposta=<id>; ao gravar substitui este registo.
+var CURID=null, PEND=false, PROPS=[], GRAVAR_PDF=false;
+try{var _q=new URLSearchParams(location.search).get('proposta');if(_q)CURID=_q.trim()||null}catch(e){}
 // ids dos campos numericos, com o prefixo e a chave do periodo
 var PER=[['po','Ponta'],['ch','Cheias'],['vn','Vazio Normal'],['sv','Super Vazio']];
 var num=function(id){var v=parseFloat(($(id)||{}).value);return isNaN(v)?0:v};
@@ -203,7 +217,7 @@ function imgData(im){
 function saveProposta(blob, d){
   if(!blob || !blob.size) return;
   var s = snap();
-  var id = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  var id = CURID || ('m' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
   var nome = (s.cli || '').trim() || '(sem nome)';
   var fr = new FileReader();
   fr.onload = function(){
@@ -222,6 +236,9 @@ function saveProposta(blob, d){
         pdfBase64: b64,
         data: { id: id, ts: new Date().toISOString(), f: s },
       };
+      CURID = id;
+      PEND = false;
+      atualizaPainel();
       fetch('/api/simulador-propostas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -232,11 +249,90 @@ function saveProposta(blob, d){
   fr.readAsDataURL(blob);
 }
 
+// ---- Proposta guardada: reabrir, gravar e listar (aba Propostas) ----
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function nf2(v){var n=parseFloat(v);if(isNaN(n))return '0.00';return n.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2})}
+
+function painel(st){var el=document.getElementById('pst');if(el)el.textContent=st==null?'':st}
+function atualizaPainel(){
+  var nm=document.getElementById('pnm');if(!nm)return;
+  var cli=(txt('cli')||'(sem nome)');
+  var d=calc();var sav=(d.dias>0)?(d.totA-d.totI)*365/d.dias:0;
+  nm.textContent = CURID ? ('Proposta de '+cli+' - a editar') : ('Proposta nova de '+cli);
+  if(!PEND) painel(CURID ? ('Poupanca estimada '+nf2(sav)+' EUR/ano. Gravar substitui esta proposta (nao cria outra).') : 'Ao gravar com o botao Guardar proposta fica uma proposta nova na aba Propostas.');
+}
+function marcaPendente(){PEND=true;painel(CURID?'Alteracoes por gravar nesta proposta (substitui o registo aberto).':'Alteracoes por gravar. Ao gravar cria uma proposta nova.')}
+
+function aplicarProposta(p){
+  var f=(p&&p.data&&p.data.f)?p.data.f:{};
+  var ids=['cli','nif','cpe','com','pot','tar','prp','cnm','cem','ctl','mor','dias','atf','itf'];
+  PER.forEach(function(pp){ids.push('k'+pp[0],'a'+pp[0],'i'+pp[0])});
+  ids.forEach(function(k){var e=document.getElementById(k);if(e&&f[k]!=null)e.value=f[k]});
+  render();PEND=false;
+  CURID=p.id;
+  atualizaPainel();
+}
+async function abrirProposta(id){
+  if(!id)return false;
+  try{
+    var r=await fetch('/api/simulador-propostas',{cache:'no-store'});
+    if(!r.ok)return false;
+    var arr=await r.json();
+    var p=(Array.isArray(arr)?arr:[]).find(function(x){return x.id===id});
+    if(!p)return false;
+    aplicarProposta(p);
+    painel('A editar esta proposta. Gravar substitui-a.');
+    return true;
+  }catch(e){return false}
+}
+async function gravarProposta(comoNova){
+  var d=calc();
+  var jsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
+  if(!jsPDF){painel('Nao foi possivel gerar o PDF para gravar.');return false}
+  var antes=CURID;
+  if(comoNova)CURID=null;
+  try{
+    var abrir=document.getElementById('psave');
+    if(abrir)abrir.disabled=true;
+    painel('A gerar o PDF da proposta...');
+    var doc=montarPdf(d, jsPDF);
+    var blob=doc.output('blob');
+    saveProposta(blob,d);
+    var id=CURID||antes;
+    await new Promise(function(ok){setTimeout(ok,400)});
+    painel('Proposta '+(antes&&!comoNova?'atualizada':'guardada')+'. Ja aparece na aba Propostas.');
+    return true;
+  }catch(e){painel('Nao consegui gravar a proposta ('+((e&&e.message)||'erro')+').');return false}
+  finally{var b2=document.getElementById('psave');if(b2)b2.disabled=false}
+}
+async function listarPropostas(){
+  var box=document.getElementById('pitens');if(!box)return;
+  var q=(document.getElementById('pq').value||'').trim().toLowerCase();
+  var arr=[];
+  try{var r=await fetch('/api/simulador-propostas?source=medem',{cache:'no-store'});if(r.ok)arr=await r.json()}catch(e){}
+  arr=(Array.isArray(arr)?arr:[]).filter(function(x){return x.isOwn!==false});
+  if(q)arr=arr.filter(function(x){return ((x.clientName||'')+' '+(x.clientNif||'')).toLowerCase().indexOf(q)>=0});
+  if(!arr.length){box.innerHTML='<div class="note">Sem propostas Medem guardadas nesta conta.</div>';return}
+  box.innerHTML=arr.slice(0,50).map(function(x){
+    return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd)">'
+      +'<span style="min-width:0"><b>'+esc(x.clientName||'(sem nome)')+'</b> <span style="color:var(--mu);font-size:12px">'+(esc(x.clientNif||''))+(x.saving?' - '+nf2(x.saving)+' EUR/ano':'')+'</span></span>'
+      +'<span style="display:flex;gap:6px"><button data-abrir="'+esc(x.id)+'">Abrir</button>'
+      +'<button data-apagar="'+esc(x.id)+'">Apagar</button></span></div>';
+  }).join('');
+}
+function abrirLista(){var b=document.getElementById('plista');var v=b.style.display==='none';b.style.display=v?'block':'none';if(v)listarPropostas()}
+function propostaNova(){CURID=null;PEND=false;atualizaPainel();painel('Vais criar uma proposta nova. Ao gravar nao substitui nenhuma.')}
+
 // Le os campos de texto do formulario (cliente/comercial).
 function snap(){
   var o={};
   var ids=['cli','nif','cpe','com','pot','tar','prp','cnm','cem','ctl','mor'];
   for(var i=0;i<ids.length;i++){var e=document.getElementById(ids[i]);o[ids[i]]=e?e.value:''}
+  // As entradas do calculo tambem ficam gravadas: sem elas, reabrir a proposta
+  // perdia o consumo e a poupanca voltava a zero.
+  var calcIds=['dias','atf','itf'];
+  PER.forEach(function(pp){calcIds.push('k'+pp[0],'a'+pp[0],'i'+pp[0])});
+  for(var j=0;j<calcIds.length;j++){var e2=document.getElementById(calcIds[j]);o[calcIds[j]]=e2?e2.value:''}
   return o;
 }
 function hoje(){var d=new Date();var p=function(n){return (n<10?'0':'')+n};return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()}
@@ -295,9 +391,7 @@ function carregarFontesPdf(doc){
   }catch(e){ return false; }
 }
 
-$('pdf').addEventListener('click',function(){
-  var d=calc();
-  var jsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;if(!jsPDF)return;
+function montarPdf(d, jsPDF){
   var doc=new jsPDF({unit:'mm',format:'a4'});
   // Tipografia do projeto: Sora nos titulos, Poppins no corpo. Sem as
   // fontes carregadas, mantem-se o Helvetica por defeito.
@@ -408,13 +502,53 @@ $('pdf').addEventListener('click',function(){
   doc.setDrawColor(GREEN[0],GREEN[1],GREEN[2]);doc.setLineWidth(0.8);doc.line(M,yb,W-M,yb);
   if(rc.length){doc.setFont(FONT_B,'normal');doc.setFontSize(9);doc.setTextColor(40,50,44);doc.text(rc.join('  |  '),M,yb+5.5);}
 
-  const blob = doc.output('blob');
-  // Guarda a proposta (e o PDF) para a aba Propostas; nao bloqueia a descarga.
+  return doc;
+}
+$('pdf').addEventListener('click',function(){
+  var d=calc();
+  var jsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;if(!jsPDF)return;
+  var doc=montarPdf(d, jsPDF);
+  var blob=doc.output('blob');
+  // Guarda/atualiza a proposta na aba Propostas e descarrega o PDF.
   saveProposta(blob, d);
-  doc.save('comparacao-bte-mt.pdf');
+  if(!GRAVAR_PDF) doc.save('comparacao-bte-mt.pdf');
+  GRAVAR_PDF=false;
 });
 
+// ---- Ligacoes dos botoes de proposta ----
+(function(){
+  function on(id, fn){var e=document.getElementById(id);if(e)e.addEventListener('click', fn)}
+  on('psave', function(){gravarProposta(false)});
+  on('pnova', function(){gravarProposta(true)});
+  on('plist', function(){abrirLista()});
+  on('pq',    function(){listarPropostas()});
+  var it=document.getElementById('pitens');
+  if(it){
+    it.addEventListener('click', function(ev){
+      var b=(ev.target&&ev.target.closest)?ev.target.closest('[data-abrir],[data-apagar]'):null;
+      if(!b)return;
+      var ab=b.getAttribute('data-abrir'), ap=b.getAttribute('data-apagar');
+      if(ab){abrirProposta(ab)}
+      else if(ap){
+        if(!window.confirm('Apagar esta proposta?'))return;
+        fetch('/api/simulador-propostas/'+encodeURIComponent(ap),{method:'DELETE'})
+          .then(function(){listarPropostas()}).catch(function(){});
+      }
+    });
+  }
+  var campos=['cli','nif','cpe','com','pot','tar','prp','cnm','cem','ctl','mor'];
+  campos.forEach(function(k){
+    var e=document.getElementById(k);if(!e)return;
+    var ev=(e.tagName==='SELECT'||e.type==='number')?'change':'input';
+    e.addEventListener(ev, function(){
+      if(k==='cli'||k==='nif'){marcaPendente()}else{atualizaPainel()}
+    });
+  });
+})();
+
 render();
+atualizaPainel();
+if(CURID) abrirProposta(CURID);
 })();
 </script>
 </main></body></html>

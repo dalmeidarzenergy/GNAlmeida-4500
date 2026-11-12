@@ -5,6 +5,14 @@
  */
 import { useEffect, useRef } from "react";
 
+/** Repassa o `?proposta=<id>` do URL da app para o iframe, para o simulador
+ *  reabrir a proposta guardada em vez de arrancar em branco. */
+function srcComProposta(base: string): string {
+  if (typeof window === "undefined") return base;
+  const id = new URLSearchParams(window.location.search).get("proposta");
+  return id ? `${base}?proposta=${encodeURIComponent(id)}` : base;
+}
+
 export default function SimuladorMedemPage() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -28,7 +36,7 @@ export default function SimuladorMedemPage() {
     <div className="-mx-4 -my-8 h-[100dvh] overflow-x-hidden lg:-mx-8">
       <iframe
         ref={iframeRef}
-        src="/simulador-medem.html"
+        src={srcComProposta("/simulador-medem.html")}
         title="Simulador Medem"
         className="h-full w-full border-0"
       />
