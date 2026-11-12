@@ -49,7 +49,7 @@ export function EditProposta({
     setNif(proposta.clientNif ?? "");
     setSegmento(proposta.segment ?? "");
     setPlano(proposta.bestPlan ?? "");
-    setPoupanca(proposta.saving == null ? "" : String(proposta.saving));
+    setPoupanca(proposta.saving == null ? "" : String(Math.round(proposta.saving * 100) / 100));
   }, [proposta]);
 
   const guardar = useMutation({
