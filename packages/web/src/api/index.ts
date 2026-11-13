@@ -18,6 +18,7 @@ import { campaigns } from "./routes/campaigns";
 import { suppliersRoute } from "./routes/suppliers";
 import { agenda } from "./routes/agenda";
 import { d2d } from "./routes/d2d";
+import { fleet } from "./routes/fleet";
 import { simulador } from "./routes/simulador";
 import { incentivesRoutes } from "./routes/incentives";
 import { notificationsRoute } from "./routes/notifications";
@@ -50,6 +51,7 @@ export const router = {
   notifications: notificationsRoute,
   simuladorCatalogo,
   propostas,
+  fleet,
 };
 
 export type AppRouter = typeof router;

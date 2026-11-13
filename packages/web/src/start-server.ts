@@ -47,6 +47,49 @@ if (existsSync(dbPath)) {
     ensureColumn("simulador_propostas", "source", "text NOT NULL DEFAULT 'res-neg'");
     ensureColumn("simulador_propostas", "pdf_base64", "text");
     ensureColumn("simulador_propostas", "pdf_name", "text");
+
+    // Frota: tabelas novas. `CREATE TABLE IF NOT EXISTS` e idempotente e deixa
+    // as bases antigas (sem frota) a funcionar assim que o servidor arranca.
+    db.run(`CREATE TABLE IF NOT EXISTS vehicles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plate TEXT NOT NULL,
+      brand TEXT,
+      model TEXT,
+      year INTEGER,
+      fuel TEXT,
+      km INTEGER NOT NULL DEFAULT 0,
+      employee_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'ativo',
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS fleet_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      provider TEXT NOT NULL,
+      number TEXT NOT NULL,
+      pin TEXT,
+      vehicle_id INTEGER,
+      employee_id INTEGER,
+      monthly_limit REAL NOT NULL DEFAULT 0,
+      start_date TEXT,
+      end_date TEXT,
+      status TEXT NOT NULL DEFAULT 'ativo',
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS fleet_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vehicle_id INTEGER,
+      card_id INTEGER,
+      kind TEXT NOT NULL DEFAULT 'outro',
+      name TEXT NOT NULL,
+      path TEXT NOT NULL,
+      size INTEGER NOT NULL DEFAULT 0,
+      mime TEXT,
+      expires_on TEXT,
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`);
   } finally {
     db.close();
   }
