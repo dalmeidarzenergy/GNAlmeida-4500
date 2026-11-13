@@ -873,6 +873,72 @@ function UploadForm({
   );
 }
 
+/** Gasto do cartao: totais do mes, do acumulado e os ultimos movimentos. */
+function CardSpend({ card, stats, monthLabel }: { card: Card; stats?: { spent: number; litros: number; energia: number; entradas: number; total: number; km: number; ultimo: string | null }; monthLabel: string }) {
+  const fuel = useFuelEntries();
+  const rows = (fuel.data ?? []).filter((e) => e.cardId === card.id).slice(0, 12);
+  const gasto = stats?.spent ?? 0;
+
+  return (
+    <div className="rounded-[10px] border border-line">
+      <div className="border-b border-line px-3 py-2">
+        <div className="label-mono">Consumos</div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 px-3 py-3 sm:grid-cols-4">
+        <div>
+          <div className="label-mono">Gasto em {monthLabel}</div>
+          <div className="num text-[15px] font-semibold">{gasto ? gasto.toFixed(2) + " €" : "—"}</div>
+        </div>
+        <div>
+          <div className="label-mono">Km feitos</div>
+          <div className="num text-[15px] font-semibold">{card.vehicleId == null ? "—" : (stats?.km ?? 0).toLocaleString("pt-PT")}</div>
+        </div>
+        <div>
+          <div className="label-mono">{stats?.energia ? "€/kWh" : "€/litro"}</div>
+          <div className="num text-[15px] font-semibold">
+            {stats?.litros ? (stats.spent / stats.litros).toFixed(3) : stats?.energia ? (stats.spent / stats.energia).toFixed(3) : "—"}
+          </div>
+        </div>
+        <div>
+          <div className="label-mono">Acumulado</div>
+          <div className="num text-[15px] font-semibold">{stats?.total ? stats.total.toFixed(2) + " €" : "—"}</div>
+          <div className="text-[11px] text-ink-3">{stats?.entradas ?? 0} movimentos</div>
+        </div>
+      </div>
+      {!rows.length ? (
+        <div className="border-t border-line px-3 py-4 text-[12.5px] text-ink-3">Ainda sem consumos neste cartão.</div>
+      ) : (
+        <div className="overflow-x-auto border-t border-line">
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr className="border-b border-line text-left text-ink-3">
+                <th className="label-mono px-3 py-2 font-normal">Data</th>
+                <th className="label-mono px-3 py-2 font-normal">Tipo</th>
+                <th className="label-mono px-3 py-2 font-normal">Qtd.</th>
+                <th className="label-mono px-3 py-2 font-normal">Valor</th>
+                <th className="label-mono px-3 py-2 font-normal">Km</th>
+                <th className="label-mono px-3 py-2 font-normal">Posto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((e) => (
+                <tr key={e.id} className="border-b border-line last:border-b-0">
+                  <td className="num px-3 py-2">{e.spentOn}</td>
+                  <td className="px-3 py-2 text-ink-2">{FUEL_KINDS.find((k) => k.key === e.kind)?.label ?? "Outro"}</td>
+                  <td className="num px-3 py-2 text-ink-2">{e.liters ? e.liters.toLocaleString("pt-PT", { maximumFractionDigits: 1 }) : "—"}</td>
+                  <td className="num px-3 py-2 font-medium">{e.amount ? e.amount.toFixed(2) + " €" : "—"}</td>
+                  <td className="num px-3 py-2 text-ink-3">{e.km != null ? e.km.toLocaleString("pt-PT") : "—"}</td>
+                  <td className="px-3 py-2 text-ink-3">{e.station ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------- página */
 
 export default function FrotaPage() {
@@ -1029,6 +1095,43 @@ export default function FrotaPage() {
   const fuelAmount = fuelRows.reduce((a, e) => a + e.amount, 0);
   const fuelAvg = fuelLiters ? fuelAmount / fuelLiters : 0;
   const fuelKm = fuelRows.reduce((a, e) => a + (e.km ?? 0), 0);
+
+  /**
+   * Resumo do mes por cartao: quanto gastou, quantos km se fizeram com ele e
+   * o preco medio. Os km de um cartao sao a diferenca entre a maior e a menor
+   * leitura do mes, por viatura — somar os km das leituras daria um numero
+   * diferente do que o carro andou.
+   */
+  const cardStats = useMemo(() => {
+    const map = new Map<number, { spent: number; litros: number; energia: number; entradas: number; total: number; km: number; ultimo: string | null }>();
+    for (const e of fuelAll) {
+      if (e.cardId == null) continue;
+      const cur = map.get(e.cardId) ?? { spent: 0, litros: 0, energia: 0, entradas: 0, total: 0, km: 0, ultimo: null };
+      cur.entradas++;
+      cur.total += e.amount;
+      if (!cur.ultimo || e.spentOn > cur.ultimo) cur.ultimo = e.spentOn;
+      if (monthOf(e.spentOn) === month) {
+        cur.spent += e.amount;
+        cur.litros += e.kind === "combustivel" ? e.liters : 0;
+        cur.energia += e.kind === "eletricidade" ? e.liters : 0;
+      }
+      map.set(e.cardId, cur);
+    }
+    // Km feitos no mes, por cartao: cada cartao ve as leituras das suas viaturas.
+    for (const c of clist) {
+      const cur = map.get(c.id);
+      if (!cur || c.vehicleId == null) continue;
+      const v = vlist.find((x) => x.id === c.vehicleId);
+      if (!v) continue;
+      const rs = v.readings.filter((r) => monthOf(r.recordedOn) === month).map((r) => r.km).sort((a, b) => a - b);
+      cur.km = rs.length > 1 ? rs[rs.length - 1]! - rs[0]! : 0;
+    }
+    return map;
+  }, [fuelAll, clist, vlist, month]);
+
+  const cardSpent = clist.reduce((a, c) => a + (cardStats.get(c.id)?.spent ?? 0), 0);
+  const cardKm = clist.reduce((a, c) => a + (cardStats.get(c.id)?.km ?? 0), 0);
+  const acimaLimite = clist.filter((c) => c.monthlyLimit > 0 && (cardStats.get(c.id)?.spent ?? 0) > c.monthlyLimit).length;
   const readingsMonth = vlist.reduce((a, v) => a + v.readings.filter((r) => r.recordedOn.startsWith(month)).length, 0);
   const lastRead = vlist.flatMap((v) => v.readings.map((r) => r.recordedOn)).sort().pop() ?? null;
 
@@ -1142,6 +1245,13 @@ export default function FrotaPage() {
             <Stat label="Sem leitura" value={semLeitura} sub="viaturas por registar" icon={<AlertTriangle size={15} />} accent="var(--amber)" delay={80} />
             <Stat label="Última leitura" value={lastRead ?? "—"} sub="registo mais recente" icon={<CalendarClock size={15} />} accent="var(--rose)" delay={120} />
           </>
+        ) : area === "cartoes" ? (
+          <>
+            <Stat label="Cartões frota" value={clist.length} sub={clist.filter((c) => c.status === "ativo").length + " ativos"} icon={<Fuel size={15} />} delay={0} />
+            <Stat label="Gasto no mês" value={cardSpent.toLocaleString("pt-PT", { style: "currency", currency: "EUR" })} sub={monthLabel(month)} icon={<CreditCard size={15} />} accent="var(--sky)" delay={40} />
+            <Stat label="Km feitos" value={cardKm ? cardKm.toLocaleString("pt-PT") : "—"} sub="com esses cartões" icon={<Gauge size={15} />} accent="var(--amber)" delay={80} />
+            <Stat label="Acima do limite" value={acimaLimite} sub={acimaLimite ? "cartões a rever" : "tudo dentro do limite"} icon={<AlertTriangle size={15} />} accent={acimaLimite ? "var(--rose)" : undefined} delay={120} />
+          </>
         ) : area === "consumos" ? (
           <>
             <Stat label="Consumos" value={fuelRows.length} sub={monthLabel(month)} icon={<Droplet size={15} />} delay={0} />
@@ -1209,6 +1319,9 @@ export default function FrotaPage() {
                       <td className="px-4 py-2.5 text-right">
                         {canEdit && (
                           <div className="flex items-center justify-end gap-2">
+                            <button type="button" title="Histórico de quilómetros" aria-label={"Histórico de km de " + v.plate} className="text-ink-3 hover:text-ink" onClick={() => setReadingFor({ id: v.id, label: v.plate })}>
+                              <History size={14} />
+                            </button>
                             <button type="button" title="Anexar documento" aria-label="Anexar documento" className="text-ink-3 hover:text-volt" onClick={() => setUploadFor({ vehicleId: v.id, label: v.plate })}>
                               <Upload size={14} />
                             </button>
@@ -1260,14 +1373,24 @@ export default function FrotaPage() {
                       <td className="num px-4 py-2.5 text-ink-3">{diff == null ? "—" : (diff > 0 ? "+" : "") + diff.toLocaleString("pt-PT")}</td>
                       <td className="num px-4 py-2.5 text-ink-3">{count}</td>
                       <td className="px-4 py-2.5 text-right">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1 text-ink-2 hover:text-volt"
-                          aria-label={"Registar quilómetros de " + v.plate}
-                          onClick={() => setReadingFor({ id: v.id, label: v.plate })}
-                        >
-                          <Plus size={13} /> Registar km
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-ink-3 hover:text-ink"
+                            aria-label={"Ver histórico de " + v.plate}
+                            onClick={() => setReadingFor({ id: v.id, label: v.plate })}
+                          >
+                            <History size={13} /> Histórico
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-ink-2 hover:text-volt"
+                            aria-label={"Registar quilómetros de " + v.plate}
+                            onClick={() => setReadingFor({ id: v.id, label: v.plate })}
+                          >
+                            <Plus size={13} /> Registar km
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1456,6 +1579,9 @@ export default function FrotaPage() {
                     <th className="label-mono px-4 py-3 font-normal">Cartão</th>
                     <th className="label-mono px-4 py-3 font-normal">Viatura</th>
                     <th className="label-mono px-4 py-3 font-normal">Titular</th>
+                    <th className="label-mono px-4 py-3 font-normal">Gasto no mês</th>
+                    <th className="label-mono px-4 py-3 font-normal">Km feitos</th>
+                    <th className="label-mono px-4 py-3 font-normal">€/litro</th>
                     <th className="label-mono px-4 py-3 font-normal">Limite/mês</th>
                     <th className="label-mono px-4 py-3 font-normal">Atribuição</th>
                     <th className="label-mono px-4 py-3 font-normal">Docs</th>
@@ -1472,7 +1598,49 @@ export default function FrotaPage() {
                       </td>
                       <td className="px-4 py-2.5 text-ink-2">{c.plate ?? "—"}</td>
                       <td className="px-4 py-2.5 text-ink-2">{c.holderName ?? "—"}</td>
-                      <td className="num px-4 py-2.5 text-ink-2">{c.monthlyLimit ? c.monthlyLimit.toFixed(2) + " €" : "—"}</td>
+                      <td className="px-4 py-2.5">
+                        {(() => {
+                          const st = cardStats.get(c.id);
+                          const gasto = st?.spent ?? 0;
+                          const cm = (st?.km ?? 0) > 0 ? gasto / st!.km : null;
+                          return (
+                            <div className="min-w-[104px]">
+                              <div className="num font-medium">{gasto ? gasto.toFixed(2) + " €" : "—"}</div>
+                              <div className="num text-[11px] text-ink-3">
+                                {cm != null ? cm.toFixed(3) + " €/km" : (st?.entradas ? st.entradas + " movimentos" : "sem consumos")}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td className="num px-4 py-2.5 text-ink-2">{c.vehicleId == null ? "—" : (cardStats.get(c.id)?.km ?? 0).toLocaleString("pt-PT")}</td>
+                      <td className="px-4 py-2.5">
+                        {(() => {
+                          const st = cardStats.get(c.id);
+                          if (st?.litros) return <div className="num text-ink-2">{(st.spent / st.litros).toFixed(3)} €<span className="text-[11px] text-ink-3">/l</span></div>;
+                          if (st?.energia) return <div className="num text-ink-2">{(st.spent / st.energia).toFixed(3)} €<span className="text-[11px] text-ink-3">/kWh</span></div>;
+                          return <div className="num text-ink-3">—</div>;
+                        })()}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {(() => {
+                          const gasto = cardStats.get(c.id)?.spent ?? 0;
+                          if (!c.monthlyLimit) return <span className="num text-ink-3">—</span>;
+                          const pct = Math.min(100, Math.round((gasto / c.monthlyLimit) * 100));
+                          const fora = gasto > c.monthlyLimit;
+                          return (
+                            <div className="min-w-[104px]" title={gasto.toFixed(2) + " € de " + c.monthlyLimit.toFixed(2) + " €"}>
+                              <div className="num text-[11.5px]">
+                                <span className={fora ? "text-danger" : "text-ink-2"}>{gasto.toFixed(0) + " €"}</span>
+                                <span className="text-ink-3">{" / " + c.monthlyLimit.toFixed(0) + " €"}</span>
+                              </div>
+                              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                                <div className={fora ? "h-full bg-danger" : "h-full bg-volt"} style={{ width: pct + "%" }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td className="num px-4 py-2.5 text-ink-3">{c.startDate ?? "—"}{c.endDate ? " → " + c.endDate : ""}</td>
                       <td className="px-4 py-2.5">
                         <button type="button" className="inline-flex items-center gap-1 text-ink-2 hover:text-volt" onClick={() => setDocsFor({ kind: "card", id: c.id, label: c.provider + " " + c.number })}>
@@ -1547,7 +1715,12 @@ export default function FrotaPage() {
       </Modal>
 
       <Modal open={editCard !== null} onClose={() => setEditCard(null)} title={editCard === "new" ? "Novo cartão frota" : "Editar cartão frota"} wide>
-        {editCard !== null && <CardForm initial={editCard === "new" ? null : editCard} onClose={() => setEditCard(null)} />}
+        {editCard !== null && (
+          <div className="space-y-5">
+            <CardForm initial={editCard === "new" ? null : editCard} onClose={() => setEditCard(null)} />
+            {editCard !== "new" && <CardSpend card={editCard} stats={cardStats.get(editCard.id)} monthLabel={monthLabel(month)} />}
+          </div>
+        )}
       </Modal>
 
       <Modal open={readingFor !== null} onClose={() => setReadingFor(null)} title={"Quilómetros — " + (readingFor?.label ?? "")} wide>
