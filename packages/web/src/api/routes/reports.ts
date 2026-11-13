@@ -16,10 +16,12 @@ const COUNTED = SALE_COUNTED;
 
 /**
  * Previsao de fecho do mes: quantas vendas se estima que fiquem "Em Fornecimento"
- * ate ao fim do mes. Assenta so em contratos que ja existem, somando duas parcelas:
+ * ate ao fim do mes. Soma tres parcelas:
  *  1. as que ja estao em fornecimento (contam pelo dia em que entraram nesse estado);
  *  2. as pendentes que, ao ritmo normal de fecho da equipa/vendedor, ainda entram
- *     este mes (mede-se o tempo tipico entre a assinatura e a entrada em fornecimento).
+ *     este mes (mede-se o tempo tipico entre a assinatura e a entrada em fornecimento);
+ *  3. as que ainda se assinam ao ritmo de dias uteis decorridos.
+ * Num mes ja fechado nao se projeta nada: reporta-se apenas o fecho real.
  * A meta do mes (quando existe) da o progresso.
  */
 /** Ciclo de fecho: quantos dias passam, em regra, entre a assinatura e a entrada em fornecimento. */
@@ -44,46 +46,6 @@ async function cicloFecho(scope: SellerScope, services: string[]): Promise<Ciclo
   return { mediana: at(0.5), p75: at(0.75), p90: at(0.9), amostra: dias.length };
 }
 
-/**
- * Uma venda pendente: ainda nao esta em fornecimento, mas pode entrar ate ao fim do mes.
- */
-type Pendente = { idadeDias: number; status: string };
-
-/**
- * Adianta que as vendas mais avancadas na "linha de montagem" fecham numa fracao do ciclo,
- * e as que ainda estao a montante (prospeo, negociacao) so fecham no fim dele.
- */
-const PESO_PROGRESSO: Record<string, number> = {
-  "Pedido de Fornecimento": 0.9,
-  "Backoffice": 0.8,
-  "Control": 0.7,
-  "Ativado": 0.9,
-  "Em Instalação": 0.9,
-  "Contrato Enviado": 0.6,
-  "Fechado": 0.6,
-  "Negociação": 0.4,
-  "Pré-Venda": 0.3,
-  "Orçamento Enviado": 0.3,
-  "Agendado": 0.25,
-  "Lead": 0.15,
-  "Não Contactado": 0.08,
-  "Prospeção": 0.1,
-  "Pendente": 0.15,
-};
-
-/**
- * Probabilidade de uma pendente entrar em fornecimento ate ao fim do mes alvo.
- *
- * O horizonte e medido em SEMANAS, nao em dias uteis: a mediana do ciclo e 7 dias de calendario,
- * pelo que em dias uteis cai perto de 5 — usar a janela util subestimava tudo.
- */
-function probEntrada(p: Pendente, ctx: { horizonte: number; p75: number; peso: number }): number {
-  const idade = p.idadeDias;
-  if (idade < 0) return 0;
-  if (idade + ctx.p75 < ctx.horizonte) return ctx.peso;
-  const x = idade + ctx.p75 - ctx.horizonte;
-  return ctx.peso * 0.3 ** (x / 28);
-}
 async function closeForecast(month: string, scope: SellerScope, services: string[], target = 0) {
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
   const wd = monthWorkdays(month, today);
@@ -93,43 +55,49 @@ async function closeForecast(month: string, scope: SellerScope, services: string
   const passado = month < mesAtual;
   const futuro = month > mesAtual;
 
-  const ciclo = await cicloFecho(scope, services);
+  // 1) Ja em fornecimento dentro do mes.
   const real = (await suppliedOn(mesIni, mesFim, scope, services)).length;
 
-  // Num mes futuro ainda nao ha nada em fornecimento: tudo o que vai fechar
-  // tem de vir das pendentes. Num mes passado, o mes ja fechou e o real e final.
-  const pend = await db
-    .select({ id: sales.id, data: sales.date, details: sales.details, status: sales.status })
+  // 2) Pendentes: assinadas, ainda nao em fornecimento e nao anuladas.
+  const pendentes = await db
+    .select({ data: sales.date, details: sales.details })
     .from(sales)
     .where(and(sellerWhere(scope), inArray(sales.service, services), notInArray(sales.status, FORECAST_EXCLUDED), sql`${sales.status} <> 'Em Fornecimento'`));
 
-  const hojeMs = Date.parse(today + "T00:00:00Z");
-  const fimMs = Date.parse(mesFim + "T00:00:00Z");
-  const hojeDias = Math.floor(hojeMs / 86400000);
-  const fimDias = Math.floor(fimMs / 86400000);
-  // O horizonte so pode ir do presente ate ao fim do mes alvo: para um mes
-  // futuro, e a distancia ate esse mes (nao um mes a contar de hoje).
-  const horizonte = Math.max(0, fimDias - hojeDias) + 4;
+  // Tempo tipico (mediana) entre a assinatura e a entrada em fornecimento, nas
+  // vendas do mesmo ambito que ja fecharam. Exclui as absurdas (>1 ano).
+  const ciclo = await cicloFecho(scope, services);
+
+  // Uma pendente entra este mes se ainda houver janela para fechar: ou ja passou
+  // do ciclo tipico (esta atrasada, conta como fluxo que ainda pode entrar), ou
+  // esta dentro do prazo normal e o ciclo ainda cabe nos dias uteis que faltam.
   let entram = 0;
-  let elegiveis = 0;
-  for (const p of pend) {
-    // Num mes ja fechado so contam as vendas que entraram em fornecimento
-    // nesse mes: o que ficou pendente perdeu o comboio, nao se projeta.
+  for (const v of pendentes) {
+    // Num mes ja fechado so conta o que realmente entrou: o que ficou pendente
+    // perdeu o comboio, nao se projeta.
     if (passado) continue;
-    const sg = sigDate(p.details, p.data);
-    const sgMs = Date.parse(sg + "T00:00:00Z");
-    if (Number.isNaN(sgMs)) continue;
+    const sg = sigDate(v.details, v.data);
     if (sg > mesFim) continue;
-    const peso = PESO_PROGRESSO[p.status] ?? 0.1;
-    const prob = probEntrada(
-      { idadeDias: hojeDias - Math.floor(sgMs / 86400000), status: p.status },
-      { horizonte, p75: ciclo.p75, peso },
-    );
-    if (prob > 0.01) elegiveis++;
-    entram += prob;
+    const idade = daysBetween(sg, today);
+    if (idade == null || idade < 0) continue;
+    if (idade >= ciclo.mediana || idade + ciclo.mediana <= wd.remaining + wd.elapsed) entram++;
   }
 
-  const previsto = Math.round((real + entram) * 10) / 10;
+  // 3) Vendas que ainda se assinam ao ritmo medio dos dias uteis decorridos.
+  const noMes = and(gte(sales.date, mesIni), lte(sales.date, mesFim), sellerWhere(scope), inArray(sales.service, services));
+  const assinadasMes = Number(
+    (
+      await db
+        .select({ n: sql<number>`count(*)` })
+        .from(sales)
+        .where(and(noMes, notInArray(sales.status, FORECAST_EXCLUDED)))
+    )[0]?.n ?? 0,
+  );
+  const porDia = wd.elapsed ? assinadasMes / wd.elapsed : 0;
+  // Num mes passado nao se assina mais nada: a parcela so existe no mes a decorrer.
+  const aindaAssinam = passado ? 0 : Math.round(porDia * wd.remaining);
+
+  const previsto = Math.round((real + entram + aindaAssinam) * 10) / 10;
   return {
     today,
     estado: passado ? "fechado" : futuro ? "futuro" : "a decorrer",
@@ -138,9 +106,9 @@ async function closeForecast(month: string, scope: SellerScope, services: string
     previsto,
     ciclo: ciclo.mediana,
     amostra: ciclo.amostra,
-    pendentes: pend.length,
-    pendentesEntram: Math.round(entram * 10) / 10,
-    pendentesFora: pend.length - elegiveis,
+    pendentes: pendentes.length,
+    pendentesEntram: entram,
+    aindaAssinam,
     target,
     progresso: target > 0 ? real / target : null,
   };
