@@ -1,17 +1,23 @@
 /**
- * Página "Frota": viaturas, cartões frota e documentos anexados.
+ * Página "Frota".
  *
- * Três separadores — Viaturas, Cartões frota e Documentos. Cada viatura e cada
- * cartão tem os seus documentos (livrete, seguro, inspeção, contrato, fatura…),
- * carregados para `public/uploads/fleet` e servidos em `/uploads/fleet/…`.
+ * Cinco separadores:
+ *  - Viaturas     — a ficha de cada viatura (matrícula, condutor, km, estado).
+ *  - Quilómetros  — o histórico de leituras de km por viatura. A quilometragem
+ *                   da viatura acompanha sempre a leitura mais recente; a coluna
+ *                   "Diferença" mostra os km feitos entre duas leituras.
+ *  - Manutenções  — revisões, óleo, pneus, inspeção e reparações, com oficina,
+ *                   custo e o aviso da próxima intervenção (aos km ou na data).
+ *  - Cartões frota— cartões de combustível e a viatura/titular de cada um.
+ *  - Documentos   — todos os anexos, de viaturas, cartões e manutenções.
  *
- * Filtros por estado (ativo / manutenção / inativo) e por mês de referência:
- * o mês olha para a data de entrada da viatura (createdAt), para se ver o que já
- * existia na frota nesse mês.
+ * Os ficheiros ficam em `public/uploads/fleet` e são servidos em `/uploads/fleet/…`.
+ * Filtros por estado e por mês de referência: o mês olha para a data de entrada
+ * da viatura (createdAt), para se ver o que já existia na frota nesse mês.
  */
 import { useMemo, useState } from "react";
 import {
-  CarFront, Plus, Search, Pencil, FileText, Upload, Trash2, Fuel, Gauge, AlertTriangle, Paperclip, CreditCard,
+  CarFront, Plus, Search, Pencil, FileText, Upload, Trash2, Fuel, Gauge, AlertTriangle, Paperclip, CreditCard, Wrench, History, CalendarClock,
 } from "lucide-react";
 import { PageHeader, Stat, Empty, Tabs, Modal, Field, SubmitRow, ConfirmDelete } from "../components/ui/kit";
 import { errMsg } from "../lib/format";
@@ -19,7 +25,9 @@ import { useMe } from "../queries/me";
 import {
   useVehicles, useFleetCards, useFleetDrivers,
   useSaveVehicle, useRemoveVehicle, useSaveCard, useRemoveCard,
-  useUploadFleetDoc, useRemoveFleetDoc,
+  useUploadFleetDoc, useRemoveFleetDoc, useFleetDocs,
+  useReadings, useAddReading, useRemoveReading,
+  useSaveMaintenance, useRemoveMaintenance,
 } from "../queries/fleet";
 
 const VEHICLE_STATUS = [
@@ -39,9 +47,38 @@ const DOC_KINDS = [
 
 const FUELS = ["Diesel", "Gasolina", "Elétrico", "Híbrido", "GPL", "Outro"];
 
+const MAINT_KINDS = [
+  { key: "revisao", label: "Revisão" },
+  { key: "oleo", label: "Mudança de óleo" },
+  { key: "pneus", label: "Pneus" },
+  { key: "inspecao", label: "Inspeção" },
+  { key: "reparacao", label: "Reparação" },
+  { key: "outro", label: "Outro" },
+] as const;
+
+const MAINT_STATUS = [
+  { key: "agendada", label: "Agendada", cls: "border-sky/40 bg-sky/10 text-sky" },
+  { key: "em_curso", label: "Em curso", cls: "border-amber/40 bg-amber/10 text-amber" },
+  { key: "concluida", label: "Concluída", cls: "border-volt/40 bg-volt/10 text-volt" },
+] as const;
+
+const READ_SOURCES = [
+  { key: "manual", label: "Manual" },
+  { key: "inspecao", label: "Inspeção" },
+  { key: "manutencao", label: "Manutenção" },
+  { key: "importacao", label: "Importação" },
+] as const;
+
+type Maint = {
+  id: number; vehicleId: number; kind: string; status: string;
+  scheduledOn: string | null; doneOn: string | null; km: number | null;
+  nextKm: number | null; nextOn: string | null; workshop: string | null;
+  cost: number; paidBy: string | null; description: string | null; notes: string | null;
+};
+
 type Vehicle = NonNullable<ReturnType<typeof useVehicles>["data"]>[number];
 type Card = NonNullable<ReturnType<typeof useFleetCards>["data"]>[number];
-type Doc = { id: number; kind: string; name: string; path: string; size: number; expiresOn: string | null; vehicleId: number | null; cardId: number | null };
+type Doc = { id: number; kind: string; name: string; path: string; size: number; expiresOn: string | null; vehicleId: number | null; cardId: number | null; maintenanceId: number | null };
 
 function pad(v: number) {
   return v < 10 ? "0" + v : "" + v;
@@ -337,10 +374,248 @@ function DocList({
   );
 }
 
+/* ------------------------------------------------------------- quilómetros */
+
+function ReadingForm({ vehicleId, onDone }: { vehicleId: number; onDone: () => void }) {
+  const add = useAddReading();
+  const drivers = useFleetDrivers();
+  const [recordedOn, setRecordedOn] = useState(() => todayLisbon());
+  const [km, setKm] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [source, setSource] = useState("manual");
+  const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setError(null);
+        try {
+          await add.mutateAsync({
+            vehicleId,
+            recordedOn,
+            km: Number(km || 0),
+            employeeId: employeeId ? Number(employeeId) : null,
+            source: source as "manual" | "inspecao" | "manutencao" | "importacao",
+            notes: notes || null,
+          });
+          onDone();
+        } catch (err) {
+          setError(errMsg(err));
+        }
+      }}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Data da leitura">
+            <input aria-label="Data da leitura" className="input" type="date" value={recordedOn} onChange={(e) => setRecordedOn(e.target.value)} required />
+          </Field>
+          <Field label="Quilómetros">
+            <input aria-label="Quilómetros da leitura" className="input" type="number" min={0} value={km} onChange={(e) => setKm(e.target.value)} placeholder="Ex.: 45650" required />
+          </Field>
+          <Field label="Registado por">
+            <select aria-label="Registado por" className="input" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+              <option value="">—</option>
+              {drivers.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Origem">
+            <select aria-label="Origem da leitura" className="input" value={source} onChange={(e) => setSource(e.target.value)}>
+              <option value="manual">Manual</option>
+              <option value="inspecao">Inspeção</option>
+              <option value="manutencao">Manutenção</option>
+              <option value="importacao">Importação</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Notas">
+          <textarea aria-label="Notas da leitura" className="input" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+      </div>
+      <SubmitRow pending={add.isPending} onCancel={onDone} label="Registar" error={error} />
+    </form>
+  );
+}
+
+function ReadingHistory({ vehicleId, canEdit }: { vehicleId: number; canEdit: boolean }) {
+  const readings = useReadings(vehicleId);
+  const remove = useRemoveReading();
+  const rows = readings.data ?? [];
+  if (readings.isLoading) return <div className="text-[12.5px] text-ink-3">A carregar…</div>;
+  if (!rows.length) return <div className="text-[12.5px] text-ink-3">Ainda sem registos de quilómetros.</div>;
+  return (
+    <div className="overflow-x-auto rounded-[10px] border border-line">
+      <table className="w-full text-[12.5px]">
+        <thead>
+          <tr className="border-b border-line text-left text-ink-3">
+            <th className="label-mono px-3 py-2 font-normal">Data</th>
+            <th className="label-mono px-3 py-2 font-normal">Km</th>
+            <th className="label-mono px-3 py-2 font-normal">Diferença</th>
+            <th className="label-mono px-3 py-2 font-normal">Registado por</th>
+            <th className="label-mono px-3 py-2 font-normal">Origem</th>
+            <th className="px-3 py-2"><span className="sr-only">Ações</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const prev = rows[i + 1];
+            const diff = prev ? r.km - prev.km : null;
+            return (
+              <tr key={r.id} className="border-b border-line last:border-b-0">
+                <td className="num px-3 py-2">{r.recordedOn}</td>
+                <td className="num px-3 py-2 font-medium">{r.km.toLocaleString("pt-PT")}</td>
+                <td className="num px-3 py-2 text-ink-3">{diff == null ? "—" : (diff > 0 ? "+" : "") + diff.toLocaleString("pt-PT")}</td>
+                <td className="px-3 py-2 text-ink-2">{r.employeeName ?? "—"}</td>
+                <td className="px-3 py-2 text-ink-3">{READ_SOURCES.find((s) => s.key === r.source)?.label ?? "Manual"}</td>
+                <td className="px-3 py-2 text-right">
+                  {canEdit && (
+                    <button type="button" className="text-ink-3 hover:text-danger" aria-label="Apagar leitura" onClick={() => remove.mutate({ id: r.id })}>
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------- manutenções */
+
+function MaintenanceForm({ initial, onDone }: { initial: Maint | null; onDone: () => void }) {
+  const save = useSaveMaintenance();
+  const remove = useRemoveMaintenance();
+  const vehicles = useVehicles();
+  const [f, setF] = useState({
+    vehicleId: initial?.vehicleId != null ? String(initial.vehicleId) : "",
+    kind: initial?.kind ?? "revisao",
+    status: initial?.status ?? "agendada",
+    scheduledOn: initial?.scheduledOn ?? todayLisbon(),
+    doneOn: initial?.doneOn ?? "",
+    km: initial?.km != null ? String(initial.km) : "",
+    nextKm: initial?.nextKm != null ? String(initial.nextKm) : "",
+    nextOn: initial?.nextOn ?? "",
+    workshop: initial?.workshop ?? "",
+    cost: initial?.cost != null ? String(initial.cost) : "0",
+    paidBy: initial?.paidBy ?? "",
+    description: initial?.description ?? "",
+    notes: initial?.notes ?? "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setError(null);
+        if (!f.vehicleId) return setError("Escolha a viatura.");
+        try {
+          const payload = {
+            vehicleId: Number(f.vehicleId),
+            kind: f.kind as "revisao" | "pneus" | "inspecao" | "reparacao" | "oleo" | "outro",
+            status: f.status as "agendada" | "em_curso" | "concluida",
+            scheduledOn: f.scheduledOn || null,
+            doneOn: f.doneOn || null,
+            km: f.km ? Number(f.km) : null,
+            nextKm: f.nextKm ? Number(f.nextKm) : null,
+            nextOn: f.nextOn || null,
+            workshop: f.workshop || null,
+            cost: Number(f.cost || 0),
+            paidBy: f.paidBy || null,
+            description: f.description || null,
+            notes: f.notes || null,
+          };
+          if (initial) await save.update.mutateAsync({ ...payload, id: initial.id });
+          else await save.create.mutateAsync(payload);
+          onDone();
+        } catch (err) {
+          setError(errMsg(err));
+        }
+      }}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {!initial && (
+            <Field label="Viatura">
+              <select aria-label="Viatura da manutenção" className="input" value={f.vehicleId} onChange={(e) => set("vehicleId", e.target.value)} required>
+                <option value="">Escolher…</option>
+                {vehicles.data?.map((v) => <option key={v.id} value={v.id}>{v.plate}{v.model ? " · " + v.model : ""}</option>)}
+              </select>
+            </Field>
+          )}
+          <Field label="Tipo">
+            <select aria-label="Tipo de manutenção" className="input" value={f.kind} onChange={(e) => set("kind", e.target.value)}>
+              {MAINT_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Estado">
+            <select aria-label="Estado da manutenção" className="input" value={f.status} onChange={(e) => set("status", e.target.value)}>
+              {MAINT_STATUS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </Field>
+          <Field label={f.status === "concluida" ? "Concluída em" : "Marcada para"}>
+            <input aria-label="Data agendada" className="input" type="date" value={f.scheduledOn} onChange={(e) => set("scheduledOn", e.target.value)} />
+          </Field>
+          <Field label="Ficou pronta em">
+            <input aria-label="Data de conclusão" className="input" type="date" value={f.doneOn} onChange={(e) => set("doneOn", e.target.value)} />
+          </Field>
+          <Field label="Km à entrada">
+            <input aria-label="Km à entrada" className="input" type="number" min={0} value={f.km} onChange={(e) => set("km", e.target.value)} />
+          </Field>
+          <Field label="Oficina">
+            <input aria-label="Oficina" className="input" value={f.workshop} onChange={(e) => set("workshop", e.target.value)} />
+          </Field>
+          <Field label="Custo (€)">
+            <input aria-label="Custo" className="input" type="number" min={0} step="0.01" value={f.cost} onChange={(e) => set("cost", e.target.value)} />
+          </Field>
+          <Field label="Pago por">
+            <input aria-label="Pago por" className="input" value={f.paidBy} onChange={(e) => set("paidBy", e.target.value)} placeholder="Empresa, cartão frota…" />
+          </Field>
+        </div>
+        <div className="rounded-[10px] border border-line bg-bg/40 p-3">
+          <div className="label-mono mb-2">Próxima intervenção</div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Aos km">
+              <input aria-label="Próxima aos km" className="input" type="number" min={0} value={f.nextKm} onChange={(e) => set("nextKm", e.target.value)} placeholder="Ex.: 60000" />
+            </Field>
+            <Field label="Ou na data">
+              <input aria-label="Próxima na data" className="input" type="date" value={f.nextOn} onChange={(e) => set("nextOn", e.target.value)} />
+            </Field>
+          </div>
+        </div>
+        <Field label="Descrição">
+          <textarea aria-label="Descrição" className="input" rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} />
+        </Field>
+        <Field label="Notas">
+          <textarea aria-label="Notas da manutenção" className="input" rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} />
+        </Field>
+      </div>
+      <SubmitRow
+        pending={save.isPending}
+        onCancel={onDone}
+        error={error}
+        extra={initial && (
+          <ConfirmDelete
+            pending={remove.isPending}
+            title="Eliminar esta manutenção?"
+            description="Os documentos anexados a esta manutenção também são eliminados."
+            onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onDone(); }}
+          />
+        )}
+      />
+    </form>
+  );
+}
+
 function UploadForm({
-  vehicleId, cardId, onDone,
+  vehicleId, cardId, maintenanceId, onDone,
 }: {
-  vehicleId?: number; cardId?: number; onDone: () => void;
+  vehicleId?: number; cardId?: number; maintenanceId?: number; onDone: () => void;
 }) {
   const upload = useUploadFleetDoc();
   const [kind, setKind] = useState<string>("livrete");
@@ -372,6 +647,7 @@ function UploadForm({
           await upload.mutateAsync({
             vehicleId: vehicleId ?? null,
             cardId: cardId ?? null,
+            maintenanceId: maintenanceId ?? null,
             kind: kind as "livrete" | "seguro" | "inspecao" | "contrato" | "fatura" | "outro",
             name: name || "documento",
             content,
@@ -422,14 +698,17 @@ export default function FrotaPage() {
 
   const months = useMemo(() => monthOptions(24), []);
   const [month, setMonth] = useState(() => todayLisbon().slice(0, 7));
-  const [area, setArea] = useState<"viaturas" | "cartoes" | "documentos">("viaturas");
+  const [area, setArea] = useState<"viaturas" | "km" | "manutencoes" | "cartoes" | "documentos">("viaturas");
   const [state, setState] = useState<"ativo" | "manutencao" | "inativo" | "todos">("ativo");
+  const [mState, setMState] = useState<"agendada" | "em_curso" | "concluida" | "todas">("todas");
   const [q, setQ] = useState("");
 
   const [editVehicle, setEditVehicle] = useState<Vehicle | null | "new">(null);
   const [editCard, setEditCard] = useState<Card | null | "new">(null);
-  const [docsFor, setDocsFor] = useState<{ kind: "vehicle" | "card"; id: number; label: string } | null>(null);
-  const [uploadFor, setUploadFor] = useState<{ vehicleId?: number; cardId?: number; label: string } | null>(null);
+  const [editMaint, setEditMaint] = useState<Maint | null | "new">(null);
+  const [readingFor, setReadingFor] = useState<{ id: number; label: string } | null>(null);
+  const [docsFor, setDocsFor] = useState<{ kind: "vehicle" | "card" | "maint"; id: number; label: string } | null>(null);
+  const [uploadFor, setUploadFor] = useState<{ vehicleId?: number; cardId?: number; maintenanceId?: number; label: string } | null>(null);
 
   const vlist = vehicles.data ?? [];
   const clist = cards.data ?? [];
@@ -455,29 +734,95 @@ export default function FrotaPage() {
     );
   }, [clist, state, q]);
 
-  const allDocs = useMemo<(Doc & { owner: string })[]>(() => {
-    const out: (Doc & { owner: string })[] = [];
-    for (const v of vlist) for (const d of v.documents) out.push({ ...(d as Doc), owner: v.plate });
-    for (const c of clist) for (const d of c.documents) out.push({ ...(d as Doc), owner: c.provider + " " + c.number });
+  const fleetDocs = useFleetDocs();
+  const docsAll = fleetDocs.data ?? [];
+
+  const allDocs = useMemo<(Doc & { owner: string; ownerKind: "vehicle" | "card" | "maint" })[]>(() => {
+    const plates = new Map<number, string>();
+    const maintOwner = new Map<number, string>();
+    for (const v of vlist) {
+      plates.set(v.id, v.plate);
+      for (const m of v.maintenance) {
+        maintOwner.set(m.id, v.plate + " · " + (MAINT_KINDS.find((k) => k.key === m.kind)?.label ?? "Manutenção"));
+      }
+    }
+    const cardsById = new Map(clist.map((c) => [c.id, c] as const));
+    const out: (Doc & { owner: string; ownerKind: "vehicle" | "card" | "maint" })[] = [];
+    for (const d of docsAll as unknown as Doc[]) {
+      if (d.maintenanceId != null) {
+        out.push({ ...d, owner: maintOwner.get(d.maintenanceId) ?? "Manutenção", ownerKind: "maint" });
+      } else if (d.cardId != null) {
+        const c = cardsById.get(d.cardId);
+        out.push({ ...d, owner: c ? c.provider + " " + c.number : "Cartão frota", ownerKind: "card" });
+      } else if (d.vehicleId != null) {
+        out.push({ ...d, owner: plates.get(d.vehicleId) ?? "Viatura", ownerKind: "vehicle" });
+      }
+    }
     return out.sort((a, b) => b.id - a.id);
-  }, [vlist, clist]);
+  }, [docsAll, vlist, clist]);
 
   const docRows = useMemo(() => {
     const s = q.trim().toLowerCase();
     return allDocs.filter((d) => !s || d.name.toLowerCase().includes(s) || d.owner.toLowerCase().includes(s));
   }, [allDocs, q]);
 
+  /** Leitura mais recente de cada viatura — a fila do separador Km. */
+  const kmRows = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return vlist
+      .filter((v) => !s || v.plate.toLowerCase().includes(s) || (v.model ?? "").toLowerCase().includes(s) || (v.driverName ?? "").toLowerCase().includes(s))
+      .map((v) => {
+        const rs = [...v.readings].sort((a, b) => b.recordedOn.localeCompare(a.recordedOn) || b.id - a.id);
+        const last = rs[0];
+        const prev = rs[1];
+        return {
+          v,
+          last,
+          diff: last && prev ? last.km - prev.km : null,
+          count: rs.length,
+          stale: !last || last.recordedOn < month + "-01",
+        };
+      })
+      .sort((a, b) => (a.last?.km ?? -1) - (b.last?.km ?? -1));
+  }, [vlist, q, month]);
+
+  /** Todas as manutenções com a matrícula, ordenadas da mais recente. */
+  const maintAll = useMemo(() => {
+    const out: (Maint & { plate: string; model: string | null })[] = [];
+    for (const v of vlist) for (const m of v.maintenance) out.push({ ...(m as Maint), plate: v.plate, model: v.model });
+    return out.sort((a, b) => (b.scheduledOn ?? "").localeCompare(a.scheduledOn ?? "") || b.id - a.id);
+  }, [vlist]);
+
+  const maintRows = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return maintAll.filter(
+      (m) =>
+        (mState === "todas" || m.status === mState) &&
+        (!s || m.plate.toLowerCase().includes(s) || (m.workshop ?? "").toLowerCase().includes(s) || (MAINT_KINDS.find((k) => k.key === m.kind)?.label ?? "").toLowerCase().includes(s)),
+    );
+  }, [maintAll, q, mState]);
+
+  const abertas = maintAll.filter((m) => m.status !== "concluida");
+  const custoTotal = maintAll.filter((m) => m.status === "concluida").reduce((a, m) => a + m.cost, 0);
+  const kmTotal = vlist.reduce((a, v) => a + v.km, 0);
+  const semLeitura = vlist.filter((v) => !v.readings.length).length;
+  const readingsMonth = vlist.reduce((a, v) => a + v.readings.filter((r) => r.recordedOn.startsWith(month)).length, 0);
+  const lastRead = vlist.flatMap((v) => v.readings.map((r) => r.recordedOn)).sort().pop() ?? null;
+
   return (
     <>
       <PageHeader
         eyebrow="GESTÃO DE EMPRESA"
         title="Frota"
-        subtitle="Viaturas, cartões frota e os documentos de cada um. Filtra por estado e por mês de referência."
+        subtitle="Viaturas, quilómetros, manutenções, cartões frota e documentos de cada uma. Filtra por estado e por mês de referência."
       >
         {canEdit && (
           <div className="flex gap-2">
             <button className="btn btn-ghost" onClick={() => setEditCard("new")}>
               <CreditCard size={15} /> Novo cartão
+            </button>
+            <button className="btn btn-ghost" onClick={() => setEditMaint("new")}>
+              <Wrench size={15} /> Nova manutenção
             </button>
             <button className="btn btn-primary" onClick={() => setEditVehicle("new")}>
               <Plus size={15} /> Nova viatura
@@ -496,7 +841,17 @@ export default function FrotaPage() {
           </select>
         </label>
 
-        {area !== "documentos" && (
+        {area === "manutencoes" ? (
+          <label className="flex flex-col gap-1">
+            <span className="label-mono">Estado</span>
+            <select className="input w-48" value={mState} onChange={(e) => setMState(e.target.value as typeof mState)} aria-label="Estado da manutenção">
+              <option value="todas">Todas</option>
+              <option value="agendada">Agendadas</option>
+              <option value="em_curso">Em curso</option>
+              <option value="concluida">Concluídas</option>
+            </select>
+          </label>
+        ) : area === "viaturas" || area === "cartoes" ? (
           <label className="flex flex-col gap-1">
             <span className="label-mono">Estado</span>
             <select className="input w-48" value={state} onChange={(e) => setState(e.target.value as typeof state)} aria-label="Estado">
@@ -516,13 +871,13 @@ export default function FrotaPage() {
               )}
             </select>
           </label>
-        )}
+        ) : null}
 
         <label className="flex min-w-[180px] flex-1 flex-col gap-1">
           <span className="label-mono">Procurar</span>
           <span className="relative">
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
-            <input className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder={area === "viaturas" ? "Matrícula, modelo ou condutor…" : area === "cartoes" ? "Fornecedor, número ou titular…" : "Documento ou dono…"} />
+            <input className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder={area === "viaturas" || area === "km" ? "Matrícula, modelo ou condutor…" : area === "manutencoes" ? "Viatura, oficina ou tipo…" : area === "cartoes" ? "Fornecedor, número ou titular…" : "Documento ou dono…"} />
           </span>
         </label>
 
@@ -532,6 +887,8 @@ export default function FrotaPage() {
             onChange={setArea}
             items={[
               { key: "viaturas" as const, label: "Viaturas", count: countVehicle(state) },
+              { key: "km" as const, label: "Quilómetros", count: kmRows.length },
+              { key: "manutencoes" as const, label: "Manutenções", count: maintRows.length },
               { key: "cartoes" as const, label: "Cartões frota", count: cardRows.length },
               { key: "documentos" as const, label: "Documentos", count: docRows.length },
             ]}
@@ -540,10 +897,28 @@ export default function FrotaPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Viaturas" value={countVehicle("todos")} sub={monthLabel(month)} icon={<CarFront size={15} />} delay={0} />
-        <Stat label="Ativas" value={countVehicle("ativo")} sub="em circulação" icon={<Gauge size={15} />} accent="var(--sky)" delay={40} />
-        <Stat label="Em manutenção" value={countVehicle("manutencao")} sub="paradas na oficina" icon={<AlertTriangle size={15} />} accent="var(--amber)" delay={80} />
-        <Stat label="Cartões frota" value={clist.length} sub={clist.filter((c) => c.status === "ativo").length + " ativos"} icon={<Fuel size={15} />} accent="var(--rose)" delay={120} />
+        {area === "km" ? (
+          <>
+            <Stat label="Km na frota" value={kmTotal.toLocaleString("pt-PT")} sub={vlist.length + " viaturas"} icon={<Gauge size={15} />} delay={0} />
+            <Stat label="Leituras no mês" value={readingsMonth} sub={monthLabel(month)} icon={<History size={15} />} accent="var(--sky)" delay={40} />
+            <Stat label="Sem leitura" value={semLeitura} sub="viaturas por registar" icon={<AlertTriangle size={15} />} accent="var(--amber)" delay={80} />
+            <Stat label="Última leitura" value={lastRead ?? "—"} sub="registo mais recente" icon={<CalendarClock size={15} />} accent="var(--rose)" delay={120} />
+          </>
+        ) : area === "manutencoes" ? (
+          <>
+            <Stat label="Manutenções" value={maintAll.length} sub={abertas.length + " por concluir"} icon={<Wrench size={15} />} delay={0} />
+            <Stat label="Agendadas" value={maintAll.filter((m) => m.status === "agendada").length} sub="à espera de ir à oficina" icon={<CalendarClock size={15} />} accent="var(--sky)" delay={40} />
+            <Stat label="Em curso" value={maintAll.filter((m) => m.status === "em_curso").length} sub="na oficina" icon={<AlertTriangle size={15} />} accent="var(--amber)" delay={80} />
+            <Stat label="Custo" value={custoTotal.toLocaleString("pt-PT", { style: "currency", currency: "EUR" })} sub="intervenções concluídas" icon={<Fuel size={15} />} accent="var(--rose)" delay={120} />
+          </>
+        ) : (
+          <>
+            <Stat label="Viaturas" value={countVehicle("todos")} sub={monthLabel(month)} icon={<CarFront size={15} />} delay={0} />
+            <Stat label="Ativas" value={countVehicle("ativo")} sub="em circulação" icon={<Gauge size={15} />} accent="var(--sky)" delay={40} />
+            <Stat label="Em manutenção" value={countVehicle("manutencao")} sub="paradas na oficina" icon={<AlertTriangle size={15} />} accent="var(--amber)" delay={80} />
+            <Stat label="Cartões frota" value={clist.length} sub={clist.filter((c) => c.status === "ativo").length + " ativos"} icon={<Fuel size={15} />} accent="var(--rose)" delay={120} />
+          </>
+        )}
       </div>
 
       <div className="card rise mt-6 overflow-hidden">
@@ -600,6 +975,139 @@ export default function FrotaPage() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : area === "km" ? (
+          !kmRows.length ? (
+            <Empty
+              title={vlist.length ? "Nenhuma viatura nesta procura" : "Ainda sem viaturas registadas"}
+              text={vlist.length ? "Limpa a procura para veres a frota toda." : "Regista primeiro uma viatura para lhe apontares os quilómetros."}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-ink-3">
+                    <th className="label-mono px-4 py-3 font-normal">Viatura</th>
+                    <th className="label-mono px-4 py-3 font-normal">Condutor</th>
+                    <th className="label-mono px-4 py-3 font-normal">Última leitura</th>
+                    <th className="label-mono px-4 py-3 font-normal">Km</th>
+                    <th className="label-mono px-4 py-3 font-normal">Diferença</th>
+                    <th className="label-mono px-4 py-3 font-normal">Registos</th>
+                    <th className="px-4 py-3"><span className="sr-only">Ações</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {kmRows.map(({ v, last, diff, count, stale }) => (
+                    <tr key={v.id} className="border-b border-line last:border-b-0 hover:bg-surface-2/60">
+                      <td className="px-4 py-2.5">
+                        <div className="font-medium">{v.plate}</div>
+                        <div className="text-[11.5px] text-ink-3">{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</div>
+                      </td>
+                      <td className="px-4 py-2.5 text-ink-2">{v.driverName ?? "Sem condutor"}</td>
+                      <td className="num px-4 py-2.5 text-ink-2">
+                        {last ? last.recordedOn : <span className="text-amber">sem leituras</span>}
+                        {stale && last && <span className="ml-2 rounded-full border border-amber/40 bg-amber/10 px-1.5 py-0.5 text-[10px] text-amber">atrasada</span>}
+                      </td>
+                      <td className="num px-4 py-2.5 font-medium">{(last ? last.km : v.km).toLocaleString("pt-PT")}</td>
+                      <td className="num px-4 py-2.5 text-ink-3">{diff == null ? "—" : (diff > 0 ? "+" : "") + diff.toLocaleString("pt-PT")}</td>
+                      <td className="num px-4 py-2.5 text-ink-3">{count}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-ink-2 hover:text-volt"
+                          aria-label={"Registar quilómetros de " + v.plate}
+                          onClick={() => setReadingFor({ id: v.id, label: v.plate })}
+                        >
+                          <Plus size={13} /> Registar km
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        ) : area === "manutencoes" ? (
+          !maintRows.length ? (
+            <Empty
+              title={maintAll.length ? "Nenhuma manutenção neste filtro" : "Ainda sem manutenções registadas"}
+              text={maintAll.length ? "Muda o estado ou a procura." : "Marca a próxima revisão, inspeção ou mudança de óleo de uma viatura."}
+              action={canEdit ? <button className="btn btn-primary" onClick={() => setEditMaint("new")}><Wrench size={15} /> Nova manutenção</button> : undefined}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-ink-3">
+                    <th className="label-mono px-4 py-3 font-normal">Viatura</th>
+                    <th className="label-mono px-4 py-3 font-normal">Intervenção</th>
+                    <th className="label-mono px-4 py-3 font-normal">Estado</th>
+                    <th className="label-mono px-4 py-3 font-normal">Marcada</th>
+                    <th className="label-mono px-4 py-3 font-normal">Pronta</th>
+                    <th className="label-mono px-4 py-3 font-normal">Km</th>
+                    <th className="label-mono px-4 py-3 font-normal">Oficina</th>
+                    <th className="label-mono px-4 py-3 font-normal">Custo</th>
+                    <th className="label-mono px-4 py-3 font-normal">Docs</th>
+                    <th className="px-4 py-3"><span className="sr-only">Ações</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {maintRows.map((m) => {
+                    const st = MAINT_STATUS.find((x) => x.key === m.status) ?? MAINT_STATUS[0];
+                    const nDocs = docsAll.filter((d) => d.maintenanceId === m.id).length;
+                    const next = m.nextKm != null ? "próx. aos " + m.nextKm.toLocaleString("pt-PT") + " km" : m.nextOn ? "próx. em " + m.nextOn : "";
+                    return (
+                      <tr key={m.id} className="border-b border-line last:border-b-0 hover:bg-surface-2/60">
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium">{m.plate}</div>
+                          <div className="text-[11.5px] text-ink-3">{m.model ?? "—"}</div>
+                        </td>
+                        <td className="px-4 py-2.5 text-ink-2">
+                          <div>{MAINT_KINDS.find((k) => k.key === m.kind)?.label ?? "Outro"}</div>
+                          <div className="text-[11.5px] text-ink-3">{m.description || next || "—"}</div>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className={"rounded-full border px-2 py-0.5 text-[10.5px] font-medium " + st.cls}>{st.label}</span>
+                        </td>
+                        <td className="num px-4 py-2.5 text-ink-3">{m.scheduledOn ?? "—"}</td>
+                        <td className="num px-4 py-2.5 text-ink-3">{m.doneOn ?? "—"}</td>
+                        <td className="num px-4 py-2.5 text-ink-2">{m.km != null ? m.km.toLocaleString("pt-PT") : "—"}</td>
+                        <td className="px-4 py-2.5 text-ink-2">{m.workshop ?? "—"}</td>
+                        <td className="num px-4 py-2.5 text-ink-2">{m.cost ? m.cost.toFixed(2) + " €" : "—"}</td>
+                        <td className="px-4 py-2.5">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-ink-2 hover:text-volt"
+                            aria-label={"Documentos da manutenção de " + m.plate}
+                            onClick={() => setDocsFor({ kind: "maint", id: m.id, label: m.plate + " · " + (MAINT_KINDS.find((k) => k.key === m.kind)?.label ?? "Manutenção") })}
+                          >
+                            <Paperclip size={13} /> {nDocs}
+                          </button>
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          {canEdit && (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                title="Anexar documento"
+                                aria-label="Anexar documento à manutenção"
+                                className="text-ink-3 hover:text-volt"
+                                onClick={() => setUploadFor({ maintenanceId: m.id, label: m.plate + " · " + (MAINT_KINDS.find((k) => k.key === m.kind)?.label ?? "Manutenção") })}
+                              >
+                                <Upload size={14} />
+                              </button>
+                              <button type="button" title="Editar" aria-label="Editar manutenção" className="text-ink-3 hover:text-ink" onClick={() => setEditMaint(m)}>
+                                <Pencil size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -713,6 +1221,22 @@ export default function FrotaPage() {
         {editCard !== null && <CardForm initial={editCard === "new" ? null : editCard} onClose={() => setEditCard(null)} />}
       </Modal>
 
+      <Modal open={readingFor !== null} onClose={() => setReadingFor(null)} title={"Quilómetros — " + (readingFor?.label ?? "")} wide>
+        {readingFor && (
+          <div className="space-y-5">
+            <ReadingForm vehicleId={readingFor.id} onDone={() => setReadingFor(null)} />
+            <div>
+              <div className="label-mono mb-2">Histórico de leituras</div>
+              <ReadingHistory vehicleId={readingFor.id} canEdit={canEdit} />
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={editMaint !== null} onClose={() => setEditMaint(null)} title={editMaint === "new" ? "Nova manutenção" : "Editar manutenção"} wide>
+        {editMaint !== null && <MaintenanceForm initial={editMaint === "new" ? null : editMaint} onDone={() => setEditMaint(null)} />}
+      </Modal>
+
       <Modal open={docsFor !== null} onClose={() => setDocsFor(null)} title={"Documentos — " + (docsFor?.label ?? "")} wide>
         {docsFor && (
           <div className="space-y-4">
@@ -720,14 +1244,21 @@ export default function FrotaPage() {
               canEdit={canEdit}
               docs={(docsFor.kind === "vehicle"
                 ? vlist.find((v) => v.id === docsFor.id)?.documents
-                : clist.find((c) => c.id === docsFor.id)?.documents) as Doc[] ?? []}
+                : docsFor.kind === "card"
+                  ? clist.find((c) => c.id === docsFor.id)?.documents
+                  : docsAll.filter((d) => d.maintenanceId === docsFor.id)) as unknown as Doc[] ?? []}
               onRemove={(id) => removeDoc.mutate({ id })}
             />
             {canEdit && (
               <button
                 type="button"
                 className="btn btn-ghost"
-                onClick={() => { setUploadFor(docsFor.kind === "vehicle" ? { vehicleId: docsFor.id, label: docsFor.label } : { cardId: docsFor.id, label: docsFor.label }); setDocsFor(null); }}
+                onClick={() => {
+                  if (docsFor.kind === "vehicle") setUploadFor({ vehicleId: docsFor.id, label: docsFor.label });
+                  else if (docsFor.kind === "card") setUploadFor({ cardId: docsFor.id, label: docsFor.label });
+                  else setUploadFor({ maintenanceId: docsFor.id, label: docsFor.label });
+                  setDocsFor(null);
+                }}
               >
                 <Upload size={14} /> Anexar documento
               </button>
@@ -737,7 +1268,7 @@ export default function FrotaPage() {
       </Modal>
 
       <Modal open={uploadFor !== null} onClose={() => setUploadFor(null)} title={"Anexar documento — " + (uploadFor?.label ?? "")}>
-        {uploadFor && <UploadForm vehicleId={uploadFor.vehicleId} cardId={uploadFor.cardId} onDone={() => setUploadFor(null)} />}
+        {uploadFor && <UploadForm vehicleId={uploadFor.vehicleId} cardId={uploadFor.cardId} maintenanceId={uploadFor.maintenanceId} onDone={() => setUploadFor(null)} />}
       </Modal>
     </>
   );

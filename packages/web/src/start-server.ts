@@ -81,12 +81,41 @@ if (existsSync(dbPath)) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       vehicle_id INTEGER,
       card_id INTEGER,
+      maintenance_id INTEGER,
       kind TEXT NOT NULL DEFAULT 'outro',
       name TEXT NOT NULL,
       path TEXT NOT NULL,
       size INTEGER NOT NULL DEFAULT 0,
       mime TEXT,
       expires_on TEXT,
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`);
+    ensureColumn("fleet_documents", "maintenance_id", "integer");
+    db.run(`CREATE TABLE IF NOT EXISTS vehicle_readings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vehicle_id INTEGER NOT NULL,
+      recorded_on TEXT NOT NULL,
+      km INTEGER NOT NULL,
+      employee_id INTEGER,
+      source TEXT NOT NULL DEFAULT 'manual',
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS vehicle_maintenance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vehicle_id INTEGER NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'revisao',
+      status TEXT NOT NULL DEFAULT 'agendada',
+      scheduled_on TEXT,
+      done_on TEXT,
+      km INTEGER,
+      next_km INTEGER,
+      next_on TEXT,
+      workshop TEXT,
+      cost REAL NOT NULL DEFAULT 0,
+      paid_by TEXT,
+      description TEXT,
       notes TEXT,
       created_at INTEGER NOT NULL
     )`);

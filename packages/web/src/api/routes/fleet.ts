@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { ORPCError } from "@orpc/server";
-import { eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { authed, requireEdit, requireView } from "../middleware/auth";
 import { db } from "../database";
-import { employees, fleetCards, fleetDocuments, vehicles } from "../database/schema";
+import {
+  employees, fleetCards, fleetDocuments, vehicleMaintenance, vehicleReadings, vehicles,
+} from "../database/schema";
 import { writePublic } from "../lib/public-files";
 
 const idInput = z.object({ id: z.number() });
@@ -11,6 +13,9 @@ const idInput = z.object({ id: z.number() });
 const VEHICLE_STATUS = ["ativo", "manutencao", "inativo"] as const;
 const CARD_STATUS = ["ativo", "inativo"] as const;
 const DOC_KINDS = ["livrete", "seguro", "inspecao", "contrato", "fatura", "outro"] as const;
+const MAINT_KINDS = ["revisao", "pneus", "inspecao", "reparacao", "oleo", "outro"] as const;
+const MAINT_STATUS = ["agendada", "em_curso", "concluida"] as const;
+const READ_SOURCES = ["manual", "inspecao", "manutencao", "importacao"] as const;
 
 const vehicleInput = z.object({
   plate: z.string().min(1),
@@ -64,7 +69,47 @@ function safeExt(mime: string, name: string) {
   return map[mime] ?? "bin";
 }
 
-/** Lista de viaturas com condutor e documentos anexados. */
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const dateField = z.string().regex(DATE_RE, "Data inválida (use AAAA-MM-DD).");
+
+/** Km lidos de uma viatura, do mais recente para o mais antigo. */
+function readingsOf(vehicleId: number) {
+  return db
+    .select({
+      id: vehicleReadings.id,
+      vehicleId: vehicleReadings.vehicleId,
+      recordedOn: vehicleReadings.recordedOn,
+      km: vehicleReadings.km,
+      employeeId: vehicleReadings.employeeId,
+      employeeName: employees.name,
+      source: vehicleReadings.source,
+      notes: vehicleReadings.notes,
+      createdAt: vehicleReadings.createdAt,
+    })
+    .from(vehicleReadings)
+    .leftJoin(employees, eq(employees.id, vehicleReadings.employeeId))
+    .where(eq(vehicleReadings.vehicleId, vehicleId))
+    .orderBy(desc(vehicleReadings.recordedOn), desc(vehicleReadings.id));
+}
+
+/**
+ * Sincroniza `vehicles.km` com a leitura mais recente.
+ * A quilometragem da viatura nunca anda para tras: se uma leitura antiga
+ * chegar depois da atual (importação fora de ordem), nao a estraga.
+ */
+async function syncVehicleKm(vehicleId: number) {
+  const rows = await readingsOf(vehicleId);
+  const latest = rows[0];
+  if (!latest) return;
+  const [v] = await db.select({ km: vehicles.km }).from(vehicles).where(eq(vehicles.id, vehicleId));
+  if (!v) return;
+  // Leitura mais recente com km maior, ou a viatura nunca teve km registados.
+  const best = rows.reduce((a, b) => (b.km > a.km ? b : a), latest);
+  if (latest.km >= v.km) await db.update(vehicles).set({ km: latest.km }).where(eq(vehicles.id, vehicleId));
+  else if (best.km > v.km) await db.update(vehicles).set({ km: best.km }).where(eq(vehicles.id, vehicleId));
+}
+
+/** Lista de viaturas com condutor, documentos e resumo de manutencao. */
 function vehiclesWithPhotos() {
   return db
     .select({
@@ -91,9 +136,32 @@ export const fleet = {
     list: requireView("frota").handler(async () => {
       const rows = await vehiclesWithPhotos();
       const docs = await db.select().from(fleetDocuments);
+      const maint = await db
+        .select({
+          id: vehicleMaintenance.id,
+          vehicleId: vehicleMaintenance.vehicleId,
+          kind: vehicleMaintenance.kind,
+          status: vehicleMaintenance.status,
+          scheduledOn: vehicleMaintenance.scheduledOn,
+          doneOn: vehicleMaintenance.doneOn,
+          km: vehicleMaintenance.km,
+          nextKm: vehicleMaintenance.nextKm,
+          nextOn: vehicleMaintenance.nextOn,
+          workshop: vehicleMaintenance.workshop,
+          cost: vehicleMaintenance.cost,
+          paidBy: vehicleMaintenance.paidBy,
+          description: vehicleMaintenance.description,
+          notes: vehicleMaintenance.notes,
+          createdAt: vehicleMaintenance.createdAt,
+        })
+        .from(vehicleMaintenance)
+        .orderBy(desc(vehicleMaintenance.scheduledOn));
+      const readings = await db.select().from(vehicleReadings).orderBy(desc(vehicleReadings.recordedOn));
       return rows.map((v) => ({
         ...v,
         documents: docs.filter((d) => d.vehicleId === v.id),
+        maintenance: maint.filter((m) => m.vehicleId === v.id),
+        readings: readings.filter((r) => r.vehicleId === v.id),
       }));
     }),
     create: requireEdit("frota").input(vehicleInput).handler(async ({ input }) => {
@@ -103,12 +171,150 @@ export const fleet = {
     update: requireEdit("frota").input(vehicleInput.extend({ id: z.number() })).handler(async ({ input }) => {
       const { id, ...data } = input;
       await db.update(vehicles).set({ ...data, plate: data.plate.trim().toUpperCase() }).where(eq(vehicles.id, id));
+      // Se o km da ficha foi corrigido, fica registado como leitura do dia.
+      const [cur] = await db.select({ km: vehicles.km }).from(vehicles).where(eq(vehicles.id, id));
+      if (cur) {
+        const latest = await readingsOf(id);
+        if (!latest.length || latest[0]!.km !== cur.km) {
+          await db.insert(vehicleReadings).values({
+            vehicleId: id,
+            recordedOn: new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" }),
+            km: cur.km,
+            employeeId: data.employeeId ?? null,
+            source: "manual",
+            notes: "Km corrigidos na ficha da viatura",
+          });
+        }
+      }
       return { ok: true };
     }),
     remove: requireEdit("frota").input(idInput).handler(async ({ input }) => {
       await db.delete(fleetDocuments).where(eq(fleetDocuments.vehicleId, input.id));
+      await db.delete(vehicleMaintenance).where(eq(vehicleMaintenance.vehicleId, input.id));
+      await db.delete(vehicleReadings).where(eq(vehicleReadings.vehicleId, input.id));
       await db.update(fleetCards).set({ vehicleId: null }).where(eq(fleetCards.vehicleId, input.id));
       await db.delete(vehicles).where(eq(vehicles.id, input.id));
+      return { ok: true };
+    }),
+  },
+
+  /** Registos de quilómetros por viatura. */
+  readings: {
+    list: requireView("frota")
+      .input(z.object({ vehicleId: z.number() }))
+      .handler(async ({ input }) => readingsOf(input.vehicleId)),
+    create: requireEdit("frota")
+      .input(
+        z.object({
+          vehicleId: z.number(),
+          recordedOn: dateField,
+          km: z.number().int().min(0),
+          employeeId: z.number().nullable().optional(),
+          source: z.enum(READ_SOURCES).default("manual"),
+          notes: z.string().nullable().optional(),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const [v] = await db.select({ km: vehicles.km }).from(vehicles).where(eq(vehicles.id, input.vehicleId));
+        if (!v) throw new ORPCError("NOT_FOUND", { message: "Viatura não encontrada." });
+        const [row] = await db.insert(vehicleReadings).values(input).returning();
+        await syncVehicleKm(input.vehicleId);
+        return row;
+      }),
+    update: requireEdit("frota")
+      .input(
+        z.object({
+          id: z.number(),
+          recordedOn: dateField,
+          km: z.number().int().min(0),
+          employeeId: z.number().nullable().optional(),
+          source: z.enum(READ_SOURCES).default("manual"),
+          notes: z.string().nullable().optional(),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const { id, ...data } = input;
+        const [prev] = await db.select({ vehicleId: vehicleReadings.vehicleId }).from(vehicleReadings).where(eq(vehicleReadings.id, id));
+        if (!prev) throw new ORPCError("NOT_FOUND", { message: "Registo não encontrado." });
+        await db.update(vehicleReadings).set(data).where(eq(vehicleReadings.id, id));
+        await syncVehicleKm(prev.vehicleId);
+        return { ok: true };
+      }),
+    remove: requireEdit("frota").input(idInput).handler(async ({ input }) => {
+      const [prev] = await db.select({ vehicleId: vehicleReadings.vehicleId }).from(vehicleReadings).where(eq(vehicleReadings.id, input.id));
+      await db.delete(vehicleReadings).where(eq(vehicleReadings.id, input.id));
+      if (prev) await syncVehicleKm(prev.vehicleId);
+      return { ok: true };
+    }),
+  },
+
+  /** Manutenções e intervenções. */
+  maintenance: {
+    list: requireView("frota")
+      .input(z.object({ vehicleId: z.number().optional() }).optional())
+      .handler(async ({ input }) => {
+        const rows = await db
+          .select()
+          .from(vehicleMaintenance)
+          .orderBy(desc(vehicleMaintenance.scheduledOn), desc(vehicleMaintenance.id));
+        return input?.vehicleId == null ? rows : rows.filter((m) => m.vehicleId === input.vehicleId);
+      }),
+    create: requireEdit("frota")
+      .input(
+        z.object({
+          vehicleId: z.number(),
+          kind: z.enum(MAINT_KINDS).default("revisao"),
+          status: z.enum(MAINT_STATUS).default("agendada"),
+          scheduledOn: dateField.nullable().optional(),
+          doneOn: dateField.nullable().optional(),
+          km: z.number().int().min(0).nullable().optional(),
+          nextKm: z.number().int().min(0).nullable().optional(),
+          nextOn: dateField.nullable().optional(),
+          workshop: z.string().nullable().optional(),
+          cost: z.number().min(0).default(0),
+          paidBy: z.string().nullable().optional(),
+          description: z.string().nullable().optional(),
+          notes: z.string().nullable().optional(),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const [v] = await db.select({ id: vehicles.id }).from(vehicles).where(eq(vehicles.id, input.vehicleId));
+        if (!v) throw new ORPCError("NOT_FOUND", { message: "Viatura não encontrada." });
+        const [row] = await db.insert(vehicleMaintenance).values(input).returning();
+        return row;
+      }),
+    update: requireEdit("frota")
+      .input(
+        z.object({
+          id: z.number(),
+          kind: z.enum(MAINT_KINDS).default("revisao"),
+          status: z.enum(MAINT_STATUS).default("agendada"),
+          scheduledOn: dateField.nullable().optional(),
+          doneOn: dateField.nullable().optional(),
+          km: z.number().int().min(0).nullable().optional(),
+          nextKm: z.number().int().min(0).nullable().optional(),
+          nextOn: dateField.nullable().optional(),
+          workshop: z.string().nullable().optional(),
+          cost: z.number().min(0).default(0),
+          paidBy: z.string().nullable().optional(),
+          description: z.string().nullable().optional(),
+          notes: z.string().nullable().optional(),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const { id, ...data } = input;
+        const [prevM] = await db.select({ vehicleId: vehicleMaintenance.vehicleId }).from(vehicleMaintenance).where(eq(vehicleMaintenance.id, id));
+        await db.update(vehicleMaintenance).set(data).where(eq(vehicleMaintenance.id, id));
+        // Um serviço concluído deixa o km da viatura alinhado com o da intervenção.
+        if (prevM && data.status === "concluida" && data.km != null) {
+          await db.update(vehicles).set({ km: data.km }).where(eq(vehicles.id, prevM.vehicleId));
+        }
+        if (prevM) await syncVehicleKm(prevM.vehicleId);
+        return { ok: true };
+      }),
+    remove: requireEdit("frota").input(idInput).handler(async ({ input }) => {
+      await db.delete(fleetDocuments).where(eq(fleetDocuments.maintenanceId, input.id));
+      await db.delete(vehicleMaintenance).where(eq(vehicleMaintenance.id, input.id));
       return { ok: true };
     }),
   },
@@ -159,15 +365,21 @@ export const fleet = {
     list: requireView("frota")
       .input(
         z
-          .object({ vehicleId: z.number().optional(), cardId: z.number().optional() })
+          .object({ vehicleId: z.number().optional(), cardId: z.number().optional(), maintenanceId: z.number().optional() })
           .optional(),
       )
       .handler(async ({ input }) => {
         const vid = input?.vehicleId;
         const cid = input?.cardId;
+        const mid = input?.maintenanceId;
         const rows = await db.select().from(fleetDocuments);
-        if (vid == null && cid == null) return rows;
-        return rows.filter((d) => (vid != null && d.vehicleId === vid) || (cid != null && d.cardId === cid));
+        if (vid == null && cid == null && mid == null) return rows;
+        return rows.filter(
+          (d) =>
+            (vid != null && d.vehicleId === vid) ||
+            (cid != null && d.cardId === cid) ||
+            (mid != null && d.maintenanceId === mid),
+        );
       }),
     /** Carrega o ficheiro para public/uploads/fleet e regista o anexo. */
     upload: requireEdit("frota")
@@ -175,6 +387,7 @@ export const fleet = {
         z.object({
           vehicleId: z.number().nullable().optional(),
           cardId: z.number().nullable().optional(),
+          maintenanceId: z.number().nullable().optional(),
           kind: z.enum(DOC_KINDS).default("outro"),
           name: z.string().min(1),
           content: z.string(),
@@ -184,8 +397,8 @@ export const fleet = {
         }),
       )
       .handler(async ({ input }) => {
-        if (input.vehicleId == null && input.cardId == null) {
-          throw new ORPCError("BAD_REQUEST", { message: "Escolha a viatura ou o cartão a que pertence o documento." });
+        if (input.vehicleId == null && input.cardId == null && input.maintenanceId == null) {
+          throw new ORPCError("BAD_REQUEST", { message: "Escolha a viatura, o cartão ou a manutenção a que pertence o documento." });
         }
         const { mime, buf } = decodeUpload(input.content, input.mime ?? "application/octet-stream");
         const filename = `${Date.now()}-${crypto.randomUUID()}.${safeExt(mime, input.name)}`;
@@ -195,6 +408,7 @@ export const fleet = {
           .values({
             vehicleId: input.vehicleId ?? null,
             cardId: input.cardId ?? null,
+            maintenanceId: input.maintenanceId ?? null,
             kind: input.kind,
             name: input.name,
             path,

@@ -28,5 +28,24 @@ export function useSaveCard() {
 }
 export const useRemoveCard = () => useMutation(orpc.fleet.cards.remove.mutationOptions({ onSuccess: useInvalidateFleet() }));
 
+export const useFleetDocs = () => useQuery(orpc.fleet.documents.list.queryOptions({ input: {} }));
+
 export const useUploadFleetDoc = () => useMutation(orpc.fleet.documents.upload.mutationOptions({ onSuccess: useInvalidateFleet() }));
 export const useRemoveFleetDoc = () => useMutation(orpc.fleet.documents.remove.mutationOptions({ onSuccess: useInvalidateFleet() }));
+
+/* ---- quilómetros ---- */
+export const useReadings = (vehicleId: number) =>
+  useQuery(orpc.fleet.readings.list.queryOptions({ input: { vehicleId }, enabled: vehicleId > 0 }));
+export const useAddReading = () => useMutation(orpc.fleet.readings.create.mutationOptions({ onSuccess: useInvalidateFleet() }));
+export const useEditReading = () => useMutation(orpc.fleet.readings.update.mutationOptions({ onSuccess: useInvalidateFleet() }));
+export const useRemoveReading = () => useMutation(orpc.fleet.readings.remove.mutationOptions({ onSuccess: useInvalidateFleet() }));
+
+/* ---- manutenções ---- */
+export const useMaintenance = () => useQuery(orpc.fleet.maintenance.list.queryOptions({ input: {} }));
+export function useSaveMaintenance() {
+  const inv = useInvalidateFleet();
+  const c = useMutation(orpc.fleet.maintenance.create.mutationOptions({ onSuccess: inv }));
+  const u = useMutation(orpc.fleet.maintenance.update.mutationOptions({ onSuccess: inv }));
+  return { create: c, update: u, isPending: c.isPending || u.isPending };
+}
+export const useRemoveMaintenance = () => useMutation(orpc.fleet.maintenance.remove.mutationOptions({ onSuccess: useInvalidateFleet() }));
