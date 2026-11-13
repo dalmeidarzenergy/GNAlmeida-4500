@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal, ChevronRight, Briefcase, Map, Headset, Banknote, PieChart, Settings, Ruler, FileCheck,
+  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal, ChevronRight, Briefcase, Map, Headset, Banknote, PieChart, Settings, Ruler, FileCheck, Landmark,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -79,6 +79,13 @@ const NAV: NavGroup[] = [
       { to: "/adiantamentos", key: "adiantamentos", label: "Adiantamentos", icon: HandCoins },
       { to: "/regras", key: "regras", label: "Regras", icon: Scale },
       { to: "/incentivos", key: "incentivos", label: "Incentivos", icon: Sparkles },
+    ],
+  },
+  {
+    group: "GESTÃO DE EMPRESA",
+    icon: Landmark,
+    items: [
+      { to: "/empresa", key: "empresa", label: "Gestão de Empresa", icon: Landmark },
     ],
   },
   {
