@@ -23,7 +23,8 @@ h1{font-size:22px;margin:4px 0 2px}p.s{color:var(--mu);margin:0 0 14px}
 .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mu);margin:0 0 10px;font-weight:600}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 label{display:block;font-size:12px;color:var(--mu);margin-bottom:3px}
-input{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+input,select{width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+select{cursor:pointer}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
 @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.kpis{grid-template-columns:1fr}}
@@ -48,7 +49,7 @@ button.go{background:var(--g);border-color:var(--g);color:#fff}
 <p class="s">Compara a fatura atual com a proposta Iberdrola. Os campos vazios contam como 0.</p>
 
 <div class="cards">
-  <div class="card"><h2>Clienteliente e comercial</h2><div class="grid">
+  <div class="card"><h2>Cliente e comercial</h2><div class="grid">
     <div><label>Cliente</label><input id="cli" type="text" autocomplete="off"></div>
     <div><label>NIF</label><input id="nif" type="text" autocomplete="off"></div>
     <div><label>CPE</label><input id="cpe" type="text" autocomplete="off"></div>
@@ -84,6 +85,12 @@ button.go{background:var(--g);border-color:var(--g);color:#fff}
     <div><label>Energia Vazio Normal (€/kWh)</label><input id="ivn" type="number" min="0" step="any"></div>
     <div><label>Energia Super Vazio (€/kWh)</label><input id="isv" type="number" min="0" step="any"></div>
     <div><label>Termo fixo / comercialização (€/dia)</label><input id="itf" type="number" min="0" step="any"></div>
+    <div><label>Período de Fidelização</label><select id="fid" aria-label="Período de Fidelização">
+      <option value="">—</option>
+      <option value="12">12 meses</option>
+      <option value="24">24 meses</option>
+      <option value="36">36 meses</option>
+    </select></div>
   </div></div>
 </div>
 
@@ -187,6 +194,8 @@ $('clr').addEventListener('click',function(){
   Array.prototype.forEach.call(document.querySelectorAll('input'),function(el){
     el.value = el.id==='dias' ? '30' : '';
   });
+  // Os <select> (periodo de fidelizacao) nao entram no seletor dos inputs.
+  var fs=document.getElementById('fid');if(fs)fs.value='';
   render();
 });
 
@@ -265,7 +274,7 @@ function marcaPendente(){PEND=true;painel(CURID?'Alteracoes por gravar nesta pro
 
 function aplicarProposta(p){
   var f=(p&&p.data&&p.data.f)?p.data.f:{};
-  var ids=['cli','nif','cpe','com','pot','tar','prp','cnm','cem','ctl','mor','dias','atf','itf'];
+  var ids=['cli','nif','cpe','com','pot','tar','prp','cnm','cem','ctl','mor','dias','atf','itf','fid'];
   PER.forEach(function(pp){ids.push('k'+pp[0],'a'+pp[0],'i'+pp[0])});
   ids.forEach(function(k){var e=document.getElementById(k);if(e&&f[k]!=null)e.value=f[k]});
   render();PEND=false;
@@ -330,7 +339,7 @@ function snap(){
   for(var i=0;i<ids.length;i++){var e=document.getElementById(ids[i]);o[ids[i]]=e?e.value:''}
   // As entradas do calculo tambem ficam gravadas: sem elas, reabrir a proposta
   // perdia o consumo e a poupanca voltava a zero.
-  var calcIds=['dias','atf','itf'];
+  var calcIds=['dias','atf','itf','fid'];
   PER.forEach(function(pp){calcIds.push('k'+pp[0],'a'+pp[0],'i'+pp[0])});
   for(var j=0;j<calcIds.length;j++){var e2=document.getElementById(calcIds[j]);o[calcIds[j]]=e2?e2.value:''}
   return o;
@@ -428,6 +437,7 @@ function montarPdf(d, jsPDF){
   if(d.kwh)linha('Consumo: '+nf(d.kwh,0)+' kWh em '+nf(d.dias,0)+' dias'+(temAt?'  |  Valor atual sem taxas: '+eur(d.totA)+' (por fatura)':''));
   if(txt('mor'))linha('Morada de fornecimento: '+txt('mor'));
   var l6=[];if(txt('pot'))l6.push('Potência: '+txt('pot'));if(txt('tar'))l6.push('Tarifa: '+txt('tar'));
+  if(txt('fid'))l6.push('Período de Fidelização: '+txt('fid')+' meses');
   if(l6.length)linha(l6.join('  |  '));
   y+=2;
 
@@ -536,7 +546,7 @@ $('pdf').addEventListener('click',function(){
       }
     });
   }
-  var campos=['cli','nif','cpe','com','pot','tar','prp','cnm','cem','ctl','mor'];
+  var campos=['cli','nif','cpe','com','pot','tar','prp','cnm','cem','ctl','mor','fid'];
   campos.forEach(function(k){
     var e=document.getElementById(k);if(!e)return;
     var ev=(e.tagName==='SELECT'||e.type==='number')?'change':'input';
