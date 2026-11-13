@@ -48,14 +48,16 @@ export const fleetCards = sqliteTable("fleet_cards", {
 });
 
 /**
- * Documento anexado a uma viatura, a um cartao frota ou a uma manutencao.
- * `kind`: livre — livrete, seguro, inspecao, contrato, fatura, outro.
+ * Documento anexado a uma viatura, a um cartao frota, a uma manutencao ou a um
+ * consumo de cartao. `kind`: livrete | seguro | inspecao | contrato | fatura | outro.
  */
 export const fleetDocuments = sqliteTable("fleet_documents", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   vehicleId: integer("vehicle_id"),
   cardId: integer("card_id"),
   maintenanceId: integer("maintenance_id"),
+  /** Consumo de cartao a que o documento pertence (fatura, recibo, talão). */
+  entryId: integer("entry_id"),
   kind: text("kind").notNull().default("outro"),
   name: text("name").notNull(),
   path: text("path").notNull(),
@@ -80,6 +82,8 @@ export const vehicleReadings = sqliteTable("vehicle_readings", {
   employeeId: integer("employee_id"),
   /** De onde veio a leitura: manual | inspecao | manutencao | importacao. */
   source: text("source").notNull().default("manual"),
+  /** Consumo de cartao que gerou esta leitura, quando veio de um abastecimento. */
+  entryId: integer("entry_id"),
   notes: text("notes"),
   createdAt: createdAt(),
 });
@@ -109,6 +113,35 @@ export const vehicleMaintenance = sqliteTable("vehicle_maintenance", {
   /** Quem pagou / a que cartao ou centro de custo. */
   paidBy: text("paid_by"),
   description: text("description"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+});
+
+/**
+ * Consumo de um cartao frota: abastecimento, carregamento eletrico, portagem
+ * ou outro movimento. O cartao (e por arrasto o veiculo) dizem de onde saiu o
+ * dinheiro; `km` e opcional e, quando vem, entra no historico de quilometros.
+ * `kind`: combustivel | eletricidade | portagem | outro
+ */
+export const fuelEntries = sqliteTable("fuel_entries", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** Cartao usado (id de `fleet_cards`). */
+  cardId: integer("card_id"),
+  /** Viatura abastecida. Normalmente vem do cartao, mas pode ser outra. */
+  vehicleId: integer("vehicle_id"),
+  /** Quem fez o abastecimento (id de `employees`). */
+  employeeId: integer("employee_id"),
+  spentOn: text("spent_on").notNull(),
+  kind: text("kind").notNull().default("combustivel"),
+  /** Litros ou kWh. */
+  liters: real("liters").notNull().default(0),
+  /** Preco unitario (EUR/litro ou EUR/kWh). */
+  pricePerL: real("price_per_l").notNull().default(0),
+  /** Valor total pago. */
+  amount: real("amount").notNull().default(0),
+  /** Km no momento do abastecimento (opcional). */
+  km: integer("km"),
+  station: text("station"),
   notes: text("notes"),
   createdAt: createdAt(),
 });

@@ -4,7 +4,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { authed, requireEdit, requireView } from "../middleware/auth";
 import { db } from "../database";
 import {
-  employees, fleetCards, fleetDocuments, vehicleMaintenance, vehicleReadings, vehicles,
+  employees, fleetCards, fleetDocuments, fuelEntries, vehicleMaintenance, vehicleReadings, vehicles,
 } from "../database/schema";
 import { writePublic } from "../lib/public-files";
 
@@ -15,7 +15,9 @@ const CARD_STATUS = ["ativo", "inativo"] as const;
 const DOC_KINDS = ["livrete", "seguro", "inspecao", "contrato", "fatura", "outro"] as const;
 const MAINT_KINDS = ["revisao", "pneus", "inspecao", "reparacao", "oleo", "outro"] as const;
 const MAINT_STATUS = ["agendada", "em_curso", "concluida"] as const;
-const READ_SOURCES = ["manual", "inspecao", "manutencao", "importacao"] as const;
+const READ_SOURCES = ["manual", "inspecao", "manutencao", "abastecimento", "importacao"] as const;
+/** Consumos de cartao: combustivel, carregamento eletrico, portagem ou outro. */
+const FUEL_KINDS = ["combustivel", "eletricidade", "portagem", "outro"] as const;
 
 const vehicleInput = z.object({
   plate: z.string().min(1),
@@ -83,6 +85,7 @@ function readingsOf(vehicleId: number) {
       employeeId: vehicleReadings.employeeId,
       employeeName: employees.name,
       source: vehicleReadings.source,
+      entryId: vehicleReadings.entryId,
       notes: vehicleReadings.notes,
       createdAt: vehicleReadings.createdAt,
     })
@@ -107,6 +110,39 @@ async function syncVehicleKm(vehicleId: number) {
   const best = rows.reduce((a, b) => (b.km > a.km ? b : a), latest);
   if (latest.km >= v.km) await db.update(vehicles).set({ km: latest.km }).where(eq(vehicles.id, vehicleId));
   else if (best.km > v.km) await db.update(vehicles).set({ km: best.km }).where(eq(vehicles.id, vehicleId));
+}
+
+/**
+ * Alinha a leitura gerada por um consumo de cartao com o que esta gravado:
+ * cria se tem km, atualiza se mudou, apaga se o km foi limpo. Um consumo sem
+ * viatura nao deixa leitura nenhuma para tras.
+ */
+async function readFromEntry(entryId: number) {
+  const [e] = await db.select().from(fuelEntries).where(eq(fuelEntries.id, entryId));
+  const [read] = await db.select().from(vehicleReadings).where(eq(vehicleReadings.entryId, entryId));
+  if (!e) return;
+  const temKm = e.km != null && e.vehicleId != null;
+  if (!temKm) {
+    if (read) await db.delete(vehicleReadings).where(eq(vehicleReadings.entryId, entryId));
+    return;
+  }
+  const vals = {
+    vehicleId: e.vehicleId!,
+    recordedOn: e.spentOn,
+    km: e.km!,
+    employeeId: e.employeeId ?? null,
+    source: "abastecimento" as const,
+    entryId,
+    notes: "Km do abastecimento",
+  };
+  if (read) {
+    const antigo = read.vehicleId;
+    await db.update(vehicleReadings).set(vals).where(eq(vehicleReadings.entryId, entryId));
+    if (antigo !== vals.vehicleId) await syncVehicleKm(antigo);
+  } else {
+    await db.insert(vehicleReadings).values(vals);
+  }
+  await syncVehicleKm(vals.vehicleId);
 }
 
 /** Lista de viaturas com condutor, documentos e resumo de manutencao. */
@@ -192,6 +228,7 @@ export const fleet = {
       await db.delete(fleetDocuments).where(eq(fleetDocuments.vehicleId, input.id));
       await db.delete(vehicleMaintenance).where(eq(vehicleMaintenance.vehicleId, input.id));
       await db.delete(vehicleReadings).where(eq(vehicleReadings.vehicleId, input.id));
+      await db.delete(fuelEntries).where(eq(fuelEntries.vehicleId, input.id));
       await db.update(fleetCards).set({ vehicleId: null }).where(eq(fleetCards.vehicleId, input.id));
       await db.delete(vehicles).where(eq(vehicles.id, input.id));
       return { ok: true };
@@ -319,6 +356,104 @@ export const fleet = {
     }),
   },
 
+  /**
+   * Consumos dos cartoes frota: abastecimentos, carregamentos, portagens.
+   * Um consumo com km regista tambem uma leitura na viatura (origem
+   * "abastecimento"), para a quilometragem andar sozinha.
+   */
+  fuel: {
+    list: requireView("frota")
+      .input(z.object({ cardId: z.number().optional(), vehicleId: z.number().optional() }).optional())
+      .handler(async ({ input }) => {
+        let rows = await db
+          .select({
+            id: fuelEntries.id,
+            cardId: fuelEntries.cardId,
+            vehicleId: fuelEntries.vehicleId,
+            employeeId: fuelEntries.employeeId,
+            spentOn: fuelEntries.spentOn,
+            kind: fuelEntries.kind,
+            liters: fuelEntries.liters,
+            pricePerL: fuelEntries.pricePerL,
+            amount: fuelEntries.amount,
+            km: fuelEntries.km,
+            station: fuelEntries.station,
+            notes: fuelEntries.notes,
+            createdAt: fuelEntries.createdAt,
+            cardProvider: fleetCards.provider,
+            cardNumber: fleetCards.number,
+            plate: vehicles.plate,
+            employeeName: employees.name,
+          })
+          .from(fuelEntries)
+          .leftJoin(fleetCards, eq(fleetCards.id, fuelEntries.cardId))
+          .leftJoin(vehicles, eq(vehicles.id, fuelEntries.vehicleId))
+          .leftJoin(employees, eq(employees.id, fuelEntries.employeeId))
+          .orderBy(desc(fuelEntries.spentOn), desc(fuelEntries.id));
+        if (input?.cardId != null) rows = rows.filter((r) => r.cardId === input.cardId);
+        if (input?.vehicleId != null) rows = rows.filter((r) => r.vehicleId === input.vehicleId);
+        return rows;
+      }),
+    create: requireEdit("frota")
+      .input(
+        z.object({
+          cardId: z.number().nullable().optional(),
+          vehicleId: z.number().nullable().optional(),
+          employeeId: z.number().nullable().optional(),
+          spentOn: dateField,
+          kind: z.enum(FUEL_KINDS).default("combustivel"),
+          liters: z.number().min(0).default(0),
+          pricePerL: z.number().min(0).default(0),
+          amount: z.number().min(0).default(0),
+          km: z.number().int().min(0).nullable().optional(),
+          station: z.string().nullable().optional(),
+          notes: z.string().nullable().optional(),
+        }),
+      )
+      .handler(async ({ input }) => {
+        if (input.cardId == null && input.vehicleId == null) {
+          throw new ORPCError("BAD_REQUEST", { message: "Escolha o cartão ou a viatura do consumo." });
+        }
+        const [row] = await db.insert(fuelEntries).values(input).returning();
+        await readFromEntry(row!.id);
+        return row;
+      }),
+    update: requireEdit("frota")
+      .input(
+        z.object({
+          id: z.number(),
+          cardId: z.number().nullable().optional(),
+          vehicleId: z.number().nullable().optional(),
+          employeeId: z.number().nullable().optional(),
+          spentOn: dateField,
+          kind: z.enum(FUEL_KINDS).default("combustivel"),
+          liters: z.number().min(0).default(0),
+          pricePerL: z.number().min(0).default(0),
+          amount: z.number().min(0).default(0),
+          km: z.number().int().min(0).nullable().optional(),
+          station: z.string().nullable().optional(),
+          notes: z.string().nullable().optional(),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const { id, ...data } = input;
+        const [prev] = await db.select({ vehicleId: fuelEntries.vehicleId }).from(fuelEntries).where(eq(fuelEntries.id, id));
+        await db.update(fuelEntries).set(data).where(eq(fuelEntries.id, id));
+        await readFromEntry(id);
+        if (prev?.vehicleId != null) await syncVehicleKm(prev.vehicleId);
+        if (data.vehicleId != null && data.vehicleId !== prev?.vehicleId) await syncVehicleKm(data.vehicleId);
+        return { ok: true };
+      }),
+    remove: requireEdit("frota").input(idInput).handler(async ({ input }) => {
+      const [prev] = await db.select({ vehicleId: fuelEntries.vehicleId }).from(fuelEntries).where(eq(fuelEntries.id, input.id));
+      await db.delete(fleetDocuments).where(eq(fleetDocuments.entryId, input.id));
+      await db.delete(vehicleReadings).where(eq(vehicleReadings.entryId, input.id));
+      await db.delete(fuelEntries).where(eq(fuelEntries.id, input.id));
+      if (prev?.vehicleId != null) await syncVehicleKm(prev.vehicleId);
+      return { ok: true };
+    }),
+  },
+
   cards: {
     list: requireView("frota").handler(async () => {
       const rows = await db
@@ -356,6 +491,7 @@ export const fleet = {
     }),
     remove: requireEdit("frota").input(idInput).handler(async ({ input }) => {
       await db.delete(fleetDocuments).where(eq(fleetDocuments.cardId, input.id));
+      await db.delete(fuelEntries).where(eq(fuelEntries.cardId, input.id));
       await db.delete(fleetCards).where(eq(fleetCards.id, input.id));
       return { ok: true };
     }),
@@ -365,20 +501,27 @@ export const fleet = {
     list: requireView("frota")
       .input(
         z
-          .object({ vehicleId: z.number().optional(), cardId: z.number().optional(), maintenanceId: z.number().optional() })
+          .object({
+            vehicleId: z.number().optional(),
+            cardId: z.number().optional(),
+            maintenanceId: z.number().optional(),
+            entryId: z.number().optional(),
+          })
           .optional(),
       )
       .handler(async ({ input }) => {
         const vid = input?.vehicleId;
         const cid = input?.cardId;
         const mid = input?.maintenanceId;
+        const eid = input?.entryId;
         const rows = await db.select().from(fleetDocuments);
-        if (vid == null && cid == null && mid == null) return rows;
+        if (vid == null && cid == null && mid == null && eid == null) return rows;
         return rows.filter(
           (d) =>
             (vid != null && d.vehicleId === vid) ||
             (cid != null && d.cardId === cid) ||
-            (mid != null && d.maintenanceId === mid),
+            (mid != null && d.maintenanceId === mid) ||
+            (eid != null && d.entryId === eid),
         );
       }),
     /** Carrega o ficheiro para public/uploads/fleet e regista o anexo. */
@@ -388,6 +531,7 @@ export const fleet = {
           vehicleId: z.number().nullable().optional(),
           cardId: z.number().nullable().optional(),
           maintenanceId: z.number().nullable().optional(),
+          entryId: z.number().nullable().optional(),
           kind: z.enum(DOC_KINDS).default("outro"),
           name: z.string().min(1),
           content: z.string(),
@@ -397,8 +541,8 @@ export const fleet = {
         }),
       )
       .handler(async ({ input }) => {
-        if (input.vehicleId == null && input.cardId == null && input.maintenanceId == null) {
-          throw new ORPCError("BAD_REQUEST", { message: "Escolha a viatura, o cartão ou a manutenção a que pertence o documento." });
+        if (input.vehicleId == null && input.cardId == null && input.maintenanceId == null && input.entryId == null) {
+          throw new ORPCError("BAD_REQUEST", { message: "Escolha a viatura, o cartão, a manutenção ou o consumo a que pertence o documento." });
         }
         const { mime, buf } = decodeUpload(input.content, input.mime ?? "application/octet-stream");
         const filename = `${Date.now()}-${crypto.randomUUID()}.${safeExt(mime, input.name)}`;
@@ -409,6 +553,7 @@ export const fleet = {
             vehicleId: input.vehicleId ?? null,
             cardId: input.cardId ?? null,
             maintenanceId: input.maintenanceId ?? null,
+            entryId: input.entryId ?? null,
             kind: input.kind,
             name: input.name,
             path,

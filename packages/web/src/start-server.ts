@@ -82,6 +82,7 @@ if (existsSync(dbPath)) {
       vehicle_id INTEGER,
       card_id INTEGER,
       maintenance_id INTEGER,
+      entry_id INTEGER,
       kind TEXT NOT NULL DEFAULT 'outro',
       name TEXT NOT NULL,
       path TEXT NOT NULL,
@@ -92,6 +93,7 @@ if (existsSync(dbPath)) {
       created_at INTEGER NOT NULL
     )`);
     ensureColumn("fleet_documents", "maintenance_id", "integer");
+    ensureColumn("fleet_documents", "entry_id", "integer");
     db.run(`CREATE TABLE IF NOT EXISTS vehicle_readings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       vehicle_id INTEGER NOT NULL,
@@ -99,9 +101,11 @@ if (existsSync(dbPath)) {
       km INTEGER NOT NULL,
       employee_id INTEGER,
       source TEXT NOT NULL DEFAULT 'manual',
+      entry_id INTEGER,
       notes TEXT,
       created_at INTEGER NOT NULL
     )`);
+    ensureColumn("vehicle_readings", "entry_id", "integer");
     db.run(`CREATE TABLE IF NOT EXISTS vehicle_maintenance (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       vehicle_id INTEGER NOT NULL,
@@ -116,6 +120,22 @@ if (existsSync(dbPath)) {
       cost REAL NOT NULL DEFAULT 0,
       paid_by TEXT,
       description TEXT,
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`);
+    // Consumos dos cartoes frota (abastecimentos, carregamentos, portagens).
+    db.run(`CREATE TABLE IF NOT EXISTS fuel_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      card_id INTEGER,
+      vehicle_id INTEGER,
+      employee_id INTEGER,
+      spent_on TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'combustivel',
+      liters REAL NOT NULL DEFAULT 0,
+      price_per_l REAL NOT NULL DEFAULT 0,
+      amount REAL NOT NULL DEFAULT 0,
+      km INTEGER,
+      station TEXT,
       notes TEXT,
       created_at INTEGER NOT NULL
     )`);

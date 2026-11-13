@@ -40,6 +40,16 @@ export const useAddReading = () => useMutation(orpc.fleet.readings.create.mutati
 export const useEditReading = () => useMutation(orpc.fleet.readings.update.mutationOptions({ onSuccess: useInvalidateFleet() }));
 export const useRemoveReading = () => useMutation(orpc.fleet.readings.remove.mutationOptions({ onSuccess: useInvalidateFleet() }));
 
+/* ---- consumos dos cartões ---- */
+export const useFuelEntries = () => useQuery(orpc.fleet.fuel.list.queryOptions({ input: {} }));
+export function useSaveFuel() {
+  const inv = useInvalidateFleet();
+  const c = useMutation(orpc.fleet.fuel.create.mutationOptions({ onSuccess: inv }));
+  const u = useMutation(orpc.fleet.fuel.update.mutationOptions({ onSuccess: inv }));
+  return { create: c, update: u, isPending: c.isPending || u.isPending };
+}
+export const useRemoveFuel = () => useMutation(orpc.fleet.fuel.remove.mutationOptions({ onSuccess: useInvalidateFleet() }));
+
 /* ---- manutenções ---- */
 export const useMaintenance = () => useQuery(orpc.fleet.maintenance.list.queryOptions({ input: {} }));
 export function useSaveMaintenance() {

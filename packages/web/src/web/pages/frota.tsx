@@ -1,7 +1,7 @@
 /**
  * Página "Frota".
  *
- * Cinco separadores:
+ * Seis separadores:
  *  - Viaturas     — a ficha de cada viatura (matrícula, condutor, km, estado).
  *  - Quilómetros  — o histórico de leituras de km por viatura. A quilometragem
  *                   da viatura acompanha sempre a leitura mais recente; a coluna
@@ -9,7 +9,10 @@
  *  - Manutenções  — revisões, óleo, pneus, inspeção e reparações, com oficina,
  *                   custo e o aviso da próxima intervenção (aos km ou na data).
  *  - Cartões frota— cartões de combustível e a viatura/titular de cada um.
- *  - Documentos   — todos os anexos, de viaturas, cartões e manutenções.
+ *  - Consumos     — abastecimentos, carregamentos e portagens de cada cartão,
+ *                   com litros, preço, valor e fatura/recibo anexados. Um
+ *                   consumo com km também entra no histórico de quilómetros.
+ *  - Documentos   — todos os anexos de viaturas, cartões, manutenções e consumos.
  *
  * Os ficheiros ficam em `public/uploads/fleet` e são servidos em `/uploads/fleet/…`.
  * Filtros por estado e por mês de referência: o mês olha para a data de entrada
@@ -17,7 +20,7 @@
  */
 import { useMemo, useState } from "react";
 import {
-  CarFront, Plus, Search, Pencil, FileText, Upload, Trash2, Fuel, Gauge, AlertTriangle, Paperclip, CreditCard, Wrench, History, CalendarClock,
+  CarFront, Plus, Search, Pencil, FileText, Upload, Trash2, Fuel, Gauge, AlertTriangle, Paperclip, CreditCard, Wrench, History, CalendarClock, Droplet,
 } from "lucide-react";
 import { PageHeader, Stat, Empty, Tabs, Modal, Field, SubmitRow, ConfirmDelete } from "../components/ui/kit";
 import { errMsg } from "../lib/format";
@@ -26,6 +29,7 @@ import {
   useVehicles, useFleetCards, useFleetDrivers,
   useSaveVehicle, useRemoveVehicle, useSaveCard, useRemoveCard,
   useUploadFleetDoc, useRemoveFleetDoc, useFleetDocs,
+  useFuelEntries, useSaveFuel, useRemoveFuel,
   useReadings, useAddReading, useRemoveReading,
   useSaveMaintenance, useRemoveMaintenance,
 } from "../queries/fleet";
@@ -66,7 +70,16 @@ const READ_SOURCES = [
   { key: "manual", label: "Manual" },
   { key: "inspecao", label: "Inspeção" },
   { key: "manutencao", label: "Manutenção" },
+  { key: "abastecimento", label: "Abastecimento" },
   { key: "importacao", label: "Importação" },
+] as const;
+
+/** Tipos de consumo de um cartão frota. */
+const FUEL_KINDS = [
+  { key: "combustivel", label: "Combustível", unit: "litros" },
+  { key: "eletricidade", label: "Eletricidade", unit: "kWh" },
+  { key: "portagem", label: "Portagem", unit: "" },
+  { key: "outro", label: "Outro", unit: "" },
 ] as const;
 
 type Maint = {
@@ -76,9 +89,16 @@ type Maint = {
   cost: number; paidBy: string | null; description: string | null; notes: string | null;
 };
 
+type Fuel = {
+  id: number; cardId: number | null; vehicleId: number | null; employeeId: number | null;
+  spentOn: string; kind: string; liters: number; pricePerL: number; amount: number;
+  km: number | null; station: string | null; notes: string | null;
+  cardProvider: string | null; cardNumber: string | null; plate: string | null; employeeName: string | null;
+};
+
 type Vehicle = NonNullable<ReturnType<typeof useVehicles>["data"]>[number];
 type Card = NonNullable<ReturnType<typeof useFleetCards>["data"]>[number];
-type Doc = { id: number; kind: string; name: string; path: string; size: number; expiresOn: string | null; vehicleId: number | null; cardId: number | null; maintenanceId: number | null };
+type Doc = { id: number; kind: string; name: string; path: string; size: number; expiresOn: string | null; vehicleId: number | null; cardId: number | null; maintenanceId: number | null; entryId: number | null };
 
 function pad(v: number) {
   return v < 10 ? "0" + v : "" + v;
@@ -612,13 +632,179 @@ function MaintenanceForm({ initial, onDone }: { initial: Maint | null; onDone: (
   );
 }
 
+/* ------------------------------------------------------------- consumos */
+
+function FuelForm({ initial, onDone }: { initial: Fuel | null; onDone: () => void }) {
+  const save = useSaveFuel();
+  const remove = useRemoveFuel();
+  const cards = useFleetCards();
+  const vehicles = useVehicles();
+  const drivers = useFleetDrivers();
+  const [f, setF] = useState({
+    cardId: initial?.cardId != null ? String(initial.cardId) : "",
+    vehicleId: initial?.vehicleId != null ? String(initial.vehicleId) : "",
+    employeeId: initial?.employeeId != null ? String(initial.employeeId) : "",
+    spentOn: initial?.spentOn ?? todayLisbon(),
+    kind: initial?.kind ?? "combustivel",
+    liters: initial?.liters ? String(initial.liters) : "",
+    pricePerL: initial?.pricePerL ? String(initial.pricePerL) : "",
+    amount: initial?.amount ? String(initial.amount) : "",
+    km: initial?.km != null ? String(initial.km) : "",
+    station: initial?.station ?? "",
+    notes: initial?.notes ?? "",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
+
+  /** Escolher o cartão traz a viatura e o titular que estão ligados a ele. */
+  const escolheCartao = (id: string) => {
+    const c = (cards.data ?? []).find((x) => String(x.id) === id);
+    setF((p) => ({
+      ...p,
+      cardId: id,
+      vehicleId: c?.vehicleId != null ? String(c.vehicleId) : p.vehicleId,
+      employeeId: p.employeeId || (c?.employeeId != null ? String(c.employeeId) : ""),
+    }));
+  };
+
+  /** Litros x preço = total, enquanto o total não for escrito à mão. */
+  const calculaTotal = (liters: string, price: string) => {
+    const l = Number(liters.replace(",", "."));
+    const p = Number(price.replace(",", "."));
+    if (!l || !p) return "";
+    return (l * p).toFixed(2);
+  };
+
+  const unidade = FUEL_KINDS.find((k) => k.key === f.kind)?.unit ?? "";
+  const temLitros = f.kind === "combustivel" || f.kind === "eletricidade";
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setError(null);
+        if (!f.cardId && !f.vehicleId) return setError("Escolha o cartão ou a viatura.");
+        try {
+          const payload = {
+            cardId: f.cardId ? Number(f.cardId) : null,
+            vehicleId: f.vehicleId ? Number(f.vehicleId) : null,
+            employeeId: f.employeeId ? Number(f.employeeId) : null,
+            spentOn: f.spentOn,
+            kind: f.kind as "combustivel" | "eletricidade" | "portagem" | "outro",
+            liters: Number(f.liters || 0),
+            pricePerL: Number(f.pricePerL || 0),
+            amount: Number(f.amount || 0),
+            km: f.km ? Number(f.km) : null,
+            station: f.station || null,
+            notes: f.notes || null,
+          };
+          if (initial) await save.update.mutateAsync({ ...payload, id: initial.id });
+          else await save.create.mutateAsync(payload);
+          onDone();
+        } catch (err) {
+          setError(errMsg(err));
+        }
+      }}
+    >
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Cartão">
+            <select aria-label="Cartão do consumo" className="input" value={f.cardId} onChange={(e) => escolheCartao(e.target.value)}>
+              <option value="">—</option>
+              {(cards.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.provider} {c.number}</option>)}
+            </select>
+          </Field>
+          <Field label="Viatura">
+            <select aria-label="Viatura do consumo" className="input" value={f.vehicleId} onChange={(e) => set("vehicleId", e.target.value)}>
+              <option value="">—</option>
+              {(vehicles.data ?? []).map((v) => <option key={v.id} value={v.id}>{v.plate}{v.model ? " · " + v.model : ""}</option>)}
+            </select>
+          </Field>
+          <Field label="Data">
+            <input aria-label="Data do consumo" className="input" type="date" value={f.spentOn} onChange={(e) => set("spentOn", e.target.value)} required />
+          </Field>
+          <Field label="Tipo">
+            <select aria-label="Tipo de consumo" className="input" value={f.kind} onChange={(e) => set("kind", e.target.value)}>
+              {FUEL_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+            </select>
+          </Field>
+          {temLitros && (
+            <>
+              <Field label={f.kind === "eletricidade" ? "Energia (kWh)" : "Litros"}>
+                <input
+                  aria-label="Quantidade"
+                  className="input"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={f.liters}
+                  onChange={(e) => { const v = e.target.value; setF((p) => ({ ...p, liters: v, amount: calculaTotal(v, p.pricePerL) || p.amount })); }}
+                />
+              </Field>
+              <Field label={f.kind === "eletricidade" ? "Preço (€/kWh)" : "Preço (€/litro)"}>
+                <input
+                  aria-label="Preço unitário"
+                  className="input"
+                  type="number"
+                  min={0}
+                  step="0.0001"
+                  value={f.pricePerL}
+                  onChange={(e) => { const v = e.target.value; setF((p) => ({ ...p, pricePerL: v, amount: calculaTotal(p.liters, v) || p.amount })); }}
+                />
+              </Field>
+            </>
+          )}
+          <Field label="Valor total (€)">
+            <input aria-label="Valor total" className="input" type="number" min={0} step="0.01" value={f.amount} onChange={(e) => set("amount", e.target.value)} />
+          </Field>
+          <Field label="Km no momento">
+            <input aria-label="Km do consumo" className="input" type="number" min={0} value={f.km} onChange={(e) => set("km", e.target.value)} />
+          </Field>
+          <Field label="Posto / local">
+            <input aria-label="Posto" className="input" value={f.station} onChange={(e) => set("station", e.target.value)} placeholder="Galp A5, Via Verde…" />
+          </Field>
+          <Field label="Quem abasteceu">
+            <select aria-label="Quem abasteceu" className="input" value={f.employeeId} onChange={(e) => set("employeeId", e.target.value)}>
+              <option value="">—</option>
+              {(drivers.data ?? []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </Field>
+        </div>
+        <Field label="Notas">
+          <textarea aria-label="Notas do consumo" className="input" rows={2} value={f.notes} onChange={(e) => set("notes", e.target.value)} />
+        </Field>
+        {f.km && (
+          <div className="text-[12px] text-ink-3">
+            Os {Number(f.km).toLocaleString("pt-PT")} km ficam também no histórico de quilómetros da viatura.
+          </div>
+        )}
+      </div>
+      <SubmitRow
+        pending={save.isPending}
+        onCancel={onDone}
+        error={error}
+        extra={initial && (
+          <ConfirmDelete
+            pending={remove.isPending}
+            title="Eliminar este consumo?"
+            description="Os documentos anexados a este consumo também são eliminados."
+            onConfirm={async () => { await remove.mutateAsync({ id: initial.id }); onDone(); }}
+          />
+        )}
+      />
+    </form>
+  );
+}
+
 function UploadForm({
-  vehicleId, cardId, maintenanceId, onDone,
+  vehicleId, cardId, maintenanceId, entryId, onDone,
 }: {
-  vehicleId?: number; cardId?: number; maintenanceId?: number; onDone: () => void;
+  vehicleId?: number; cardId?: number; maintenanceId?: number; entryId?: number; onDone: () => void;
 }) {
   const upload = useUploadFleetDoc();
-  const [kind, setKind] = useState<string>("livrete");
+  // Vindos de um abastecimento ou de uma intervenção, o anexo é quase sempre
+  // a fatura; numa viatura começa no livrete.
+  const [kind, setKind] = useState<string>(entryId || maintenanceId ? "fatura" : "livrete");
   const [expiresOn, setExpiresOn] = useState("");
   const [name, setName] = useState("");
   const [content, setContent] = useState<string>("");
@@ -648,6 +834,7 @@ function UploadForm({
             vehicleId: vehicleId ?? null,
             cardId: cardId ?? null,
             maintenanceId: maintenanceId ?? null,
+            entryId: entryId ?? null,
             kind: kind as "livrete" | "seguro" | "inspecao" | "contrato" | "fatura" | "outro",
             name: name || "documento",
             content,
@@ -698,17 +885,19 @@ export default function FrotaPage() {
 
   const months = useMemo(() => monthOptions(24), []);
   const [month, setMonth] = useState(() => todayLisbon().slice(0, 7));
-  const [area, setArea] = useState<"viaturas" | "km" | "manutencoes" | "cartoes" | "documentos">("viaturas");
+  const [area, setArea] = useState<"viaturas" | "km" | "manutencoes" | "cartoes" | "consumos" | "documentos">("viaturas");
   const [state, setState] = useState<"ativo" | "manutencao" | "inativo" | "todos">("ativo");
   const [mState, setMState] = useState<"agendada" | "em_curso" | "concluida" | "todas">("todas");
+  const [fKind, setFKind] = useState<"combustivel" | "eletricidade" | "portagem" | "outro" | "todos">("todos");
   const [q, setQ] = useState("");
 
   const [editVehicle, setEditVehicle] = useState<Vehicle | null | "new">(null);
   const [editCard, setEditCard] = useState<Card | null | "new">(null);
   const [editMaint, setEditMaint] = useState<Maint | null | "new">(null);
+  const [editFuel, setEditFuel] = useState<Fuel | null | "new">(null);
   const [readingFor, setReadingFor] = useState<{ id: number; label: string } | null>(null);
-  const [docsFor, setDocsFor] = useState<{ kind: "vehicle" | "card" | "maint"; id: number; label: string } | null>(null);
-  const [uploadFor, setUploadFor] = useState<{ vehicleId?: number; cardId?: number; maintenanceId?: number; label: string } | null>(null);
+  const [docsFor, setDocsFor] = useState<{ kind: "vehicle" | "card" | "maint" | "fuel"; id: number; label: string } | null>(null);
+  const [uploadFor, setUploadFor] = useState<{ vehicleId?: number; cardId?: number; maintenanceId?: number; entryId?: number; label: string } | null>(null);
 
   const vlist = vehicles.data ?? [];
   const clist = cards.data ?? [];
@@ -735,9 +924,11 @@ export default function FrotaPage() {
   }, [clist, state, q]);
 
   const fleetDocs = useFleetDocs();
+  const fuel = useFuelEntries();
+  const fuelAll = fuel.data ?? [];
   const docsAll = fleetDocs.data ?? [];
 
-  const allDocs = useMemo<(Doc & { owner: string; ownerKind: "vehicle" | "card" | "maint" })[]>(() => {
+  const allDocs = useMemo<(Doc & { owner: string; ownerKind: "vehicle" | "card" | "maint" | "fuel" })[]>(() => {
     const plates = new Map<number, string>();
     const maintOwner = new Map<number, string>();
     for (const v of vlist) {
@@ -747,9 +938,18 @@ export default function FrotaPage() {
       }
     }
     const cardsById = new Map(clist.map((c) => [c.id, c] as const));
-    const out: (Doc & { owner: string; ownerKind: "vehicle" | "card" | "maint" })[] = [];
+    const entryOwner = new Map<number, string>();
+    for (const e of fuelAll) {
+      entryOwner.set(
+        e.id,
+        (e.plate ?? e.cardProvider ?? "Consumo") + " · " + (FUEL_KINDS.find((k) => k.key === e.kind)?.label ?? "Consumo") + " " + e.spentOn,
+      );
+    }
+    const out: (Doc & { owner: string; ownerKind: "vehicle" | "card" | "maint" | "fuel" })[] = [];
     for (const d of docsAll as unknown as Doc[]) {
-      if (d.maintenanceId != null) {
+      if (d.entryId != null) {
+        out.push({ ...d, owner: entryOwner.get(d.entryId) ?? "Consumo", ownerKind: "fuel" });
+      } else if (d.maintenanceId != null) {
         out.push({ ...d, owner: maintOwner.get(d.maintenanceId) ?? "Manutenção", ownerKind: "maint" });
       } else if (d.cardId != null) {
         const c = cardsById.get(d.cardId);
@@ -759,7 +959,7 @@ export default function FrotaPage() {
       }
     }
     return out.sort((a, b) => b.id - a.id);
-  }, [docsAll, vlist, clist]);
+  }, [docsAll, vlist, clist, fuelAll]);
 
   const docRows = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -806,6 +1006,29 @@ export default function FrotaPage() {
   const custoTotal = maintAll.filter((m) => m.status === "concluida").reduce((a, m) => a + m.cost, 0);
   const kmTotal = vlist.reduce((a, v) => a + v.km, 0);
   const semLeitura = vlist.filter((v) => !v.readings.length).length;
+
+  /** Consumos do mês escolhido, já filtrados por tipo e procura. */
+  const fuelMonth = useMemo(() => fuelAll.filter((e) => monthOf(e.spentOn) === month), [fuelAll, month]);
+  const fuelRows = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return fuelMonth
+      .filter(
+        (e) =>
+          (fKind === "todos" || e.kind === fKind) &&
+          (!s ||
+            (e.plate ?? "").toLowerCase().includes(s) ||
+            (e.station ?? "").toLowerCase().includes(s) ||
+            (e.cardProvider ?? "").toLowerCase().includes(s) ||
+            (e.cardNumber ?? "").toLowerCase().includes(s) ||
+            (e.employeeName ?? "").toLowerCase().includes(s)),
+      )
+      .sort((a, b) => b.spentOn.localeCompare(a.spentOn) || b.id - a.id);
+  }, [fuelMonth, fKind, q]);
+
+  const fuelLiters = fuelRows.reduce((a, e) => a + e.liters, 0);
+  const fuelAmount = fuelRows.reduce((a, e) => a + e.amount, 0);
+  const fuelAvg = fuelLiters ? fuelAmount / fuelLiters : 0;
+  const fuelKm = fuelRows.reduce((a, e) => a + (e.km ?? 0), 0);
   const readingsMonth = vlist.reduce((a, v) => a + v.readings.filter((r) => r.recordedOn.startsWith(month)).length, 0);
   const lastRead = vlist.flatMap((v) => v.readings.map((r) => r.recordedOn)).sort().pop() ?? null;
 
@@ -824,6 +1047,9 @@ export default function FrotaPage() {
             <button className="btn btn-ghost" onClick={() => setEditMaint("new")}>
               <Wrench size={15} /> Nova manutenção
             </button>
+            <button className="btn btn-ghost" onClick={() => setEditFuel("new")}>
+              <Droplet size={15} /> Novo consumo
+            </button>
             <button className="btn btn-primary" onClick={() => setEditVehicle("new")}>
               <Plus size={15} /> Nova viatura
             </button>
@@ -841,7 +1067,18 @@ export default function FrotaPage() {
           </select>
         </label>
 
-        {area === "manutencoes" ? (
+        {area === "consumos" ? (
+          <label className="flex flex-col gap-1">
+            <span className="label-mono">Tipo</span>
+            <select className="input w-48" value={fKind} onChange={(e) => setFKind(e.target.value as typeof fKind)} aria-label="Tipo de consumo">
+              <option value="todos">Todos</option>
+              <option value="combustivel">Combustível</option>
+              <option value="eletricidade">Eletricidade</option>
+              <option value="portagem">Portagens</option>
+              <option value="outro">Outros</option>
+            </select>
+          </label>
+        ) : area === "manutencoes" ? (
           <label className="flex flex-col gap-1">
             <span className="label-mono">Estado</span>
             <select className="input w-48" value={mState} onChange={(e) => setMState(e.target.value as typeof mState)} aria-label="Estado da manutenção">
@@ -877,7 +1114,7 @@ export default function FrotaPage() {
           <span className="label-mono">Procurar</span>
           <span className="relative">
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
-            <input className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder={area === "viaturas" || area === "km" ? "Matrícula, modelo ou condutor…" : area === "manutencoes" ? "Viatura, oficina ou tipo…" : area === "cartoes" ? "Fornecedor, número ou titular…" : "Documento ou dono…"} />
+            <input className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder={area === "viaturas" || area === "km" ? "Matrícula, modelo ou condutor…" : area === "manutencoes" ? "Viatura, oficina ou tipo…" : area === "consumos" ? "Viatura, posto ou cartão…" : area === "cartoes" ? "Fornecedor, número ou titular…" : "Documento ou dono…"} />
           </span>
         </label>
 
@@ -890,6 +1127,7 @@ export default function FrotaPage() {
               { key: "km" as const, label: "Quilómetros", count: kmRows.length },
               { key: "manutencoes" as const, label: "Manutenções", count: maintRows.length },
               { key: "cartoes" as const, label: "Cartões frota", count: cardRows.length },
+              { key: "consumos" as const, label: "Consumos", count: fuelRows.length },
               { key: "documentos" as const, label: "Documentos", count: docRows.length },
             ]}
           />
@@ -903,6 +1141,13 @@ export default function FrotaPage() {
             <Stat label="Leituras no mês" value={readingsMonth} sub={monthLabel(month)} icon={<History size={15} />} accent="var(--sky)" delay={40} />
             <Stat label="Sem leitura" value={semLeitura} sub="viaturas por registar" icon={<AlertTriangle size={15} />} accent="var(--amber)" delay={80} />
             <Stat label="Última leitura" value={lastRead ?? "—"} sub="registo mais recente" icon={<CalendarClock size={15} />} accent="var(--rose)" delay={120} />
+          </>
+        ) : area === "consumos" ? (
+          <>
+            <Stat label="Consumos" value={fuelRows.length} sub={monthLabel(month)} icon={<Droplet size={15} />} delay={0} />
+            <Stat label="Quantidade" value={fuelLiters ? fuelLiters.toLocaleString("pt-PT", { maximumFractionDigits: 1 }) : "—"} sub="litros / kWh no mês" icon={<Gauge size={15} />} accent="var(--sky)" delay={40} />
+            <Stat label="Valor" value={fuelAmount.toLocaleString("pt-PT", { style: "currency", currency: "EUR" })} sub="pago no mês" icon={<CreditCard size={15} />} accent="var(--amber)" delay={80} />
+            <Stat label="Preço médio" value={fuelAvg ? fuelAvg.toFixed(3) + " €" : "—"} sub="por litro / kWh" icon={<Fuel size={15} />} accent="var(--rose)" delay={120} />
           </>
         ) : area === "manutencoes" ? (
           <>
@@ -1112,6 +1357,90 @@ export default function FrotaPage() {
               </table>
             </div>
           )
+        ) : area === "consumos" ? (
+          !fuelRows.length ? (
+            <Empty
+              title={fuelMonth.length ? "Nenhum consumo neste filtro" : "Ainda sem consumos em " + monthLabel(month)}
+              text={fuelMonth.length ? "Muda o tipo ou a procura." : "Regista os abastecimentos e portagens de cada cartão, com fatura anexada."}
+              action={canEdit ? <button className="btn btn-primary" onClick={() => setEditFuel("new")}><Droplet size={15} /> Novo consumo</button> : undefined}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-ink-3">
+                    <th className="label-mono px-4 py-3 font-normal">Data</th>
+                    <th className="label-mono px-4 py-3 font-normal">Cartão</th>
+                    <th className="label-mono px-4 py-3 font-normal">Viatura</th>
+                    <th className="label-mono px-4 py-3 font-normal">Tipo</th>
+                    <th className="label-mono px-4 py-3 font-normal">Qtd.</th>
+                    <th className="label-mono px-4 py-3 font-normal">€/un.</th>
+                    <th className="label-mono px-4 py-3 font-normal">Valor</th>
+                    <th className="label-mono px-4 py-3 font-normal">Km</th>
+                    <th className="label-mono px-4 py-3 font-normal">Posto</th>
+                    <th className="label-mono px-4 py-3 font-normal">Docs</th>
+                    <th className="px-4 py-3"><span className="sr-only">Ações</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fuelRows.map((e) => {
+                    const kindLabel = FUEL_KINDS.find((k) => k.key === e.kind)?.label ?? "Outro";
+                    const unidade = FUEL_KINDS.find((k) => k.key === e.kind)?.unit ?? "";
+                    const nDocs = docsAll.filter((d) => d.entryId === e.id).length;
+                    return (
+                      <tr key={e.id} className="border-b border-line last:border-b-0 hover:bg-surface-2/60">
+                        <td className="num px-4 py-2.5">{e.spentOn}</td>
+                        <td className="px-4 py-2.5 text-ink-2">
+                          <div>{e.cardProvider ?? "—"}</div>
+                          <div className="num text-[11.5px] text-ink-3">{e.cardNumber ?? ""}</div>
+                        </td>
+                        <td className="px-4 py-2.5 text-ink-2">{e.plate ?? "—"}</td>
+                        <td className="px-4 py-2.5">
+                          <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[10.5px] text-ink-2">{kindLabel}</span>
+                        </td>
+                        <td className="num px-4 py-2.5 text-ink-2">{e.liters ? e.liters.toLocaleString("pt-PT", { maximumFractionDigits: 1 }) + (unidade ? " " + unidade : "") : "—"}</td>
+                        <td className="num px-4 py-2.5 text-ink-3">{e.pricePerL ? e.pricePerL.toFixed(3) + " €" : "—"}</td>
+                        <td className="num px-4 py-2.5 font-medium">{e.amount ? e.amount.toFixed(2) + " €" : "—"}</td>
+                        <td className="num px-4 py-2.5 text-ink-2">{e.km != null ? e.km.toLocaleString("pt-PT") : "—"}</td>
+                        <td className="px-4 py-2.5 text-ink-2">
+                          <div>{e.station ?? "—"}</div>
+                          <div className="text-[11.5px] text-ink-3">{e.employeeName ?? ""}</div>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-ink-2 hover:text-volt"
+                            aria-label={"Documentos do consumo de " + e.spentOn}
+                            onClick={() => setDocsFor({ kind: "fuel", id: e.id, label: (e.plate ?? e.cardProvider ?? "Consumo") + " · " + kindLabel + " " + e.spentOn })}
+                          >
+                            <Paperclip size={13} /> {nDocs}
+                          </button>
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          {canEdit && (
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                title="Anexar fatura"
+                                aria-label="Anexar documento ao consumo"
+                                className="text-ink-3 hover:text-volt"
+                                onClick={() => setUploadFor({ entryId: e.id, label: (e.plate ?? e.cardProvider ?? "Consumo") + " · " + e.spentOn })}
+                              >
+                                <Upload size={14} />
+                              </button>
+                              <button type="button" title="Editar" aria-label="Editar consumo" className="text-ink-3 hover:text-ink" onClick={() => setEditFuel(e)}>
+                                <Pencil size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         ) : area === "cartoes" ? (
           !cardRows.length ? (
             <Empty
@@ -1237,6 +1566,10 @@ export default function FrotaPage() {
         {editMaint !== null && <MaintenanceForm initial={editMaint === "new" ? null : editMaint} onDone={() => setEditMaint(null)} />}
       </Modal>
 
+      <Modal open={editFuel !== null} onClose={() => setEditFuel(null)} title={editFuel === "new" ? "Novo consumo" : "Editar consumo"} wide>
+        {editFuel !== null && <FuelForm initial={editFuel === "new" ? null : editFuel} onDone={() => setEditFuel(null)} />}
+      </Modal>
+
       <Modal open={docsFor !== null} onClose={() => setDocsFor(null)} title={"Documentos — " + (docsFor?.label ?? "")} wide>
         {docsFor && (
           <div className="space-y-4">
@@ -1246,7 +1579,9 @@ export default function FrotaPage() {
                 ? vlist.find((v) => v.id === docsFor.id)?.documents
                 : docsFor.kind === "card"
                   ? clist.find((c) => c.id === docsFor.id)?.documents
-                  : docsAll.filter((d) => d.maintenanceId === docsFor.id)) as unknown as Doc[] ?? []}
+                  : docsFor.kind === "fuel"
+                    ? docsAll.filter((d) => d.entryId === docsFor.id)
+                    : docsAll.filter((d) => d.maintenanceId === docsFor.id)) as unknown as Doc[] ?? []}
               onRemove={(id) => removeDoc.mutate({ id })}
             />
             {canEdit && (
@@ -1256,6 +1591,7 @@ export default function FrotaPage() {
                 onClick={() => {
                   if (docsFor.kind === "vehicle") setUploadFor({ vehicleId: docsFor.id, label: docsFor.label });
                   else if (docsFor.kind === "card") setUploadFor({ cardId: docsFor.id, label: docsFor.label });
+                  else if (docsFor.kind === "fuel") setUploadFor({ entryId: docsFor.id, label: docsFor.label });
                   else setUploadFor({ maintenanceId: docsFor.id, label: docsFor.label });
                   setDocsFor(null);
                 }}
@@ -1268,7 +1604,7 @@ export default function FrotaPage() {
       </Modal>
 
       <Modal open={uploadFor !== null} onClose={() => setUploadFor(null)} title={"Anexar documento — " + (uploadFor?.label ?? "")}>
-        {uploadFor && <UploadForm vehicleId={uploadFor.vehicleId} cardId={uploadFor.cardId} maintenanceId={uploadFor.maintenanceId} onDone={() => setUploadFor(null)} />}
+        {uploadFor && <UploadForm vehicleId={uploadFor.vehicleId} cardId={uploadFor.cardId} maintenanceId={uploadFor.maintenanceId} entryId={uploadFor.entryId} onDone={() => setUploadFor(null)} />}
       </Modal>
     </>
   );
