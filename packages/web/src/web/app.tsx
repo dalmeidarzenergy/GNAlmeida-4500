@@ -43,6 +43,7 @@ const SimuladorMedemPage = lazy(() => import("./pages/simulador-medem"));
 const CompletarIbanPage = lazy(() => import("./pages/completar-iban"));
 const PropostasPage = lazy(() => import("./pages/propostas"));
 const EmpresaPage = lazy(() => import("./pages/empresa"));
+const FrotaPage = lazy(() => import("./pages/frota"));
 
 const routes: [string, React.ComponentType][] = [
   ["/agenda", AgendaPage],
@@ -59,6 +60,7 @@ const routes: [string, React.ComponentType][] = [
   ["/regras", RegrasPage],
   ["/incentivos", IncentivosPage],
   ["/empresa", EmpresaPage],
+  ["/frota", FrotaPage],
   ["/clientes", ClientsPage],
   ["/vendas/importar", SalesImportPage],
   ["/vendas", SalesPage],
