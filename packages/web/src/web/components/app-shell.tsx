@@ -86,6 +86,7 @@ const NAV: NavGroup[] = [
     icon: Landmark,
     items: [
       { to: "/empresa", key: "empresa", label: "Gestão de Empresa", icon: Landmark },
+      { to: "/centro-custos", key: "empresa", label: "Centro de Custos", icon: Wallet },
       { to: "/frota", key: "frota", label: "Frota", icon: CarFront },
     ],
   },

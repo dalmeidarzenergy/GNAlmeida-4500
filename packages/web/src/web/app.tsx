@@ -43,6 +43,7 @@ const SimuladorMedemPage = lazy(() => import("./pages/simulador-medem"));
 const CompletarIbanPage = lazy(() => import("./pages/completar-iban"));
 const PropostasPage = lazy(() => import("./pages/propostas"));
 const EmpresaPage = lazy(() => import("./pages/empresa"));
+const CentroCustosPage = lazy(() => import("./pages/centro-custos"));
 const FrotaPage = lazy(() => import("./pages/frota"));
 
 const routes: [string, React.ComponentType][] = [
@@ -60,6 +61,7 @@ const routes: [string, React.ComponentType][] = [
   ["/regras", RegrasPage],
   ["/incentivos", IncentivosPage],
   ["/empresa", EmpresaPage],
+  ["/centro-custos", CentroCustosPage],
   ["/frota", FrotaPage],
   ["/clientes", ClientsPage],
   ["/vendas/importar", SalesImportPage],
