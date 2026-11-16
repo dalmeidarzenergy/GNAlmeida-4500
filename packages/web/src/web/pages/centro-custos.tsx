@@ -113,6 +113,7 @@ export default function CentroCustosPage() {
   const finance = useCompanyFinance(month);
   const data = finance.data;
   const [openTable, setOpenTable] = useState(false);
+  const tables = useCommissionTables();
 
   const f = data?.forecast;
   const fin = data?.final;
@@ -121,6 +122,10 @@ export default function CentroCustosPage() {
   const lucro = data?.profit;
 
   const loading = finance.isLoading && !data;
+
+  // Tabela aplicada sem valores preenchidos: sem escalões nao ha comissoes nenhumas.
+  const appliedTable = (tables.data ?? []).find((t) => t.id === data?.companyTable?.id);
+  const semValores = !!appliedTable && appliedTable.clientRows.every((r) => !r.luz && !r.gas && !r.dd && !r.fe && !r.pel);
 
   return (
     <>
@@ -167,7 +172,7 @@ export default function CentroCustosPage() {
 
       {data?.companyTable ? (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-2">
-          <Pill tone="volt">Tabela Comissão</Pill>
+          <Pill tone="volt">{data.companyTable.isDefault ? "Tabela Empresa" : "Tabela Comissão"}</Pill>
           <span>
             A previsão e o auto final usam a tabela <span className="font-semibold text-ink">{data.companyTable.name}</span> para todos os comerciais. O escalão sobe com o
             total de vendas da empresa no mês.
@@ -176,9 +181,27 @@ export default function CentroCustosPage() {
             mudar
           </button>
         </div>
+      ) : (
+        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-3">
+          <Pill tone="muted">Sem tabela da empresa</Pill>
+          <span>Cria a Tabela Empresa em Tabelas Comissionais para as vendas passarem a ter valores na previsão e no auto final.</span>
+          <Link to="/tabelas-comissionais" className="text-volt underline underline-offset-2 hover:no-underline">
+            Tabelas Comissionais
+          </Link>
+        </div>
+      )}
+
+      {semValores ? (
+        <div className="mb-4 rounded-[10px] border border-amber/30 bg-amber/[0.06] px-3 py-2 text-[12px] text-ink-2">
+          A tabela <span className="font-semibold text-ink">{appliedTable?.name}</span> ainda não tem valores — enquanto os escalões estiverem vazios, a previsão e o auto
+          final ficam a 0 €.{" "}
+          <Link to="/tabelas-comissionais" className="text-amber underline underline-offset-2 hover:no-underline">
+            Preencher escalões
+          </Link>
+        </div>
       ) : null}
 
-      <TabelaComissaoModal open={openTable} onClose={() => setOpenTable(false)} currentId={data?.companyTable?.id ?? null} month={month} />
+      <TabelaComissaoModal open={openTable} onClose={() => setOpenTable(false)} current={data?.companyTable ? { id: data.companyTable.id, isDefault: !!data.companyTable.isDefault } : null} month={month} />
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -208,13 +231,18 @@ export default function CentroCustosPage() {
  * As vendas de todos os comerciais passam a valer os valores desta tabela — é a
  * mesma tabela que se preenche em Tabelas Comissionais.
  */
-function TabelaComissaoModal({ open, onClose, currentId, month }: { open: boolean; onClose: () => void; currentId: number | null; month: string }) {
+function TabelaComissaoModal({ open, onClose, current, month }: { open: boolean; onClose: () => void; current: { id: number; isDefault: boolean } | null; month: string }) {
+  const currentId = current?.id ?? null;
   const tables = useCommissionTables();
   const save = useSetCompanyCommissionTable();
   const [error, setError] = useState<string | null>(null);
 
-  // Só as tabelas de vendas (RES+BTN NEG) pagam comissões; a Tabela Empresa é faturação interna.
-  const options = (tables.data ?? []).filter((t) => t.regime === "RES+BTN NEG" && t.group !== "empresa");
+  // Valem as tabelas de vendas: a Tabela Empresa (grupo "empresa", é a que paga a
+  // própria empresa) e as tabelas RES+BTN NEG dos restantes grupos. A Tabela Empresa
+  // aparece primeiro, por ser a escolha natural.
+  const options = (tables.data ?? [])
+    .filter((t) => t.regime === "RES+BTN NEG" || (t.group === "empresa" && !["MEDEM", "SOLAR", "CE"].includes(t.regime)))
+    .sort((a, b) => (a.group === b.group ? 0 : a.group === "empresa" ? -1 : b.group === "empresa" ? 1 : 0));
 
   const choose = (tableId: number | null) => {
     setError(null);
@@ -230,9 +258,9 @@ function TabelaComissaoModal({ open, onClose, currentId, month }: { open: boolea
   return (
     <Modal open={open} onClose={onClose} title="Tabela Comissão" size="wide">
       <p className="mb-4 text-[12.5px] text-ink-2">
-        Escolhe a tabela que a empresa aplica a partir de {monthLabel(month)}. A previsão e o auto final do Centro de Custos passam a valorizar as vendas de todos os
-        comerciais por esta tabela, e o escalão sobe com o total de vendas da empresa. A escolha mantém-se até ser mudada e não altera a Previsão de Pagamentos nem o
-        Auto Iberdrola.
+        Por omissão a empresa paga-se pela <span className="font-semibold text-ink">Tabela Empresa</span> — a mesma que preenches em Tabelas Comissionais. Se escolheres
+        outra, a previsão e o auto final do Centro de Custos passam a valorizar as vendas de todos os comerciais por essa tabela, e o escalão sobe com o total de vendas da
+        empresa. A escolha mantém-se até ser mudada e não altera a Previsão de Pagamentos nem o Auto Iberdrola.
       </p>
 
       {!options.length ? (
@@ -257,6 +285,7 @@ function TabelaComissaoModal({ open, onClose, currentId, month }: { open: boolea
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{t.name}</span>
                   <span className="block truncate text-[11.5px] text-ink-3">
+                    {t.group === "empresa" ? "tabela da empresa · " : ""}
                     {t.active ? "ativa" : "inativa"} · {t.clientRows.length} escalão(ões)
                     {t.blockedSales ? ` · ${t.blockedSales} venda(s) bloqueada(s)` : ""}
                     {t.description ? ` · ${t.description}` : ""}
@@ -272,9 +301,9 @@ function TabelaComissaoModal({ open, onClose, currentId, month }: { open: boolea
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
         <div className="text-[12.5px] text-rose">{error}</div>
         <div className="flex gap-2">
-          {currentId != null && (
+          {currentId != null && !current?.isDefault && (
             <button type="button" className="btn btn-ghost" onClick={() => choose(null)} disabled={save.isPending}>
-              Cada comercial com a sua tabela
+              Usar a Tabela Empresa
             </button>
           )}
           <button type="button" className="btn btn-primary" onClick={onClose}>

@@ -39,21 +39,35 @@ const expenseInput = z.object({
 /** Chave da definição com a tabela comissional que a empresa aplica. */
 const COMPANY_TABLE_KEY = "commission_table";
 
+/** Uma tabela pode valorizar as vendas da empresa: RES+BTN NEG, ou a Tabela Empresa. */
+function isSalesTable(t: { group: string; regime: string }) {
+  return t.regime === "RES+BTN NEG" || (t.group === "empresa" && !["MEDEM", "SOLAR", "CE"].includes(t.regime));
+}
+
 /**
- * Tabela Comissao da empresa: uma só para a empresa toda, escolhida no Centro de
- * Custos e usada até ser mudada. Só contam tabelas de vendas (RES+BTN NEG); a Tabela
- * Empresa (faturação interna) e as tabelas apagadas valem como "sem tabela".
+ * Tabela Comissao da empresa: uma só para a empresa toda, usada até ser mudada no
+ * Centro de Custos. Por omissão é a Tabela Empresa (o grupo "empresa" das Tabelas
+ * Comissionais, que é a tabela que paga a própria empresa); se não houver nenhuma,
+ * a empresa fica sem tabela e cada comercial usa a sua.
  */
-async function companyCommissionTable(): Promise<{ id: number; name: string; regime: string } | null> {
+async function companyCommissionTable(): Promise<{ id: number; name: string; regime: string; isDefault: boolean } | null> {
   const [row] = await db.select().from(companySettings).where(eq(companySettings.key, COMPANY_TABLE_KEY));
   const id = row?.value ? Number(row.value) : NaN;
-  if (!Number.isFinite(id) || id <= 0) return null;
-  const [t] = await db
-    .select({ id: commissionTables.id, name: commissionTables.name, regime: commissionTables.regime, active: commissionTables.active })
+  if (Number.isFinite(id) && id > 0) {
+    const [t] = await db
+      .select({ id: commissionTables.id, name: commissionTables.name, regime: commissionTables.regime, group: commissionTables.group })
+      .from(commissionTables)
+      .where(eq(commissionTables.id, id));
+    if (t && isSalesTable(t)) return { id: t.id, name: t.name, regime: t.regime, isDefault: false };
+  }
+  // Sem escolha guardada: a Tabela Empresa ativa (a primeira criada).
+  const empresas = await db
+    .select({ id: commissionTables.id, name: commissionTables.name, regime: commissionTables.regime, group: commissionTables.group, active: commissionTables.active })
     .from(commissionTables)
-    .where(eq(commissionTables.id, id));
-  if (!t || t.regime !== "RES+BTN NEG") return null;
-  return { id: t.id, name: t.name, regime: t.regime };
+    .where(eq(commissionTables.group, "empresa"))
+    .orderBy(asc(commissionTables.id));
+  const empresa = empresas.find((t) => t.active && isSalesTable(t)) ?? empresas.find((t) => isSalesTable(t)) ?? null;
+  return empresa ? { id: empresa.id, name: empresa.name, regime: empresa.regime, isDefault: true } : null;
 }
 
 /** Guarda (ou limpa, com null) a tabela comissional aplicada pela empresa. */
@@ -64,8 +78,7 @@ async function saveCompanyCommissionTable(id: number | null) {
   }
   const [t] = await db.select({ id: commissionTables.id, regime: commissionTables.regime, group: commissionTables.group }).from(commissionTables).where(eq(commissionTables.id, id));
   if (!t) throw new ORPCError("BAD_REQUEST", { message: "A tabela escolhida não existe." });
-  if (t.group === "empresa") throw new ORPCError("BAD_REQUEST", { message: "A Tabela Empresa é de faturação interna e não paga comissões." });
-  if (t.regime !== "RES+BTN NEG") throw new ORPCError("BAD_REQUEST", { message: "Só as tabelas de vendas (RES+BTN NEG) podem ser aplicadas à empresa." });
+  if (!isSalesTable(t)) throw new ORPCError("BAD_REQUEST", { message: "Só as tabelas de vendas (RES+BTN NEG) podem ser aplicadas à empresa." });
   const [existing] = await db.select().from(companySettings).where(eq(companySettings.key, COMPANY_TABLE_KEY));
   if (existing) {
     await db.update(companySettings).set({ value: String(id), updatedAt: new Date() }).where(eq(companySettings.key, COMPANY_TABLE_KEY));
@@ -87,8 +100,9 @@ async function manualExpenses(m: string) {
  * previsão, auto final, despesas, comissões e o lucro que sai daí.
  */
 async function companyFinance(m: string) {
-  // Previsão e auto final são valorizados pela tabela comissional da empresa, para
-  // todos os comerciais. Sem tabela escolhida, cada um usa a sua (como em Pagamentos).
+  // Previsão e auto final são valorizados pela tabela comissional da empresa (por
+  // omissão, a Tabela Empresa), para todos os comerciais. Só sem tabela nenhuma é que
+  // cada um usa a sua, como em Pagamentos.
   const applied = await companyCommissionTable();
   const companyTableId = applied?.id ?? null;
 
@@ -115,13 +129,15 @@ async function companyFinance(m: string) {
         sales: p.totalSales,
         gross: p.gross,
         chargeback: p.chargeback,
-        due: p.due,
+        // Nunca "a pagar" negativo: sem comissão apurada não há nada a receber
+        // (as penalizações de 10 € por venda só descontam de valores reais).
+        due: Math.max(0, round2(p.due)),
       }))
       .sort((a, b) => b.gross - a.gross),
     totals: {
       gross: round2(breakdown.totals.gross),
       chargeback: round2(breakdown.totals.chargeback),
-      due: round2(breakdown.totals.due),
+      due: round2(breakdown.people.reduce((s, p) => s + Math.max(0, p.due), 0)),
       sales: breakdown.people.reduce((s, p) => s + p.totalSales, 0),
       people: breakdown.people.length,
     },

@@ -341,7 +341,11 @@ async function buildCalc(
   // nao mudam.
   const companyTable =
     opts.companyTableId != null
-      ? (cTables.find((t) => t.id === opts.companyTableId && t.group !== "empresa" && t.regime === "RES+BTN NEG") ?? null)
+      ? (cTables.find(
+          (t) =>
+            t.id === opts.companyTableId &&
+            (t.regime === "RES+BTN NEG" || (t.group === "empresa" && !["MEDEM", "SOLAR", "CE"].includes(t.regime))),
+        ) ?? null)
       : null;
   const companyBtnTotal = companyTable ? autoEntries.filter((e) => e.hasBTN).length : 0;
 

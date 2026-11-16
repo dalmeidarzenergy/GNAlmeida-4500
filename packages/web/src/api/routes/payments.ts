@@ -415,7 +415,11 @@ export async function buildBreakdown(
   // Sem ela, cada comercial usa a sua tabela — a Previsao de Pagamentos nao muda.
   const companyTable =
     opts.companyTableId != null
-      ? (cTables.find((t) => t.id === opts.companyTableId && t.group !== "empresa" && t.regime === "RES+BTN NEG") ?? null)
+      ? (cTables.find(
+          (t) =>
+            t.id === opts.companyTableId &&
+            (t.regime === "RES+BTN NEG" || (t.group === "empresa" && !["MEDEM", "SOLAR", "CE"].includes(t.regime))),
+        ) ?? null)
       : null;
   // Contado antes do ciclo: o agregado de equipa altera as listas por comercial.
   const companyBandSales = companyTable

@@ -139,6 +139,42 @@ if (existsSync(dbPath)) {
       value TEXT,
       updated_at INTEGER NOT NULL
     )`);
+    // Tabela Empresa: a tabela comissional que paga a propria empresa (Centro de Custos).
+    // Se ainda nao existir nenhuma, cria-se vazia — o utilizador preenche os escaloes
+    // em Tabelas Comissionais > Tabela Empresa. Nunca mexe em tabelas existentes.
+    if (has("commission_tables") && has("commission_rows")) {
+      const empresa = db.query(`SELECT id FROM commission_tables WHERE "group" = 'empresa' LIMIT 1`).get() as { id: number } | null;
+      if (!empresa) {
+        const now = Math.floor(Date.now() / 1000);
+        db.query(
+          `INSERT INTO commission_tables (name, description, color, active, blocked_sales, "group", regime, is_base, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          "Tabela Empresa",
+          "Tabela que paga a empresa: valoriza as vendas de todos os comerciais no Centro de Custos.",
+          "#34d399",
+          1,
+          0,
+          "empresa",
+          "RES+BTN NEG",
+          0,
+          now,
+        );
+        const created = db.query(`SELECT last_insert_rowid() AS id`).get() as { id: number };
+        const faixas: [number, number | null][] = [
+          [0, 10],
+          [11, 25],
+          [26, null],
+        ];
+        faixas.forEach(([min, max], i) => {
+          db.query(
+            `INSERT INTO commission_rows (table_id, kind, min, max, commission, luz, gas, dd, fe, pel, position, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(created.id, "clients", min, max, null, null, null, null, null, null, i, now);
+        });
+        console.log("Tabela Empresa criada (vazia) para o Centro de Custos.");
+      }
+    }
     // Consumos dos cartoes frota (abastecimentos, carregamentos, portagens).
     db.run(`CREATE TABLE IF NOT EXISTS fuel_entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
