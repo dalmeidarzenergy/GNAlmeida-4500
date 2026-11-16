@@ -247,7 +247,8 @@ function AssignModal({ userId, userName, onClose }: { userId: string; userName: 
 const GROUP_KEYS = [...new Set(MODULES.map((m) => m.group))];
 
 /** Grelha de permissões: cada área com interruptores independentes de ver/editar. */
-function PermissionsEditor({ value, onChange }: { value: Permissions; onChange: (p: Permissions) => void }) {
+function PermissionsEditor({ value, onChange, cols = 2 }: { value: Permissions; onChange: (p: Permissions) => void; cols?: 2 | 3 }) {
+  const grid = cols === 3 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2";
   const set = (key: keyof Permissions, field: "view" | "edit", v: boolean) => {
     onChange({ ...value, [key]: { ...value[key], [field]: v } });
   };
@@ -256,10 +257,10 @@ function PermissionsEditor({ value, onChange }: { value: Permissions; onChange: 
       {GROUP_KEYS.map((g) => (
         <div key={g}>
           <div className="label-mono mb-2">{g}</div>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className={`grid gap-2 ${grid}`}>
             {MODULES.filter((m) => m.group === g).map((m) => (
               <div key={m.key} className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2">
-                <span className="text-[13px]">{m.label}</span>
+                <span className="min-w-0 leading-snug text-[13px]">{m.label}</span>
                 <div className="flex items-center gap-3">
                   <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
                     <input aria-label={`${m.label} — ver`} type="checkbox" checked={value[m.key]?.view ?? false} onChange={(e) => set(m.key, "view", e.target.checked)} /> Ver
@@ -286,7 +287,7 @@ function PermissionModal({ u, onClose }: { u: U; onClose: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const changeRole = (r: Role) => { setRole(r); setPerms(defaultsForRole(r)); };
   return (
-    <Modal open onClose={onClose} title={`Permissões · ${u.name ?? u.email}`}>
+    <Modal open onClose={onClose} size="xl" title={`Permissões · ${u.name ?? u.email}`}>
       <form
         className="flex flex-col gap-4"
         onSubmit={async (e) => {
@@ -299,22 +300,24 @@ function PermissionModal({ u, onClose }: { u: U; onClose: () => void }) {
           }
         }}
       >
-        <Field label="Perfil (ponto de partida)">
-          <select className="input" value={role} onChange={(e) => changeRole(e.target.value as Role)}>
-            {Object.entries(ROLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <span className="mt-1 block text-[11.5px] text-ink-3">Alterar o perfil repõe as permissões padrão; ajuste depois cada área.</span>
-        </Field>
-        <div className="flex max-h-[46vh] flex-col overflow-y-auto rounded-[10px] border border-line p-3">
-          <PermissionsEditor value={perms} onChange={setPerms} />
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,260px)_1fr]">
+          <Field label="Perfil (ponto de partida)">
+            <select className="input" value={role} onChange={(e) => changeRole(e.target.value as Role)}>
+              {Object.entries(ROLE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <span className="mt-1 block text-[11.5px] text-ink-3">Alterar o perfil repõe as permissões padrão; ajuste depois cada área.</span>
+          </Field>
+          <div className="flex flex-wrap items-end gap-2">
+            <button type="button" className="btn btn-ghost" onClick={() => setPerms(defaultsForRole(role))}>Restaurar padrão do perfil</button>
+          </div>
+        </div>
+        <div className="rounded-[10px] border border-line p-3">
+          <PermissionsEditor value={perms} onChange={setPerms} cols={3} />
         </div>
         {err && <div className="text-[12.5px] text-danger">{err}</div>}
-        <div className="flex items-center justify-between gap-2">
-          <button type="button" className="btn btn-ghost" onClick={() => setPerms(defaultsForRole(role))}>Restaurar padrão</button>
-          <div className="flex gap-2">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={update.isPending}>{update.isPending ? <Loader2 size={15} className="animate-spin" /> : "Guardar"}</button>
-          </div>
+        <div className="flex items-center justify-end gap-2">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn btn-primary" disabled={update.isPending}>{update.isPending ? <Loader2 size={15} className="animate-spin" /> : "Guardar permissões"}</button>
         </div>
       </form>
     </Modal>
@@ -336,7 +339,7 @@ function CreateModal({ onClose, canCreatePrivileged }: { onClose: () => void; ca
   const roles = Object.entries(ROLE_LABEL).filter(([k]) => canCreatePrivileged || (k !== "admin" && k !== "diretor"));
   const changeRole = (r: Role) => { setRole(r); setPerms(defaultsForRole(r)); };
   return (
-    <Modal open onClose={onClose} title="Novo utilizador">
+    <Modal open onClose={onClose} size="wide" title="Novo utilizador">
       <form className="flex flex-col gap-4" onSubmit={async (e) => {
         e.preventDefault();
         setErr(null);

@@ -60,7 +60,11 @@ export function Avatar({ name, color, size = 32, src }: { name: string; color?: 
   );
 }
 
-export function Modal({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: string; children: ReactNode; wide?: boolean }) {
+const MODAL_SIZES = { md: "max-w-lg", wide: "max-w-3xl", xl: "max-w-[min(1180px,96vw)]" } as const;
+
+/** Modal base. `size="xl"` da um painel largo (formularios com grelhas grandes, ex.: permissoes). */
+export function Modal({ open, onClose, title, children, wide, size }: { open: boolean; onClose: () => void; title: string; children: ReactNode; wide?: boolean; size?: "md" | "wide" | "xl" }) {
+  const box = MODAL_SIZES[size ?? (wide ? "wide" : "md")];
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -75,11 +79,11 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[8vh] animate-in fade-in duration-150">
+    <div className={`fixed inset-0 z-50 flex items-start justify-center p-4 animate-in fade-in duration-150 ${size === "xl" ? "pt-[4vh]" : "pt-[8vh]"}`}>
       <button type="button" aria-label="Fechar" tabIndex={-1} className="fixed inset-0 cursor-default backdrop-blur-sm" style={{ background: "var(--overlay-bg)" }} onClick={onClose} />
       <section
         aria-label={title}
-        className={`card relative flex max-h-[85vh] w-full flex-col ${wide ? "max-w-3xl" : "max-w-lg"} border-line bg-surface p-0 shadow-2xl animate-in zoom-in-95 duration-150`}
+        className={`card relative flex w-full flex-col ${box} ${size === "xl" ? "max-h-[92vh]" : "max-h-[85vh]"} border-line bg-surface p-0 shadow-2xl animate-in zoom-in-95 duration-150`}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-line px-6 py-4">
           <h3 className="text-[17px] font-semibold">{title}</h3>
@@ -87,7 +91,7 @@ export function Modal({ open, onClose, title, children, wide }: { open: boolean;
             <X size={16} />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6 text-left">{children}</div>
       </section>
     </div>
   );
