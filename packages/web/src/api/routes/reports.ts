@@ -1,9 +1,10 @@
 import { SALE_COUNTED, SERVICE_LABELS } from "../shared/client-forms";
 import { z } from "zod";
 import { and, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
-import { authed } from "../middleware/auth";
+import { authed, requireView } from "../middleware/auth";
 import { db } from "../database";
-import { absences, candidates, clients, departments, employees, jobOpenings, sales, saleStatusHistory, salesTargets, teamMemberships, teamPeriods, teams } from "../database/schema";
+import { absences, advances, candidates, clients, departments, employees, jobOpenings, payments, sales, saleStatusHistory, salesTargets, teamMemberships, teamPeriods, teams } from "../database/schema";
+import { fleetCards, fuelEntries, vehicleMaintenance, vehicles } from "../database/fleet-schema";
 import { localWithPhotos } from "../lib/s3";
 import { activeInMonth } from "../shared/hierarchy";
 import { monthWorkdays } from "../shared/workdays";
@@ -631,6 +632,171 @@ async function targetWhere(scope: SellerScope, month: string) {
   return ids.length ? inArray(salesTargets.sellerId, ids) : sql`0`;
 }
 
+/**
+ * Centro de custos: quanto custa cada departamento num mes.
+ *
+ * Quatro rubricas, todas do mes escolhido:
+ *  - massa salarial  — salario base das pessoas ativas nesse mes (pela admissao/saida)
+ *  - pagamentos      — comissoes e outros pagamentos com mes de referencia igual
+ *  - adiantamentos   — adiantamentos feitos no mes (data do adiantamento)
+ *  - frota           — consumos dos cartoes + manutencoes, atribuidos ao funcionario
+ *                      ligado ao consumo/cartao/viatura
+ * O total compara-se com o do mes anterior. Custos sem departamento caem em
+ * "Sem departamento" (nao desaparecem do total).
+ */
+const COST_BUCKET = "Sem departamento";
+
+function emptyCost() {
+  return { count: 0, payroll: 0, commissions: 0, advances: 0, fleet: 0 };
+}
+
+async function costCentersReport(month: string) {
+  const prev = shiftMonthKey(month, -1);
+  const from = `${prev}-01`;
+  const to = `${month}-31`;
+
+  const [emps, deps] = await Promise.all([
+    db
+      .select({
+        id: employees.id,
+        status: employees.status,
+        salary: employees.salary,
+        hireDate: employees.hireDate,
+        terminationDate: employees.terminationDate,
+        departmentId: employees.departmentId,
+      })
+      .from(employees),
+    db.select({ id: departments.id, name: departments.name, color: departments.color }).from(departments),
+  ]);
+  const deptOf = new Map<number, number | null>(emps.map((e) => [e.id, e.departmentId ?? null]));
+
+  const [pays, advs, entries, maint, cards, cars] = await Promise.all([
+    db.select({ employeeId: payments.employeeId, month: payments.month, kind: payments.kind, amount: payments.amount }).from(payments),
+    db.select({ employeeId: advances.employeeId, date: advances.date, amount: advances.amount }).from(advances),
+    db
+      .select({ employeeId: fuelEntries.employeeId, cardId: fuelEntries.cardId, vehicleId: fuelEntries.vehicleId, spentOn: fuelEntries.spentOn, amount: fuelEntries.amount })
+      .from(fuelEntries),
+    db.select({ vehicleId: vehicleMaintenance.vehicleId, scheduledOn: vehicleMaintenance.scheduledOn, doneOn: vehicleMaintenance.doneOn, cost: vehicleMaintenance.cost }).from(vehicleMaintenance),
+    db.select({ id: fleetCards.id, employeeId: fleetCards.employeeId }).from(fleetCards),
+    db.select({ id: vehicles.id, employeeId: vehicles.employeeId }).from(vehicles),
+  ]);
+  const cardOwner = new Map(cards.map((c) => [c.id, c.employeeId ?? null]));
+  const carOwner = new Map(cars.map((v) => [v.id, v.employeeId ?? null]));
+
+  /** Custo de frota de um consumo/manutencao -> id do funcionario responsavel. */
+  const fleetOwner = (employeeId: number | null, cardId: number | null, vehicleId: number | null) => {
+    if (employeeId != null) return employeeId;
+    if (cardId != null) {
+      const dono = cardOwner.get(cardId);
+      if (dono != null) return dono;
+    }
+    if (vehicleId != null) return carOwner.get(vehicleId) ?? null;
+    return null;
+  };
+
+  const buckets = new Map<string, ReturnType<typeof emptyCost> & { month: string }>();
+  const key = (deptId: number | null | undefined, ym: string) => {
+    const name = deps.find((d) => d.id === deptId)?.name ?? COST_BUCKET;
+    return `${ym}|${name}`;
+  };
+  const bucket = (deptId: number | null | undefined, ym: string) => {
+    const k = key(deptId, ym);
+    let b = buckets.get(k);
+    if (!b) {
+      b = { ...emptyCost(), month: ym };
+      buckets.set(k, b);
+    }
+    return b;
+  };
+
+  // Massa salarial: quem esteve ativo no mes (e no mes anterior, para a comparacao).
+  for (const ym of [month, prev]) {
+    for (const e of emps) {
+      if (!activeInMonth(e, ym)) continue;
+      const b = bucket(e.departmentId, ym);
+      b.count += 1;
+      b.payroll += e.salary ?? 0;
+    }
+  }
+
+  for (const p of pays) {
+    if (p.month !== month && p.month !== prev) continue;
+    bucket(deptOf.get(p.employeeId), p.month).commissions += p.amount ?? 0;
+  }
+
+  for (const a of advs) {
+    const ym = (a.date ?? "").slice(0, 7);
+    if (ym !== month && ym !== prev) continue;
+    bucket(deptOf.get(a.employeeId), ym).advances += a.amount ?? 0;
+  }
+
+  for (const f of entries) {
+    if (!f.spentOn || f.spentOn < from || f.spentOn > to) continue;
+    const ym = f.spentOn.slice(0, 7);
+    if (ym !== month && ym !== prev) continue;
+    bucket(deptOf.get(fleetOwner(f.employeeId ?? null, f.cardId ?? null, f.vehicleId ?? null) ?? -1), ym).fleet += f.amount ?? 0;
+  }
+
+  for (const m of maint) {
+    const day = m.doneOn ?? m.scheduledOn;
+    if (!day || day < from || day > to) continue;
+    const ym = day.slice(0, 7);
+    if (ym !== month && ym !== prev) continue;
+    bucket(deptOf.get(carOwner.get(m.vehicleId) ?? -1), ym).fleet += m.cost ?? 0;
+  }
+
+  const total = (b: ReturnType<typeof emptyCost>) => b.payroll + b.commissions + b.advances + b.fleet;
+
+  const deptNames = [...new Set([...deps.map((d) => d.name), COST_BUCKET])];
+
+  const rows = deptNames
+    .map((name) => {
+      const now = buckets.get(`${month}|${name}`) ?? emptyCost();
+      const before = buckets.get(`${prev}|${name}`) ?? emptyCost();
+      const nowTotal = total(now);
+      const prevTotal = total(before);
+      const color = deps.find((d) => d.name === name)?.color ?? "#6b7280";
+      return {
+        name,
+        color,
+        count: now.count,
+        payroll: now.payroll,
+        commissions: now.commissions,
+        advances: now.advances,
+        fleet: now.fleet,
+        total: nowTotal,
+        previous: prevTotal,
+        delta: nowTotal - prevTotal,
+        deltaPct: prevTotal > 0 ? (nowTotal - prevTotal) / prevTotal : null,
+        isBucket: name === COST_BUCKET,
+      };
+    })
+    // Centros sem nada no mês e sem histórico não dizem nada; o resto fica, mesmo a zero.
+    .filter((r) => r.count > 0 || r.total > 0 || r.previous > 0)
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  const sum = (k: "count" | "payroll" | "commissions" | "advances" | "fleet" | "total" | "previous") => rows.reduce((s2, r) => s2 + r[k], 0);
+  const current = sum("total");
+  const previous = sum("previous");
+
+  return {
+    month,
+    previousMonth: prev,
+    rows,
+    totals: {
+      count: sum("count"),
+      payroll: sum("payroll"),
+      commissions: sum("commissions"),
+      advances: sum("advances"),
+      fleet: sum("fleet"),
+      total: current,
+      previous,
+      delta: current - previous,
+      deltaPct: previous > 0 ? (current - previous) / previous : null,
+    },
+  };
+}
+
 export const reports = {
   evolution: authed
     .input(z.object({ granularity: z.enum(["dia", "semana", "mes", "todos"]), month: z.string().regex(/^\d{4}-\d{2}$/), sellerId: z.number().nullable().optional(), teamId: z.number().nullable().optional(), services: servicesInput }))
@@ -689,6 +855,9 @@ export const reports = {
     if (context.role === "vendedor") return null;
     return hrReport(input?.month);
   }),
+  costCenters: requireView("empresa")
+    .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
+    .handler(async ({ input }) => costCentersReport(input.month)),
   compare: authed
     .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/).optional(), months: z.number().int().min(0).max(240).optional(), sellerId: z.number().nullable().optional(), teamId: z.number().nullable().optional(), services: servicesInput }))
     .handler(async ({ input, context }) => {

@@ -18,6 +18,9 @@ export const useSalesReport = (
     }),
   );
 export const useHrReport = (month: string) => useQuery(orpc.reports.hr.queryOptions({ input: { month }, placeholderData: (prev) => prev }));
+/** Custo por centro de custo (departamento) no mês escolhido. */
+export const useCostCenters = (month: string) =>
+  useQuery(orpc.reports.costCenters.queryOptions({ input: { month }, placeholderData: (prev) => prev }));
 export type Granularity = "dia" | "semana" | "mes" | "todos";
 export const useEvolution = (granularity: Granularity, month: string, sellerId: number | null = null, services?: string[], teamId: number | null = null) =>
   useQuery(orpc.reports.evolution.queryOptions({ input: { granularity, month, sellerId, teamId, services }, placeholderData: (prev) => prev }));

@@ -15,11 +15,13 @@
  */
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Landmark, Users, UsersRound, Contact, Plug, ArrowUpRight, Search, Sparkles } from "lucide-react";
+import { Landmark, Users, UsersRound, Contact, Plug, ArrowUpRight, Search, Sparkles, Wallet, TrendingUp, TrendingDown, Fuel } from "lucide-react";
 import { PageHeader, Stat, Empty, Tabs } from "../components/ui/kit";
 import { useMe } from "../queries/me";
 import { useDepartments, usePositions, useTeams, useEmployees } from "../queries/hr";
 import { useCustomSuppliers } from "../queries/suppliers";
+import { useCostCenters } from "../queries/reports";
+import { fmtEur } from "../lib/format";
 
 /** Meses de período de entrada: quem foi admitido nos últimos N meses.*/
 const ENTRY_MONTHS = 3;
@@ -88,11 +90,12 @@ export default function EmpresaPage() {
 
   const months = useMemo(() => monthOptions(24), []);
   const [month, setMonth] = useState(() => todayLisbon().slice(0, 7));
-  const [area, setArea] = useState<"pessoas" | "equipas" | "estrutura">("pessoas");
+  const [area, setArea] = useState<"pessoas" | "equipas" | "estrutura" | "custos">("pessoas");
   const [personState, setPersonState] = useState<PersonState | "todos">("ativo");
   const [teamState, setTeamState] = useState<TeamState | "todas">("ativa");
   const [deptState, setDeptState] = useState<DeptState | "todos">("ativo");
   const [q, setQ] = useState("");
+  const costs = useCostCenters(month);
 
   const today = todayLisbon();
   const monthLast = monthEnd(month);
@@ -169,6 +172,19 @@ export default function EmpresaPage() {
     });
   }, [deps.data, emps.data, month]);
 
+  /* ------------------------------------------------------------ centro de custos */
+
+  const costData = costs.data;
+  const costRows = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    const rows = costData?.rows ?? [];
+    return s ? rows.filter((c) => c.name.toLowerCase().includes(s)) : rows;
+  }, [costData, q]);
+
+  const costTotals = costData?.totals ?? { count: 0, payroll: 0, commissions: 0, advances: 0, fleet: 0, total: 0, previous: 0, delta: 0, deltaPct: null as number | null };
+  const monthBefore = costData?.previousMonth ?? monthsAgo(month, 1);
+  const costDelta = costTotals.previous > 0 || costTotals.delta !== 0 ? { delta: costTotals.delta, label: `${costTotals.delta > 0 ? "+" : ""}${fmtEur(costTotals.delta)}` } : null;
+
   const listStructure = useMemo(() => {
     const s = q.trim().toLowerCase();
     return structure.filter(
@@ -215,6 +231,7 @@ export default function EmpresaPage() {
           </select>
         </label>
 
+        {area !== "custos" && (
         <label className="flex flex-col gap-1">
           <span className="label-mono">Estado</span>
           <select
@@ -252,12 +269,18 @@ export default function EmpresaPage() {
             )}
           </select>
         </label>
+        )}
 
         <label className="flex min-w-[180px] flex-1 flex-col gap-1">
           <span className="label-mono">Procurar</span>
           <span className="relative">
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
-            <input className="input pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome, email, cargo…" />
+            <input
+              className="input pl-8"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={area === "custos" ? "Centro de custo…" : "Nome, email, cargo…"}
+            />
           </span>
         </label>
 
@@ -269,17 +292,33 @@ export default function EmpresaPage() {
               { key: "pessoas", label: "Pessoas", count: countPerson(personState) },
               { key: "equipas" as const, label: "Equipas", count: countTeam(teamState) },
               { key: "estrutura" as const, label: "Departamentos", count: countDept(deptState) },
+              { key: "custos" as const, label: "Centro de Custos", count: (costs.data?.rows ?? []).length },
             ]}
           />
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Ativos" value={ativos} sub={monthLabel(month)} icon={<Users size={15} />} delay={0} />
-        <Stat label="Em entrada" value={emEntrada} sub={`admitidos há menos de ${ENTRY_MONTHS} meses`} icon={<Sparkles size={15} />} accent="var(--sky)" delay={40} />
-        <Stat label="Suspensos" value={suspensos} sub="sem contagem para comissões" icon={<Users size={15} />} accent="var(--amber)" delay={80} />
-        <Stat label="Inativos" value={inativos} sub="já saíram da empresa" icon={<Users size={15} />} accent="var(--rose)" delay={120} />
-      </div>
+      {area === "custos" ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Stat
+            label="Total do mês"
+            value={fmtEur(costTotals.total)}
+            sub={costDelta ? `${costDelta.label} vs ${monthLabel(monthBefore)}` : "sem mês anterior para comparar"}
+            icon={<Wallet size={15} />}
+            delay={0}
+          />
+          <Stat label="Massa salarial" value={fmtEur(costTotals.payroll)} sub="salário base das pessoas no mês" icon={<Users size={15} />} accent="var(--sky)" delay={40} />
+          <Stat label="Comissões e pagamentos" value={fmtEur(costTotals.commissions)} sub={`${fmtEur(costTotals.advances)} em adiantamentos`} icon={<TrendingUp size={15} />} accent="var(--amber)" delay={80} />
+          <Stat label="Frota" value={fmtEur(costTotals.fleet)} sub="combustível, portagens e manutenções" icon={<Fuel size={15} />} accent="var(--rose)" delay={120} />
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Stat label="Ativos" value={ativos} sub={monthLabel(month)} icon={<Users size={15} />} delay={0} />
+          <Stat label="Em entrada" value={emEntrada} sub={`admitidos há menos de ${ENTRY_MONTHS} meses`} icon={<Sparkles size={15} />} accent="var(--sky)" delay={40} />
+          <Stat label="Suspensos" value={suspensos} sub="sem contagem para comissões" icon={<Users size={15} />} accent="var(--amber)" delay={80} />
+          <Stat label="Inativos" value={inativos} sub="já saíram da empresa" icon={<Users size={15} />} accent="var(--rose)" delay={120} />
+        </div>
+      )}
 
       <div className="card rise mt-6 overflow-hidden" style={{ animationDelay: "160ms" }}>
         {loading ? (
@@ -313,6 +352,78 @@ export default function EmpresaPage() {
                 ))}
               </tbody>
             </table>
+          )
+        ) : area === "custos" ? (
+          !costRows.length ? (
+            <Empty title="Sem custos neste mês" text={"Não há salários, pagamentos, adiantamentos ou custos de frota registados em " + monthLabel(month) + "."} />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-ink-3">
+                    <th className="label-mono px-4 py-3 font-normal">Centro de custo</th>
+                    <th className="label-mono px-4 py-3 text-right font-normal">Pessoas</th>
+                    <th className="label-mono px-4 py-3 text-right font-normal">Massa salarial</th>
+                    <th className="label-mono px-4 py-3 text-right font-normal">Comissões</th>
+                    <th className="label-mono px-4 py-3 text-right font-normal">Adiantamentos</th>
+                    <th className="label-mono px-4 py-3 text-right font-normal">Frota</th>
+                    <th className="label-mono px-4 py-3 text-right font-normal">Total do mês</th>
+                    <th className="label-mono px-4 py-3 text-right font-normal">vs {monthLabel(monthBefore)}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {costRows.map((c) => (
+                    <tr key={c.name} className="border-b border-line last:border-b-0 hover:bg-surface-2/60">
+                      <td className="px-4 py-2.5">
+                        <span className="inline-flex items-center gap-2 font-medium">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: c.color }} />
+                          {c.name}
+                        </span>
+                        {c.isBucket && <div className="text-[11.5px] text-ink-3">pessoas e custos sem departamento associado</div>}
+                      </td>
+                      <td className="num px-4 py-2.5 text-right text-ink-2">{c.count}</td>
+                      <td className="num px-4 py-2.5 text-right text-ink-2">{fmtEur(c.payroll)}</td>
+                      <td className="num px-4 py-2.5 text-right text-ink-2">{c.commissions ? fmtEur(c.commissions) : <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right text-ink-2">{c.advances ? fmtEur(c.advances) : <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right text-ink-2">{c.fleet ? fmtEur(c.fleet) : <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right font-semibold">{fmtEur(c.total)}</td>
+                      <td className="num px-4 py-2.5 text-right">
+                        {c.delta === 0 ? (
+                          <span className="text-ink-3">—</span>
+                        ) : (
+                          <span className={c.delta > 0 ? "text-rose" : "text-volt"}>
+                            {c.delta > 0 ? "+" : ""}
+                            {fmtEur(c.delta)}
+                            {c.deltaPct != null && <span className="ml-1 text-[11px] opacity-70">({c.deltaPct > 0 ? "+" : ""}{(c.deltaPct * 100).toFixed(0)}%)</span>}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-line bg-surface-2/40">
+                    <td className="px-4 py-3 font-semibold">Total</td>
+                    <td className="num px-4 py-3 text-right font-semibold">{costTotals.count}</td>
+                    <td className="num px-4 py-3 text-right font-semibold">{fmtEur(costTotals.payroll)}</td>
+                    <td className="num px-4 py-3 text-right font-semibold">{fmtEur(costTotals.commissions)}</td>
+                    <td className="num px-4 py-3 text-right font-semibold">{fmtEur(costTotals.advances)}</td>
+                    <td className="num px-4 py-3 text-right font-semibold">{fmtEur(costTotals.fleet)}</td>
+                    <td className="num px-4 py-3 text-right font-semibold text-volt">{fmtEur(costTotals.total)}</td>
+                    <td className="num px-4 py-3 text-right font-semibold">
+                      {costDelta ? (
+                        <span className={costDelta.delta > 0 ? "text-rose" : "text-volt"}>
+                          {costDelta.delta > 0 ? "+" : ""}
+                          {fmtEur(costDelta.delta)}
+                        </span>
+                      ) : (
+                        <span className="text-ink-3">—</span>
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           )
         ) : area === "equipas" ? (
           !listTeams.length ? (
