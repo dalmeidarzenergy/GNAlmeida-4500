@@ -795,6 +795,24 @@ export const payments = sqliteTable("payments", {
   createdAt: createdAt(),
 });
 
+/**
+ * Despesas da empresa lançadas a mão (rendas, software, marketing, impostos...),
+ * por mês de referência. São custos que não vêm de pessoas nem de frota, por isso
+ * não aparecem em mais lado nenhum: entram no Centro de Custos (aba Despesas
+ * Empresa) e contam para o Lucro da Empresa.
+ */
+export const companyExpenses = sqliteTable("company_expenses", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** Mês de referência no formato YYYY-MM. */
+  month: text("month").notNull(),
+  description: text("description").notNull(),
+  /** "rendas" | "software" | "marketing" | "servicos" | "impostos" | "outros". */
+  category: text("category").notNull().default("outros"),
+  amount: real("amount").notNull().default(0),
+  notes: text("notes"),
+  createdAt: createdAt(),
+});
+
 export const employeeTables = sqliteTable("employee_tables", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id")

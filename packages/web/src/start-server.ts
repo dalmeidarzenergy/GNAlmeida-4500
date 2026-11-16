@@ -123,6 +123,16 @@ if (existsSync(dbPath)) {
       notes TEXT,
       created_at INTEGER NOT NULL
     )`);
+    // Despesas da empresa lancadas a mao (Centro de Custos > Despesas Empresa).
+    db.run(`CREATE TABLE IF NOT EXISTS company_expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      month TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'outros',
+      amount REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`);
     // Consumos dos cartoes frota (abastecimentos, carregamentos, portagens).
     db.run(`CREATE TABLE IF NOT EXISTS fuel_entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

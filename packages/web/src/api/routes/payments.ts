@@ -181,7 +181,7 @@ const statusLabel = (s: string) => {
   return s;
 };
 
-async function buildBreakdown(m: string): Promise<Breakdown> {
+export async function buildBreakdown(m: string): Promise<Breakdown> {
   const { from, to } = bounds(m);
   // 6 meses antes do início do mês — janela suficiente para chargeback (3 meses)
   // e para capturar fornecementos que ainda interessam ao cálculo.

@@ -650,7 +650,7 @@ function emptyCost() {
   return { count: 0, payroll: 0, commissions: 0, advances: 0, fleet: 0 };
 }
 
-async function costCentersReport(month: string) {
+export async function costCentersReport(month: string) {
   const prev = shiftMonthKey(month, -1);
   const from = `${prev}-01`;
   const to = `${month}-31`;
