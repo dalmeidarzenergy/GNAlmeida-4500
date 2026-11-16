@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Check, Plus, CalendarCog, Trash2, KeyRound, Pencil, Camera } from "lucide-react";
+import { Loader2, Check, Plus, CalendarCog, Trash2, KeyRound, Pencil, Camera, Lock, Eye } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useUpdateUser, useEditPersonal, useUsers, useMe } from "../queries/me";
 import { useEmployeeOptions, useTeams } from "../queries/hr";
@@ -246,31 +246,63 @@ function AssignModal({ userId, userName, onClose }: { userId: string; userName: 
 
 const GROUP_KEYS = [...new Set(MODULES.map((m) => m.group))];
 
-/** Grelha de permissões: cada área com interruptores independentes de ver/editar. */
+/**
+ * Grelha de permissoes: cada area com tres interruptores independentes.
+ * "Visualizar" e um cadeado de so-leitura — bloqueia a escrita sem alargar o que se ve.
+ */
 function PermissionsEditor({ value, onChange, cols = 2 }: { value: Permissions; onChange: (p: Permissions) => void; cols?: 2 | 3 }) {
   const grid = cols === 3 ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2";
-  const set = (key: keyof Permissions, field: "view" | "edit", v: boolean) => {
+  const set = (key: keyof Permissions, field: "view" | "edit" | "readOnly", v: boolean) => {
     onChange({ ...value, [key]: { ...value[key], [field]: v } });
   };
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-[8px] border border-line/70 bg-surface-2/40 px-3 py-2 text-[11.5px] text-ink-3">
+        <span className="inline-flex items-center gap-1.5"><Eye size={12} /> Ver — abre a área e lê os dados</span>
+        <span className="inline-flex items-center gap-1.5"><Pencil size={12} /> Editar — cria, altera e apaga</span>
+        <span className="inline-flex items-center gap-1.5"><Lock size={12} /> Visualizar — só leitura: vê, mas não altera nem apaga</span>
+      </div>
       {GROUP_KEYS.map((g) => (
         <div key={g}>
           <div className="label-mono mb-2">{g}</div>
-          <div className={`grid gap-2 ${grid}`}>
-            {MODULES.filter((m) => m.group === g).map((m) => (
-              <div key={m.key} className="flex items-center justify-between gap-3 rounded-[8px] border border-line px-3 py-2">
-                <span className="min-w-0 leading-snug text-[13px]">{m.label}</span>
-                <div className="flex items-center gap-3">
-                  <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
-                    <input aria-label={`${m.label} — ver`} type="checkbox" checked={value[m.key]?.view ?? false} onChange={(e) => set(m.key, "view", e.target.checked)} /> Ver
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
-                    <input aria-label={`${m.label} — editar`} type="checkbox" checked={value[m.key]?.edit ?? false} onChange={(e) => set(m.key, "edit", e.target.checked)} /> Editar
-                  </label>
+          <div className={`grid gap-1.5 ${grid}`}>
+            {MODULES.filter((m) => m.group === g).map((m) => {
+              const ro = value[m.key]?.readOnly ?? false;
+              return (
+                <div
+                  key={m.key}
+                  className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[8px] border px-3 py-1.5 ${ro ? "border-volt/40 bg-volt/[0.05]" : "border-line"}`}
+                >
+                  <span className="flex min-w-0 items-center gap-1.5 leading-snug text-[13px]">
+                    <span className="min-w-0">{m.label}</span>
+                    {ro && <Lock size={11} className="shrink-0 text-volt" aria-hidden />}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-2">
+                      <input aria-label={`${m.label} — ver`} type="checkbox" checked={value[m.key]?.view ?? false} onChange={(e) => set(m.key, "view", e.target.checked)} /> Ver
+                    </label>
+                    <label
+                      className={`flex items-center gap-1.5 text-[12px] ${ro ? "cursor-not-allowed text-ink-3/60" : "cursor-pointer text-ink-2"}`}
+                      title={ro ? "Bloqueado por Visualizar: desligue o cadeado para voltar a poder editar" : undefined}
+                    >
+                      <input
+                        aria-label={`${m.label} — editar`}
+                        type="checkbox"
+                        checked={value[m.key]?.edit ?? false}
+                        disabled={ro}
+                        onChange={(e) => set(m.key, "edit", e.target.checked)}
+                      /> Editar
+                    </label>
+                    <label
+                      className={`flex cursor-pointer items-center gap-1.5 text-[12px] ${ro ? "font-medium text-volt" : "text-ink-2"}`}
+                      title="Só leitura: pode ver os dados de todos mas não pode criar, alterar nem apagar"
+                    >
+                      <input aria-label={`${m.label} — visualizar`} type="checkbox" checked={ro} onChange={(e) => set(m.key, "readOnly", e.target.checked)} /> Visualizar
+                    </label>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -312,7 +344,7 @@ function PermissionModal({ u, onClose }: { u: U; onClose: () => void }) {
           </div>
         </div>
         <div className="rounded-[10px] border border-line p-3">
-          <PermissionsEditor value={perms} onChange={setPerms} cols={3} />
+          <PermissionsEditor value={perms} onChange={setPerms} cols={2} />
         </div>
         {err && <div className="text-[12.5px] text-danger">{err}</div>}
         <div className="flex items-center justify-end gap-2">

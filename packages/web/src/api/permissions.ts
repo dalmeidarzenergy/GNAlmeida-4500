@@ -1,9 +1,11 @@
 /**
  * Modelo de permissões por utilizador.
  *
- * Cada módulo (item de menu / página) tem dois interruptores independentes:
+ * Cada módulo (item de menu / página) tem três interruptores independentes:
  *  - `view`: o utilizador vê a página e pode ler os dados
  *  - `edit`: o utilizador pode criar/alterar/eliminar nessa área
+ *  - `readOnly` ("Visualizar"): cadeado explícito de só-leitura. Não alarga o que a
+ *    pessoa vê; bloqueia a escrita. Ganha sempre ao `edit` (ver `effectivePermissions`).
  *
  * Os perfis (roles) continuam a existir como ponto de partida: escolher um perfil
  * preenche as permissões por defeito, e o administrador ajusta cada interruptor.
@@ -55,7 +57,7 @@ export const MODULES = [
 ] as const;
 
 export type ModuleKey = (typeof MODULES)[number]["key"];
-export type Permission = { view: boolean; edit: boolean };
+export type Permission = { view: boolean; edit: boolean; readOnly?: boolean };
 export type Permissions = Record<ModuleKey, Permission>;
 
 /** Que perfis veem / editam cada módulo por defeito. */
@@ -126,13 +128,21 @@ export function defaultsForRole(role: Role): Permissions {
   return out;
 }
 
-/** Permissões efetivas: sobrepõe o JSON gravado por utilizador às do perfil. */
+/**
+ * Permissões efetivas: sobrepõe o JSON gravado por utilizador às do perfil.
+ * Com "Visualizar" ligado a escrita fica bloqueada, mesmo que "Editar" esteja ligado.
+ */
 export function effectivePermissions(role: Role, override: Permissions | null | undefined): Permissions {
   const base = ROLE_DEFAULTS[role];
   const out = {} as Permissions;
   for (const m of MODULES) {
     const o = override?.[m.key];
-    out[m.key] = { view: o ? !!o.view : base[m.key].view, edit: o ? !!o.edit : base[m.key].edit };
+    const readOnly = !!o?.readOnly;
+    out[m.key] = {
+      view: o ? !!o.view : base[m.key].view,
+      edit: (o ? !!o.edit : base[m.key].edit) && !readOnly,
+      readOnly,
+    };
   }
   return out;
 }

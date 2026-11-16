@@ -27,7 +27,10 @@ export const me = authed.handler(async ({ context }) => {
   };
 });
 
-const permissionsSchema = z.record(z.string(), z.object({ view: z.boolean(), edit: z.boolean() })).nullable().optional();
+const permissionsSchema = z
+  .record(z.string(), z.object({ view: z.boolean(), edit: z.boolean(), readOnly: z.boolean().optional() }))
+  .nullable()
+  .optional();
 const roleSchema = z.enum(["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"]);
 
 export const users = {
