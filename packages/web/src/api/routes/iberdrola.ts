@@ -241,7 +241,14 @@ async function sellerUnitFor(m: string, employeeId: number, extraBtnSales = 0) {
   return { missingTable: false, unit: { luz: band.luz ?? 0, gas: band.gas ?? 0, dd: band.dd ?? 0, fe: band.fe ?? 0, pel: band.pel ?? 0 } };
 }
 
-async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {}) {
+async function buildCalc(
+  m: string,
+  opts: {
+    skipPrevChargeback?: boolean;
+    /** Tabela Comissao da empresa (Centro de Custos): valoriza as vendas de todos os comerciais por esta tabela. */
+    companyTableId?: number | null;
+  } = {},
+) {
   const imports = await db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m));
   const importIds = imports.map((i) => i.id);
 
@@ -327,6 +334,16 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
   const cTables = await db.select().from(commissionTables);
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
   const assignments = await db.select().from(employeeTables);
+
+  // Tabela Comissao da empresa (Centro de Custos): quando vem indicada, todas as vendas
+  // sao valorizadas por ela e o escalao sobe com o total de vendas BTN da empresa.
+  // Sem ela, cada comercial continua a usar as suas tabelas — Pagamentos e Auto Iberdrola
+  // nao mudam.
+  const companyTable =
+    opts.companyTableId != null
+      ? (cTables.find((t) => t.id === opts.companyTableId && t.group !== "empresa" && t.regime === "RES+BTN NEG") ?? null)
+      : null;
+  const companyBtnTotal = companyTable ? autoEntries.filter((e) => e.hasBTN).length : 0;
 
   // Equipas, pertenças e períodos de atividade: para apurar o escalão de chefe de
   // equipa (CE) pela soma das vendas BTN em fornecimento dos membros da equipa.
@@ -558,7 +575,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       .groupBy(iberdrolaImports.month)
       .orderBy(asc(iberdrolaImports.month));
     for (const { month: pm } of prevMonths) {
-      const pc = await buildCalc(pm, { skipPrevChargeback: true });
+      const pc = await buildCalc(pm, { skipPrevChargeback: true, companyTableId: opts.companyTableId });
       for (const person of pc.people) {
         for (const l of person.lines) {
           prevPaid.set(`${l.idVenda}|${l.service}`, {
@@ -622,6 +639,8 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     // A Tabela Empresa e faturacao interna: nunca paga a um comercial.
     const empTables = cTables.filter((t) => activeTableIds.has(t.id) && t.group !== "empresa");
     const resTable = empTables.find((t) => t.regime === "RES+BTN NEG") ?? null;
+    // Tabela que paga as vendas: a da empresa (Centro de Custos) ou a do proprio comercial.
+    const priceTable = companyTable ?? resTable;
     const medemTable = empTables.find((t) => t.regime === "MEDEM") ?? null;
     const solarTable = empTables.find((t) => t.regime === "SOLAR") ?? null;
     const ceTable = empTables.find((t) => t.regime === "CE") ?? null;
@@ -630,8 +649,8 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const base: IberdrolaPerson = {
       employeeId: sellerId,
       employeeName: emp.name,
-      tableName: tableNames.length > 0 ? tableNames.join(" + ") : null,
-      missingTable: empTables.length === 0,
+      tableName: companyTable ? companyTable.name : tableNames.length > 0 ? tableNames.join(" + ") : null,
+      missingTable: empTables.length === 0 && !companyTable,
       forceCommissionsPct: emp.forceCommissionsPct ?? 0,
       bandSales: 0,
       salesCount: mine.length,
@@ -674,7 +693,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       ceChargebackLines: [],
     };
 
-    if (empTables.length === 0) {
+    if (empTables.length === 0 && !companyTable) {
       people.push(base);
       continue;
     }
@@ -684,20 +703,24 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     let resBands: typeof bands = [];
     const sortedBands: Band[] = [];
     let bandIdx = -1;
+    let bandSalesUsed = 0;
     let forced = emp.forceCommissionsPct > 0;
     let paidEntries = mine; // fallback: todas pagas
     let lines: IberdrolaLine[] = [];
     let cbLines: IberdrolaLine[] = [];
 
-    if (resTable) {
-      resBands = cRows.filter((r) => r.tableId === resTable.id && r.kind === "clients");
+    if (priceTable) {
+      resBands = cRows.filter((r) => r.tableId === priceTable.id && r.kind === "clients");
       // Vendas BTN com potência < 3,45 contam para o escalão mas não são pagas.
       const lowPower = new Set(
         mine
           .filter((e) => e.hasBTN && (cellNum(colVal(e.excel, "potencia contratada")) ?? cellNum(colVal(e.excel, "potencia")) ?? 99) < 3.45)
           .map((e) => e.idVenda),
       );
-      const bandSales = mine.filter((e) => e.hasBTN).length;
+      // Com a tabela da empresa o escalao sobe com o total de vendas BTN da empresa;
+      // sem ela conta apenas as vendas do proprio comercial.
+      const bandSales = companyTable ? companyBtnTotal : mine.filter((e) => e.hasBTN).length;
+      bandSalesUsed = bandSales;
       const sBands = [...resBands].sort((a, b) => (a.min ?? 0) - (b.min ?? 0));
 
       // Escalão real atingido (para Medem e bandIdx), independente do desbloqueio.
@@ -708,14 +731,14 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       bandIdx = realBand ? sBands.indexOf(realBand) : -1;
 
       // Escalão efectivo para pagamento (pode saltar o 1.º se forced).
-      const pool = forced ? sBands.slice(1) : sBands;
+      const pool = forced && !companyTable ? sBands.slice(1) : sBands;
       band =
         pool.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
         [...pool.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
         (forced ? (pool[0] ?? null) : null);
 
       // Bloqueio de vendas (objetivo) + baixa potência.
-      const blocked = forced ? 0 : (resTable?.blockedSales ?? 0);
+      const blocked = companyTable ? (companyTable.blockedSales ?? 0) : forced ? 0 : (resTable?.blockedSales ?? 0);
       const commissionable = mine.filter((e) => !lowPower.has(e.idVenda));
       paidEntries = commissionable.slice(Math.min(blocked, commissionable.length));
 
@@ -733,7 +756,8 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
       };
 
       lines = paidEntries.flatMap((e) => {
-        const fromId = pricedByFrom.get(e.idVenda);
+        // Com uma tabela da empresa, a venda vale o mesmo venha de quem vier.
+        const fromId = companyTable ? null : pricedByFrom.get(e.idVenda);
         return split(e, fromId != null ? bandFromFor(fromId) : band);
       });
 
@@ -937,7 +961,7 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
     const dueFinal = round2(Math.max(0, dueAfterAdvance - blockCut));
     people.push({
       ...base,
-      bandSales: resTable ? mine.filter((e) => e.hasBTN).length : 0,
+      bandSales: priceTable ? bandSalesUsed : 0,
       luzCount: lines.filter((l) => l.service === "Luz").length,
       gasCount: lines.filter((l) => l.service === "Gás").length,
       ddCount: sum(lines, (l) => (l.dd ? 1 : 0)),

@@ -28,9 +28,19 @@ import {
   HandCoins,
   PiggyBank,
   Search,
+  Table2,
+  Check,
 } from "lucide-react";
 import { PageHeader, Stat, Empty, Tabs, Modal, Field, SubmitRow, Pill, ConfirmDelete } from "../components/ui/kit";
-import { useCompanyFinance, useCompanyExpenses, useSaveCompanyExpense, useRemoveCompanyExpense } from "../queries/company";
+import {
+  useCompanyFinance,
+  useCompanyExpenses,
+  useSaveCompanyExpense,
+  useRemoveCompanyExpense,
+  useCompanyCommissionTable,
+  useSetCompanyCommissionTable,
+} from "../queries/company";
+import { useCommissionTables } from "../queries/commission-tables";
 import { fmtEur, fmtEur2, monthLabel, errMsg } from "../lib/format";
 
 type TabKey = "previsao" | "final" | "despesas" | "comissoes" | "lucro";
@@ -102,6 +112,7 @@ export default function CentroCustosPage() {
   const [tab, setTab] = useState<TabKey>("previsao");
   const finance = useCompanyFinance(month);
   const data = finance.data;
+  const [openTable, setOpenTable] = useState(false);
 
   const f = data?.forecast;
   const fin = data?.final;
@@ -131,6 +142,14 @@ export default function CentroCustosPage() {
             ))}
           </select>
         </label>
+        <div className="ml-auto pb-1">
+          <span className="label-mono mb-1 block">Tabela aplicada</span>
+          <button type="button" className="btn btn-ghost" onClick={() => setOpenTable(true)} aria-label="Tabela Comissão">
+            <Table2 size={15} />
+            Tabela Comissão
+            <span className="ml-1 max-w-[190px] truncate text-ink-3">{data?.companyTable?.name ?? "por escolher"}</span>
+          </button>
+        </div>
         <div className="min-w-0 flex-1 pb-1">
           <Tabs
             value={tab}
@@ -145,6 +164,21 @@ export default function CentroCustosPage() {
           />
         </div>
       </div>
+
+      {data?.companyTable ? (
+        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-2">
+          <Pill tone="volt">Tabela Comissão</Pill>
+          <span>
+            A previsão e o auto final usam a tabela <span className="font-semibold text-ink">{data.companyTable.name}</span> para todos os comerciais. O escalão sobe com o
+            total de vendas da empresa no mês.
+          </span>
+          <button type="button" className="text-volt underline underline-offset-2 hover:no-underline" onClick={() => setOpenTable(true)}>
+            mudar
+          </button>
+        </div>
+      ) : null}
+
+      <TabelaComissaoModal open={openTable} onClose={() => setOpenTable(false)} currentId={data?.companyTable?.id ?? null} month={month} />
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -164,6 +198,91 @@ export default function CentroCustosPage() {
         <LucroTab month={month} lucro={lucro} exp={exp} fin={fin} forecast={f} />
       )}
     </>
+  );
+}
+
+/* ------------------------------------------------------- tabela comissão da empresa */
+
+/**
+ * Escolha da tabela comissional que a empresa aplica na previsão e no auto final.
+ * As vendas de todos os comerciais passam a valer os valores desta tabela — é a
+ * mesma tabela que se preenche em Tabelas Comissionais.
+ */
+function TabelaComissaoModal({ open, onClose, currentId, month }: { open: boolean; onClose: () => void; currentId: number | null; month: string }) {
+  const tables = useCommissionTables();
+  const save = useSetCompanyCommissionTable();
+  const [error, setError] = useState<string | null>(null);
+
+  // Só as tabelas de vendas (RES+BTN NEG) pagam comissões; a Tabela Empresa é faturação interna.
+  const options = (tables.data ?? []).filter((t) => t.regime === "RES+BTN NEG" && t.group !== "empresa");
+
+  const choose = (tableId: number | null) => {
+    setError(null);
+    save.mutate(
+      { tableId },
+      {
+        onSuccess: () => onClose(),
+        onError: (e) => setError(errMsg(e)),
+      },
+    );
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Tabela Comissão" size="wide">
+      <p className="mb-4 text-[12.5px] text-ink-2">
+        Escolhe a tabela que a empresa aplica a partir de {monthLabel(month)}. A previsão e o auto final do Centro de Custos passam a valorizar as vendas de todos os
+        comerciais por esta tabela, e o escalão sobe com o total de vendas da empresa. A escolha mantém-se até ser mudada e não altera a Previsão de Pagamentos nem o
+        Auto Iberdrola.
+      </p>
+
+      {!options.length ? (
+        <Empty
+          title="Ainda não há tabelas de vendas"
+          text="Cria uma tabela comercial (regime RES+BTN NEG) em Tabelas Comissionais e volta aqui para a aplicar à empresa."
+          action={<Link to="/tabelas-comissionais" className="btn btn-ghost">Ir para Tabelas Comissionais</Link>}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-[12px] border border-line">
+          {options.map((t, i) => {
+            const active = currentId === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => choose(t.id)}
+                disabled={save.isPending}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] hover:bg-surface-2/70 ${i > 0 ? "border-t border-line" : ""} ${active ? "bg-surface-2/60" : ""}`}
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.color }} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{t.name}</span>
+                  <span className="block truncate text-[11.5px] text-ink-3">
+                    {t.active ? "ativa" : "inativa"} · {t.clientRows.length} escalão(ões)
+                    {t.blockedSales ? ` · ${t.blockedSales} venda(s) bloqueada(s)` : ""}
+                    {t.description ? ` · ${t.description}` : ""}
+                  </span>
+                </span>
+                {active ? <Check size={16} className="text-volt" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+        <div className="text-[12.5px] text-rose">{error}</div>
+        <div className="flex gap-2">
+          {currentId != null && (
+            <button type="button" className="btn btn-ghost" onClick={() => choose(null)} disabled={save.isPending}>
+              Cada comercial com a sua tabela
+            </button>
+          )}
+          <button type="button" className="btn btn-primary" onClick={onClose}>
+            Fechar
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

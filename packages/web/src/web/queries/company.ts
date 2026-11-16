@@ -10,6 +10,14 @@ function useInv() {
 export const useCompanyFinance = (month: string) =>
   useQuery(orpc.company.finance.queryOptions({ input: { month }, placeholderData: (prev) => prev }));
 
+/** Tabela comissional que a empresa aplica na previsao e no auto final (null = cada um usa a sua). */
+export const useCompanyCommissionTable = () => useQuery(orpc.company.commissionTableGet.queryOptions());
+
+export function useSetCompanyCommissionTable() {
+  const inv = useInv();
+  return useMutation(orpc.company.commissionTableSet.mutationOptions({ onSuccess: inv }));
+}
+
 /** Despesas da empresa lancadas a mao num mes. */
 export const useCompanyExpenses = (month: string) =>
   useQuery(orpc.company.expenses.queryOptions({ input: { month }, placeholderData: (prev) => prev }));

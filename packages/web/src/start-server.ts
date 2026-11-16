@@ -133,6 +133,12 @@ if (existsSync(dbPath)) {
       notes TEXT,
       created_at INTEGER NOT NULL
     )`);
+    // Definicoes da empresa (chave/valor): tabela comissional aplicada no Centro de Custos.
+    db.run(`CREATE TABLE IF NOT EXISTS company_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT,
+      updated_at INTEGER NOT NULL
+    )`);
     // Consumos dos cartoes frota (abastecimentos, carregamentos, portagens).
     db.run(`CREATE TABLE IF NOT EXISTS fuel_entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

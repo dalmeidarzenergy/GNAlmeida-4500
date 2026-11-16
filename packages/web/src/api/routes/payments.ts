@@ -181,7 +181,13 @@ const statusLabel = (s: string) => {
   return s;
 };
 
-export async function buildBreakdown(m: string): Promise<Breakdown> {
+export async function buildBreakdown(
+  m: string,
+  opts: {
+    /** Tabela Comissao da empresa (Centro de Custos): valoriza as vendas de todos os comerciais por esta tabela. */
+    companyTableId?: number | null;
+  } = {},
+): Promise<Breakdown> {
   const { from, to } = bounds(m);
   // 6 meses antes do início do mês — janela suficiente para chargeback (3 meses)
   // e para capturar fornecementos que ainda interessam ao cálculo.
@@ -404,6 +410,18 @@ export async function buildBreakdown(m: string): Promise<Breakdown> {
   const memberships = await db.select().from(teamMemberships);
   const allTeams = await db.select({ id: teams.id, leaderId: teams.leaderId }).from(teams);
 
+  // Tabela Comissao da empresa (Centro de Custos): quando indicada, as vendas de todos os
+  // comerciais sao valorizadas por ela e o escalao sobe com o total de vendas da empresa.
+  // Sem ela, cada comercial usa a sua tabela — a Previsao de Pagamentos nao muda.
+  const companyTable =
+    opts.companyTableId != null
+      ? (cTables.find((t) => t.id === opts.companyTableId && t.group !== "empresa" && t.regime === "RES+BTN NEG") ?? null)
+      : null;
+  // Contado antes do ciclo: o agregado de equipa altera as listas por comercial.
+  const companyBandSales = companyTable
+    ? [...valid.values()].reduce((total, list) => total + list.filter((e) => e.energy === "luz").length, 0)
+    : 0;
+
   const teamOfChief = (chiefId: number) => {
     const led = allTeams.filter((t) => t.leaderId === chiefId).map((t) => t.id);
     const ids = new Set<number>([chiefId]);
@@ -552,12 +570,14 @@ export async function buildBreakdown(m: string): Promise<Breakdown> {
     const mine = valid.get(s.id) ?? [];
     const cb = chargeback.get(s.id) ?? [];
 
-    const table = commissionTableOf(s.id, s.commissionTableId);
+    const ownTable = commissionTableOf(s.id, s.commissionTableId);
+    // A tabela da empresa substitui a tabela de cada comercial (auto + previsao).
+    const table = companyTable ?? ownTable;
 
     // Tabela Base (chefe de equipa): as vendas dos membros da equipa somam-se às dele
     // e são comissionadas ao chefe. Com o pisco desligado, as vendas da equipa não contam.
     const teamMembers: { name: string; luz: number; gas: number }[] = [];
-    if (table?.isBase) {
+    if (ownTable?.isBase) {
       const memberIds = [...teamOfChief(s.id)].filter((id) => id !== s.id);
       for (const id of memberIds) {
         const list = valid.get(id) ?? [];
@@ -613,13 +633,14 @@ export async function buildBreakdown(m: string): Promise<Breakdown> {
     }
 
     const bands = cRows.filter((r) => r.tableId === table.id && r.kind === "clients");
-    const bandSales = mine.filter((e) => e.energy === "luz").length;
+    // Com a tabela da empresa o escalao sobe com o total de vendas da empresa.
+    const bandSales = companyTable ? companyBandSales : mine.filter((e) => e.energy === "luz").length;
     const band =
       bands.find((b) => bandSales >= (b.min ?? 0) && (b.max == null || bandSales <= b.max)) ??
       [...bands.filter((b) => b.max == null && bandSales >= (b.min ?? 0))].pop() ??
       null;
 
-    const blocked = (s.forceCommissions) ? 0 : (table.blockedSales ?? 0);
+    const blocked = companyTable ? (table.blockedSales ?? 0) : s.forceCommissions ? 0 : (table.blockedSales ?? 0);
     const ordered = mine.slice();
     const paidSales = ordered.slice(Math.min(blocked, ordered.length));
     const resolved = paidSales.flatMap((e) => split(e, band));

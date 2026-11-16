@@ -14,9 +14,10 @@
  */
 import { z } from "zod";
 import { asc, eq } from "drizzle-orm";
+import { ORPCError } from "@orpc/server";
 import { requireView, requireEdit } from "../middleware/auth";
 import { db } from "../database";
-import { companyExpenses, employees, iberdrolaImports, payments } from "../database/schema";
+import { commissionTables, companyExpenses, companySettings, employees, iberdrolaImports, payments } from "../database/schema";
 import { buildBreakdown } from "./payments";
 import { buildCalc } from "./iberdrola";
 import { costCentersReport } from "./reports";
@@ -35,6 +36,45 @@ const expenseInput = z.object({
   notes: z.string().trim().max(300).nullable().optional(),
 });
 
+/** Chave da definição com a tabela comissional que a empresa aplica. */
+const COMPANY_TABLE_KEY = "commission_table";
+
+/**
+ * Tabela Comissao da empresa: uma só para a empresa toda, escolhida no Centro de
+ * Custos e usada até ser mudada. Só contam tabelas de vendas (RES+BTN NEG); a Tabela
+ * Empresa (faturação interna) e as tabelas apagadas valem como "sem tabela".
+ */
+async function companyCommissionTable(): Promise<{ id: number; name: string; regime: string } | null> {
+  const [row] = await db.select().from(companySettings).where(eq(companySettings.key, COMPANY_TABLE_KEY));
+  const id = row?.value ? Number(row.value) : NaN;
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const [t] = await db
+    .select({ id: commissionTables.id, name: commissionTables.name, regime: commissionTables.regime, active: commissionTables.active })
+    .from(commissionTables)
+    .where(eq(commissionTables.id, id));
+  if (!t || t.regime !== "RES+BTN NEG") return null;
+  return { id: t.id, name: t.name, regime: t.regime };
+}
+
+/** Guarda (ou limpa, com null) a tabela comissional aplicada pela empresa. */
+async function saveCompanyCommissionTable(id: number | null) {
+  if (id == null) {
+    await db.delete(companySettings).where(eq(companySettings.key, COMPANY_TABLE_KEY));
+    return { ok: true };
+  }
+  const [t] = await db.select({ id: commissionTables.id, regime: commissionTables.regime, group: commissionTables.group }).from(commissionTables).where(eq(commissionTables.id, id));
+  if (!t) throw new ORPCError("BAD_REQUEST", { message: "A tabela escolhida não existe." });
+  if (t.group === "empresa") throw new ORPCError("BAD_REQUEST", { message: "A Tabela Empresa é de faturação interna e não paga comissões." });
+  if (t.regime !== "RES+BTN NEG") throw new ORPCError("BAD_REQUEST", { message: "Só as tabelas de vendas (RES+BTN NEG) podem ser aplicadas à empresa." });
+  const [existing] = await db.select().from(companySettings).where(eq(companySettings.key, COMPANY_TABLE_KEY));
+  if (existing) {
+    await db.update(companySettings).set({ value: String(id), updatedAt: new Date() }).where(eq(companySettings.key, COMPANY_TABLE_KEY));
+  } else {
+    await db.insert(companySettings).values({ key: COMPANY_TABLE_KEY, value: String(id), updatedAt: new Date() });
+  }
+  return { ok: true };
+}
+
 /** Despesas lançadas à mão num mês (ordem alfabética por categoria e descrição). */
 async function manualExpenses(m: string) {
   const rows = await db.select().from(companyExpenses).where(eq(companyExpenses.month, m)).orderBy(asc(companyExpenses.category), asc(companyExpenses.description));
@@ -47,9 +87,14 @@ async function manualExpenses(m: string) {
  * previsão, auto final, despesas, comissões e o lucro que sai daí.
  */
 async function companyFinance(m: string) {
+  // Previsão e auto final são valorizados pela tabela comissional da empresa, para
+  // todos os comerciais. Sem tabela escolhida, cada um usa a sua (como em Pagamentos).
+  const applied = await companyCommissionTable();
+  const companyTableId = applied?.id ?? null;
+
   const [breakdown, calc, costs, imports, manual, pays, staff] = await Promise.all([
-    buildBreakdown(m),
-    buildCalc(m),
+    buildBreakdown(m, { companyTableId }),
+    buildCalc(m, { companyTableId }),
     costCentersReport(m),
     db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m)),
     manualExpenses(m),
@@ -173,6 +218,8 @@ async function companyFinance(m: string) {
 
   const result = {
     month: m,
+    /** Tabela comissional aplicada pela empresa (null = cada comercial usa a sua). */
+    companyTable: applied,
     forecast,
     final,
     expenses: { ...despesas, total: despesas.manual, monthTotal: totalDespesas },
@@ -198,6 +245,13 @@ export const companyRoute = {
   finance: requireView("empresa")
     .input(z.object({ month }))
     .handler(async ({ input }) => companyFinance(input.month)),
+
+  /** Tabela comissional aplicada pela empresa (a que valoriza a previsão e o auto final). */
+  commissionTableGet: requireView("empresa").handler(async () => companyCommissionTable()),
+
+  commissionTableSet: requireEdit("empresa")
+    .input(z.object({ tableId: z.number().int().positive().nullable() }))
+    .handler(async ({ input }) => saveCompanyCommissionTable(input.tableId)),
 
   /** Despesas lançadas à mão de um mês. */
   expenses: requireView("empresa")

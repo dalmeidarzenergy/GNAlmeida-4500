@@ -813,6 +813,18 @@ export const companyExpenses = sqliteTable("company_expenses", {
   createdAt: createdAt(),
 });
 
+/**
+ * Definicoes da empresa (chave/valor). Guarda escolhas unicas da empresa que nao
+ * pertencem a um funcionario, como a tabela comisional que o Centro de Custos aplica.
+ */
+export const companySettings = sqliteTable("company_settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const employeeTables = sqliteTable("employee_tables", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   employeeId: integer("employee_id")
