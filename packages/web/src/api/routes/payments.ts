@@ -903,7 +903,8 @@ export const paymentsRoute = {
         if (fallbackTableId != null) ids.push(fallbackTableId);
         return ids
           .map((id) => cTables.find((x) => x.id === id))
-          .filter((t) => t != null && t.regime === regime && t.active);
+          // A Tabela Empresa nao serve de objetivo a ninguem.
+          .filter((t) => t != null && t.regime === regime && t.active && t.group !== "empresa");
       };
 
       /** Tabela de vendas proprias: a primeira tabela RES+BTN NEG atribuida no mes. */

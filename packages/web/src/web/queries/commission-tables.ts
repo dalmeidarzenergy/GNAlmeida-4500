@@ -8,6 +8,9 @@ function useInv() {
 
 export const useCommissionTables = () => useQuery(orpc.commissionTables.list.queryOptions());
 
+/** Quem esta atribuido a cada tabela, para saber quem fica fora da Tabela Empresa. */
+export const useTableAssignments = () => useQuery(orpc.commissionTables.assignments.queryOptions());
+
 export function useSaveCommissionTable() {
   const inv = useInv();
   const c = useMutation(orpc.commissionTables.create.mutationOptions({ onSuccess: inv }));

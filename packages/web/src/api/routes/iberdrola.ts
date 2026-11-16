@@ -203,7 +203,7 @@ async function sellerUnitFor(m: string, employeeId: number, extraBtnSales = 0) {
   if (!activeIds.size) return { missingTable: true, unit: null };
 
   // Tabela RES+BTN NEG ativa (é a que paga as vendas de energia e serviços).
-  const empTables = await db.select().from(commissionTables).where(inArray(commissionTables.id, [...activeIds]));
+  const empTables = (await db.select().from(commissionTables).where(inArray(commissionTables.id, [...activeIds]))).filter((t) => t.group !== "empresa");
   const table = empTables.find((t) => t.regime === "RES+BTN NEG") ?? null;
   if (!table) return { missingTable: true, unit: null };
 
@@ -619,7 +619,8 @@ async function buildCalc(m: string, opts: { skipPrevChargeback?: boolean } = {})
 
     // Todas as tabelas ativas do comercial no mês (default + assignments).
     const activeTableIds = activeCommissionTableIds(sellerId, emp.commissionTableId, assignments, monthStart, monthEnd);
-    const empTables = cTables.filter((t) => activeTableIds.has(t.id));
+    // A Tabela Empresa e faturacao interna: nunca paga a um comercial.
+    const empTables = cTables.filter((t) => activeTableIds.has(t.id) && t.group !== "empresa");
     const resTable = empTables.find((t) => t.regime === "RES+BTN NEG") ?? null;
     const medemTable = empTables.find((t) => t.regime === "MEDEM") ?? null;
     const solarTable = empTables.find((t) => t.regime === "SOLAR") ?? null;

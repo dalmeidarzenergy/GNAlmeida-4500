@@ -24,7 +24,7 @@ const tableInput = z.object({
   description: z.string().nullable().optional(),
   color: z.string().default("#206a9f"),
   active: z.boolean().default(true),
-  group: z.enum(["gestor-comercial", "team-leader", "coordenador", "gestor-parcerias", "parceiro", "freelancer"]).default("gestor-comercial"),
+  group: z.enum(["gestor-comercial", "team-leader", "coordenador", "gestor-parcerias", "parceiro", "freelancer", "empresa"]).default("gestor-comercial"),
   regime: z.enum(["RES+BTN NEG", "MEDEM", "SOLAR", "CE"]).default("RES+BTN NEG"),
   blockedSales: z.number().min(0).default(0),
   isBase: z.boolean().default(false),
@@ -109,6 +109,24 @@ export const commissionTablesRoute = {
   remove: requireEdit("tabelas-comissionais").input(z.object({ id: z.number() })).handler(async ({ input }) => {
     await db.delete(commissionTables).where(eq(commissionTables.id, input.id));
     return { ok: true };
+  }),
+
+  /** Quem está hoje numa tabela (por grupo) — usado para avisar quem fica fora da Tabela Empresa. */
+  assignments: requireView("tabelas-comissionais").handler(async () => {
+    const rows = await db
+      .select({
+        employeeId: employees.id,
+        employeeName: employees.name,
+        status: employees.status,
+        category: employees.category,
+        tableId: commissionTables.id,
+        tableName: commissionTables.name,
+        group: commissionTables.group,
+      })
+      .from(commissionTables)
+      .innerJoin(employees, eq(employees.commissionTableId, commissionTables.id))
+      .orderBy(asc(employees.name));
+    return rows;
   }),
 
   /**

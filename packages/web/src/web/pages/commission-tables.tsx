@@ -1,14 +1,20 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
-import { useCommissionTables, useRemoveCommissionTable, useSaveCommissionTable } from "../queries/commission-tables";
+import { Building2, Plus, Pencil, Trash2 } from "lucide-react";
+import { Link } from "wouter";
+import {
+  useCommissionTables,
+  useTableAssignments,
+  useRemoveCommissionTable,
+  useSaveCommissionTable,
+} from "../queries/commission-tables";
 import { PageHeader, Modal, Field, SubmitRow, Empty, ConfirmDelete, Pill, Tabs } from "../components/ui/kit";
-import { COMMISSION_GROUP_OPTIONS, type CommissionGroup } from "../../api/shared/commission-groups";
+import { TABLE_GROUP_LABEL, TABLE_GROUP_OPTIONS, type TableGroup } from "../../api/shared/commission-groups";
 import { errMsg } from "../lib/format";
 
 type Table = NonNullable<ReturnType<typeof useCommissionTables>["data"]>[number];
 
-type GroupKey = CommissionGroup;
-const GROUPS = COMMISSION_GROUP_OPTIONS;
+type GroupKey = TableGroup;
+const GROUPS = TABLE_GROUP_OPTIONS;
 
 type ClientDraft = { min: string; max: string; luz: string; gas: string; dd: string; fe: string; pel: string };
 type BandDraft = { min: string; max: string; commission: string };
@@ -340,8 +346,46 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
 }
 
 
+/**
+ * Aviso do separador Tabela Empresa: mostra a tabela com que a empresa se paga a si
+ * propria e o escalao que fatura, e lembra que o pagamento a cada vendedor nao muda
+ * (continua a ser feito pela tabela atribuida ao vendedor).
+ */
+function EmpresaBanner({
+  empresas,
+  outras,
+}: {
+  empresas: { id: number; name: string; active: boolean; blockedSales: number; clientRows: { min: number | null; max: number | null; luz: number | null }[] }[];
+  outras: { employeeName: string; tableName: string | null; group: string }[];
+}) {
+  const principal = empresas.find((t) => t.active) ?? empresas[0] ?? null;
+  const primeiro = principal?.clientRows.slice().sort((a, b) => (a.min ?? 0) - (b.min ?? 0)).find((b) => (b.luz ?? 0) > 0) ?? null;
+  if (!principal) return null;
+  return (
+    <div className="card mb-5 border-volt/30 bg-volt/[0.04] p-4">
+      <div className="flex flex-wrap items-center gap-2 text-[13px] font-medium">
+        <Building2 size={15} className="text-volt" />
+        A empresa paga-se por esta tabela: <span className="text-volt">{principal.name}</span>
+      </div>
+      <div className="mt-1.5 text-[12.5px] text-ink-2">
+        {primeiro
+          ? `Todas as vendas entram nesta tabela. O escalão de ${primeiro.min ?? 0}${primeiro.max == null ? "+" : `–${primeiro.max}`} vendas fatura ${eur(primeiro.luz)} por venda.`
+          : "Falta preencher os escalões desta tabela — sem eles não há valores de faturação."}
+      </div>
+      {outras.length > 0 && (
+        <div className="mt-2 border-t border-line pt-2 text-[12px] text-ink-3">
+          {outras.length} pessoa(s) com tabela própria ({
+            [...new Set(outras.map((o) => TABLE_GROUP_LABEL[o.group as TableGroup] ?? o.group))].join(", ")
+          }) — o pagamento a cada vendedor continua a ser feito pela tabela dele. <Link to="/funcionarios" className="text-volt hover:underline">Ver funcionários</Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CommissionTablesPage() {
   const tables = useCommissionTables();
+  const assign = useTableAssignments();
   const [group, setGroup] = useState<GroupKey>("gestor-comercial");
   const [edit, setEdit] = useState<Table | null | "new">(null);
   const [pick, setPick] = useState(false);
@@ -353,7 +397,7 @@ export default function CommissionTablesPage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Recursos Humanos" title="Tabelas Comissionais" subtitle="Cada tabela comisional pertence a um grupo comercial. Escolhe o grupo para ver as suas tabelas.">
+      <PageHeader eyebrow="Recursos Humanos" title="Tabelas Comissionais" subtitle="Cada tabela comisional pertence a um grupo. Os grupos comerciais pagam os vendedores; a Tabela Empresa é a que paga a própria empresa.">
         <button className="btn btn-primary" onClick={() => setPick(true)}><Plus size={15} /> Nova tabela</button>
       </PageHeader>
 
@@ -364,6 +408,13 @@ export default function CommissionTablesPage() {
           items={GROUPS.map((g) => ({ key: g.key, label: g.label, count: counts[g.key] }))}
         />
       </div>
+
+      {group === "empresa" && (
+        <EmpresaBanner
+          empresas={(list ?? []).filter((t) => t.group === "empresa")}
+          outras={(assign.data ?? []).filter((a) => a.group !== "empresa" && a.status !== "inativo")}
+        />
+      )}
 
       {tables.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton h-52 rounded-[14px]" />)}</div>
