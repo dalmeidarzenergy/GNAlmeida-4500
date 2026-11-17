@@ -222,7 +222,20 @@ function SolarEditor({ rows, onChange }: { rows: BandDraft[]; onChange: (r: Band
   );
 }
 
-function TableForm({ initial, group, regime, onClose }: { initial: Table | null; group: GroupKey; regime: string; onClose: () => void }) {
+function TableForm({
+  initial,
+  group,
+  regime,
+  onClose,
+  onGoEmpresa,
+}: {
+  initial: Table | null;
+  group: GroupKey;
+  regime: string;
+  onClose: () => void;
+  /** Saltar para o formulario da Tabela Empresa, que e a que o Centro de Custos usa. */
+  onGoEmpresa: () => void;
+}) {
   const save = useSaveCommissionTable();
   const remove = useRemoveCommissionTable();
   const [name, setName] = useState(initial?.name ?? "");
@@ -269,6 +282,26 @@ function TableForm({ initial, group, regime, onClose }: { initial: Table | null;
         }
       }}
     >
+      <div className="mb-4 rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] text-ink-2">
+        {group === "empresa" ? (
+          <>
+            <span className="font-semibold text-ink">Esta é a tabela que valoriza o Centro de Custos.</span> A previsão e o auto final usam-na para todos os comerciais, e o
+            escalão em uso sobe com as vendas de luz da empresa no mês.{" "}
+            <Link to="/centro-custos" className="text-volt underline underline-offset-2 hover:no-underline">
+              Ver no Centro de Custos
+            </Link>
+          </>
+        ) : (
+          <>
+            <span className="font-semibold text-ink">Esta tabela paga os comerciais de {TABLE_GROUP_LABEL[group]}.</span> O Centro de Custos (previsão e auto final) usa a{" "}
+            <span className="font-semibold text-ink">Tabela Empresa</span> para todos — alterar aqui não mexe nessa previsão.{" "}
+            <button type="button" className="text-volt underline underline-offset-2 hover:no-underline" onClick={onGoEmpresa}>
+              Abrir a Tabela Empresa
+            </button>
+          </>
+        )}
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Nome da tabela" className="sm:col-span-2">
           <input aria-label="Nome da tabela" className="input" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -488,7 +521,20 @@ export default function CommissionTablesPage() {
       </Modal>
 
       <Modal open={edit !== null} onClose={() => setEdit(null)} title={edit === "new" ? "Nova tabela comisional" : "Editar tabela comisional"} wide>
-        {edit !== null && <TableForm key={edit === "new" ? "new" : edit.id} initial={edit === "new" ? null : edit} group={group} regime={regime} onClose={() => setEdit(null)} />}
+        {edit !== null && <TableForm
+          key={edit === "new" ? "new" : edit.id}
+          initial={edit === "new" ? null : edit}
+          group={group}
+          regime={regime}
+          onClose={() => setEdit(null)}
+          onGoEmpresa={() => {
+            // O Centro de Custos so le a Tabela Empresa: leva o utilizador para la em
+            // vez de o deixar a mexer numa tabela que nao entra nessa conta.
+            const emp = (list ?? []).filter((t) => t.group === "empresa")[0] ?? null;
+            setGroup("empresa");
+            setEdit(emp ?? "new");
+          }}
+        />}
       </Modal>
     </div>
   );
