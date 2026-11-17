@@ -108,9 +108,14 @@ async function companyFinance(m: string) {
   const applied = await companyCommissionTable();
   const companyTableId = applied?.id ?? null;
 
-  const [breakdown, calc, costs, imports, manual, paysAll, staff] = await Promise.all([
+  const [breakdown, payout, calc, calcPayout, costs, imports, manual, paysAll, staff] = await Promise.all([
+    // Faturação da empresa: todas as vendas valorizadas pela tabela da empresa.
     buildBreakdown(m, { companyTableId, d2dOnly: true }),
+    // Pagamento aos comerciais: cada um pela tabela que tem atribuída, exactamente
+    // como na Previsão de Pagamentos. É este o dinheiro que sai para as pessoas.
+    buildBreakdown(m, { d2dOnly: true }),
     buildCalc(m, { companyTableId, d2dOnly: true }),
+    buildCalc(m, { d2dOnly: true }),
     costCentersReport(m, { d2dOnly: true }),
     db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m)),
     manualExpenses(m),
@@ -128,8 +133,14 @@ async function companyFinance(m: string) {
 
   /* ------------------------------------------------------------ previsão (CRM) */
 
-  const forecast = {
-    people: breakdown.people
+  /**
+   * Uma conta a partir de um cálculo por pessoa: o que cada um tem a receber e,
+   * no total, o que a empresa paga. Nunca "a pagar" negativo — sem comissão
+   * apurada não há nada a receber (as penalizações de 10 € por venda só descontam
+   * de valores reais).
+   */
+  const previsaoDe = (b: typeof breakdown) => ({
+    people: b.people
       .map((p) => ({
         employeeId: p.employeeId,
         employeeName: p.employeeName,
@@ -137,18 +148,26 @@ async function companyFinance(m: string) {
         sales: p.totalSales,
         gross: p.gross,
         chargeback: p.chargeback,
-        // Nunca "a pagar" negativo: sem comissão apurada não há nada a receber
-        // (as penalizações de 10 € por venda só descontam de valores reais).
         due: Math.max(0, round2(p.due)),
       }))
       .sort((a, b) => b.gross - a.gross),
     totals: {
-      gross: round2(breakdown.totals.gross),
-      chargeback: round2(breakdown.totals.chargeback),
-      due: round2(breakdown.people.reduce((s, p) => s + Math.max(0, p.due), 0)),
-      sales: breakdown.people.reduce((s, p) => s + p.totalSales, 0),
-      people: breakdown.people.length,
+      gross: round2(b.totals.gross),
+      chargeback: round2(b.totals.chargeback),
+      due: round2(b.people.reduce((s, p) => s + Math.max(0, p.due), 0)),
+      sales: b.people.reduce((s, p) => s + p.totalSales, 0),
+      people: b.people.length,
     },
+  });
+
+  /**
+   * Faturação da empresa (tabela da empresa, para todas as vendas) + o que se paga
+   * aos comerciais (tabela de cada um). São duas contas diferentes de propósito: a
+   * empresa factura por uma tabela, mas paga a cada comercial pela tabela dele.
+   */
+  const forecast = {
+    ...previsaoDe(breakdown),
+    payout: previsaoDe(payout),
   };
 
   /* ------------------------------------------- quem fica fora do Centro de Custos */
@@ -168,10 +187,8 @@ async function companyFinance(m: string) {
 
   /* --------------------------------------------------------- auto final (Excel) */
 
-  const final = {
-    loaded: imports.length > 0,
-    imports: imports.length,
-    people: calc.people
+  const autoDe = (c: typeof calc) => ({
+    people: c.people
       .map((p) => ({
         employeeId: p.employeeId,
         employeeName: p.employeeName,
@@ -184,12 +201,20 @@ async function companyFinance(m: string) {
       }))
       .sort((a, b) => b.gross - a.gross),
     totals: {
-      gross: round2(calc.totals.gross),
-      chargeback: round2(calc.totals.chargeback),
-      due: round2(calc.totals.due),
-      medem: round2(calc.totals.medemTotal),
-      people: calc.people.length,
+      gross: round2(c.totals.gross),
+      chargeback: round2(c.totals.chargeback),
+      due: round2(c.totals.due),
+      medem: round2(c.totals.medemTotal),
+      people: c.people.length,
     },
+  });
+
+  const final = {
+    loaded: imports.length > 0,
+    imports: imports.length,
+    ...autoDe(calc),
+    // O que o Excel manda pagar a cada comercial, pela tabela de cada um.
+    payout: { ...autoDe(calcPayout), loaded: imports.length > 0 },
   };
 
   /* ----------------------------------------------------------------- despesas */
@@ -222,7 +247,8 @@ async function companyFinance(m: string) {
     }
     return r;
   };
-  for (const p of final.people) if (p.due > 0) linha(p.employeeId).expected = round2(linha(p.employeeId).expected + p.due);
+  // O "esperado" é o que o Excel manda pagar a cada comercial — pela tabela dele.
+  for (const p of final.payout.people) if (p.due > 0) linha(p.employeeId).expected = round2(linha(p.employeeId).expected + p.due);
   for (const p of pays) {
     const r = linha(p.employeeId);
     r.registered = round2(r.registered + (p.amount ?? 0));
@@ -237,8 +263,8 @@ async function companyFinance(m: string) {
     registered: registado,
     paid: pago,
     pending: porPagar,
-    expected: final.totals.due,
-    forecastExpected: forecast.totals.due,
+    expected: final.payout.totals.due,
+    forecastExpected: forecast.payout.totals.due,
     records: pays
       .map((p) => ({ id: p.id, employeeName: nome.get(p.employeeId) ?? "—", kind: p.kind, amount: p.amount, status: p.status, paidOn: p.paidOn }))
       .sort((a, b) => (a.employeeName > b.employeeName ? 1 : -1)),
@@ -251,12 +277,14 @@ async function companyFinance(m: string) {
   //  - prevista: vendas e comissões do CRM, as mesmas da Previsão de Pagamentos;
   //  - final:    valores do Excel da Iberdrola, quando o mês tem ficheiro carregado.
   // As despesas são do mês e são as mesmas nas duas (já se conhecem sem o Excel).
+  // Receita: o que a empresa factura (tabela da empresa). Comissões: o que paga aos
+  // comerciais pelas tabelas deles — a mesma conta da Previsão de Pagamentos.
   const forecastRevenue = round2(forecast.totals.gross);
-  const forecastCommissions = round2(registado > 0 ? registado : forecast.totals.due);
+  const forecastCommissions = round2(registado > 0 ? registado : forecast.payout.totals.due);
   const forecastProfitValue = round2(forecastRevenue - forecastCommissions - totalDespesas);
 
   const finalRevenue = round2(final.totals.gross);
-  const finalCommissions = round2(final.totals.due);
+  const finalCommissions = round2(final.payout.totals.due);
   const finalProfitValue = round2(finalRevenue - finalCommissions - totalDespesas);
 
   const margin = (value: number, revenue: number) => (revenue > 0 ? value / revenue : null);

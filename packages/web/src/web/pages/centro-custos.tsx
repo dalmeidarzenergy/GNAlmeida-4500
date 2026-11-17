@@ -257,8 +257,9 @@ export default function CentroCustosPage() {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <Pill tone="volt">{data.companyTable.isDefault ? "Tabela Empresa" : "Tabela Comissão"}</Pill>
             <span>
-              A previsão e o auto final usam a tabela <span className="font-semibold text-ink">{data.companyTable.name}</span> para todos os comerciais. O escalão sobe com o
-              total de vendas da empresa no mês.
+              A faturação da empresa — o cartão <span className="font-semibold text-ink">A receber</span> — usa a tabela{" "}
+              <span className="font-semibold text-ink">{data.companyTable.name}</span> para todas as vendas, e o escalão sobe com o total da empresa no mês. O que se paga a
+              cada comercial é pela tabela que ele tem.
             </span>
             <button type="button" className="text-volt underline underline-offset-2 hover:no-underline" onClick={() => setOpenTable(true)}>
               mudar
@@ -278,14 +279,15 @@ export default function CentroCustosPage() {
                 <span>
                   {fmtEur(band.luz ?? 0)} luz / {fmtEur(band.gas ?? 0)} gás
                 </span>
-                <span className="max-w-[420px] text-ink-3">— é este escalão que paga as vendas; os outros desta tabela não entram nesta conta.</span>
+                <span className="max-w-[420px] text-ink-3">— é este escalão que valoriza a faturação da empresa; os outros desta tabela não entram nesta conta.</span>
               </>
             ) : (
               <span className="text-ink-3">nenhum — esta tabela ainda não tem escalões com valores, por isso a previsão fica a 0 €.</span>
             )}
           </div>
           <div className="mt-1 text-[11.5px] text-ink-3">
-            Só os escalões desta tabela entram aqui — alterar outra tabela em Tabelas Comissionais não mexe na previsão. Se os valores mudaram há instantes, usa
+            Mexer na tabela de um comercial não muda esta faturação — muda o que ele tem a receber, na aba{" "}
+            <span className="text-ink-2">Previsão Comissões</span>. Se os valores mudaram há instantes, usa
             <span className="text-ink-2"> Atualizar</span> acima.
           </div>
         </div>
@@ -301,8 +303,8 @@ export default function CentroCustosPage() {
 
       {semValores ? (
         <div className="mb-4 rounded-[10px] border border-amber/30 bg-amber/[0.06] px-3 py-2 text-[12px] text-ink-2">
-          A tabela <span className="font-semibold text-ink">{appliedTable?.name}</span> ainda não tem valores — enquanto os escalões estiverem vazios, a previsão e o auto
-          final ficam a 0 €.{" "}
+          A tabela <span className="font-semibold text-ink">{appliedTable?.name}</span> ainda não tem valores — enquanto os escalões estiverem vazios, a faturação da empresa
+          (A receber) fica a 0 €.{" "}
           <Link to="/tabelas-comissionais" className="text-amber underline underline-offset-2 hover:no-underline">
             Preencher escalões
           </Link>
@@ -391,9 +393,9 @@ function TabelaComissaoModal({ open, onClose, current, month }: { open: boolean;
   return (
     <Modal open={open} onClose={onClose} title="Tabela Comissão" size="wide">
       <p className="mb-4 text-[12.5px] text-ink-2">
-        Por omissão a empresa paga-se pela <span className="font-semibold text-ink">Tabela Empresa</span> — a mesma que preenches em Tabelas Comissionais. Se escolheres
-        outra, a previsão e o auto final do Centro de Custos passam a valorizar as vendas de todos os comerciais por essa tabela, e o escalão sobe com o total de vendas da
-        empresa. A escolha mantém-se até ser mudada e não altera a Previsão de Pagamentos nem o Auto Iberdrola.
+        Por omissão a empresa factura pela <span className="font-semibold text-ink">Tabela Empresa</span> — a mesma que preenches em Tabelas Comissionais. Se escolheres
+        outra, a faturação da empresa (cartão A receber) passa a valorizar todas as vendas por essa tabela, e o escalão sobe com o total de vendas da empresa. O que se paga
+        a cada comercial continua a ser pela tabela dele, e a Previsão de Pagamentos não muda.
       </p>
 
       {!options.length ? (
@@ -453,23 +455,61 @@ function TabelaComissaoModal({ open, onClose, current, month }: { open: boolean;
 type Finance = NonNullable<ReturnType<typeof useCompanyFinance>["data"]>;
 type Person = { employeeId: number; employeeName: string; tableName: string | null; sales: number; gross: number; chargeback: number; due: number; medem?: number };
 
+/**
+ * Aviso de quem ainda não tem tabela comissional atribuída: é por ela que se paga a
+ * cada comercial, por isso sem tabela o valor fica a 0 € — e tem de se dizer porquê.
+ */
+function SemTabelaPayout({ people }: { people: Person[] }) {
+  const sem = people.filter((p) => !p.tableName);
+  if (!sem.length) return null;
+  return (
+    <div className="mt-4 rounded-[10px] border border-amber/30 bg-amber/[0.06] px-3 py-2 text-[12px] text-ink-2">
+      <span className="font-semibold text-ink">
+        {sem.length === 1 ? "1 comercial sem tabela atribuída" : `${sem.length} comerciais sem tabela atribuída`}
+      </span>{" "}
+      — o pagamento {sem.length === 1 ? "dele fica" : "deles fica"} a 0 €, porque o valor de cada um vem da tabela que tem. Atribui a tabela na ficha do funcionário ou em{" "}
+      <Link to="/pagamentos" className="text-amber underline underline-offset-2 hover:no-underline">
+        Previsão de Pagamentos
+      </Link>
+      .
+    </div>
+  );
+}
+
 function PrevisaoTab({ month, forecast }: { month: string; forecast?: Finance["forecast"] }) {
-  const people: Person[] = forecast?.people ?? [];
   const t = forecast?.totals ?? { gross: 0, chargeback: 0, due: 0, sales: 0, people: 0 };
+  // O que se paga a cada comercial: a tabela que ele tem atribuída, exactamente como
+  // na Previsão de Pagamentos. A faturação da empresa (cartão "A receber") é outra
+  // conta — essa usa a tabela da empresa.
+  const pay = forecast?.payout;
+  const people: Person[] = pay?.people ?? [];
+  const pt = pay?.totals ?? { gross: 0, chargeback: 0, due: 0, sales: 0, people: 0 };
   return (
     <>
       <Fonte kind="crm" month={month} />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="A receber (previsto)" value={fmtEur(t.gross)} sub="o que a Iberdrola deve pagar pelas vendas do mês" icon={<Wallet size={15} />} accent="var(--volt)" delay={0} />
         <Stat label="Chargeback" value={fmtEur(t.chargeback)} sub="baixas descontadas no mês" icon={<TrendingDown size={15} />} accent="var(--rose)" delay={40} />
-        <Stat label="A pagar aos comerciais" value={fmtEur(t.due)} sub={`${t.people} pessoa(s) com valores no mês`} icon={<HandCoins size={15} />} accent="var(--sky)" delay={80} />
+        <Stat
+          label="A pagar aos comerciais"
+          value={fmtEur(pt.due)}
+          sub={`${pt.people} pessoa(s) — pela tabela de cada um`}
+          icon={<HandCoins size={15} />}
+          accent="var(--sky)"
+          delay={80}
+        />
         <Stat label="Vendas contadas" value={t.sales} sub={`em ${monthLabel(month)}`} icon={<TrendingUp size={15} />} accent="var(--amber)" delay={120} />
       </div>
+
+      <SemTabelaPayout people={people} />
 
       <div className="card rise mt-6 overflow-hidden" style={{ animationDelay: "160ms" }}>
         <div className="border-b border-line px-4 py-3">
           <div className="font-display text-[13px] font-semibold">Previsão por comercial</div>
-          <div className="text-[11.5px] text-ink-3">Cálculo a partir das vendas registadas no CRM — antes de chegar o Excel da Iberdrola.</div>
+          <div className="text-[11.5px] text-ink-3">
+            Cada comercial pela tabela que tem atribuída — a mesma conta da Previsão de Pagamentos. A faturação da empresa (cartão A receber) é à parte: usa a tabela da
+            empresa.
+          </div>
         </div>
         {!people.length ? (
           <Empty
@@ -485,7 +525,7 @@ function PrevisaoTab({ month, forecast }: { month: string; forecast?: Finance["f
                   <th className="label-mono px-4 py-3 font-normal">Pessoa</th>
                   <th className="label-mono px-4 py-3 font-normal">Tabela</th>
                   <th className="label-mono px-4 py-3 text-right font-normal">Vendas</th>
-                  <th className="label-mono px-4 py-3 text-right font-normal">A receber</th>
+                  <th className="label-mono px-4 py-3 text-right font-normal">Comissão</th>
                   <th className="label-mono px-4 py-3 text-right font-normal">Chargeback</th>
                   <th className="label-mono px-4 py-3 text-right font-normal">A pagar</th>
                 </tr>
@@ -505,10 +545,10 @@ function PrevisaoTab({ month, forecast }: { month: string; forecast?: Finance["f
               <tfoot>
                 <tr className="border-t border-line bg-surface-2/40">
                   <td className="px-4 py-3 font-semibold" colSpan={2}>Total</td>
-                  <td className="num px-4 py-3 text-right font-semibold">{t.sales}</td>
-                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(t.gross)}</td>
-                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(t.chargeback)}</td>
-                  <td className="num px-4 py-3 text-right font-semibold text-volt">{fmtEur(t.due)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{pt.sales}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(pt.gross)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(pt.chargeback)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold text-volt">{fmtEur(pt.due)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -522,8 +562,12 @@ function PrevisaoTab({ month, forecast }: { month: string; forecast?: Finance["f
 /* ---------------------------------------------------------------- auto final */
 
 function FinalTab({ month, finalData }: { month: string; finalData?: Finance["final"] }) {
-  const people: Person[] = finalData?.people ?? [];
   const t = finalData?.totals ?? { gross: 0, chargeback: 0, due: 0, medem: 0, people: 0 };
+  // A pagar a cada comercial: a tabela que ele tem, como no Auto Iberdrola. A receber
+  // é a faturação da empresa, pela tabela da empresa.
+  const pay = finalData?.payout;
+  const people: Person[] = pay?.people ?? [];
+  const pt = pay?.totals ?? { gross: 0, chargeback: 0, due: 0, medem: 0, people: 0 };
 
   if (!finalData?.loaded) {
     return (
@@ -544,7 +588,14 @@ function FinalTab({ month, finalData }: { month: string; finalData?: Finance["fi
         <Stat label="A receber" value={fmtEur(t.gross)} sub={`${t.people} comercial(is) no ficheiro`} icon={<Wallet size={15} />} accent="var(--volt)" delay={0} />
         <Stat label="Chargeback" value={fmtEur(t.chargeback)} sub="baixas descontadas" icon={<TrendingDown size={15} />} accent="var(--rose)" delay={40} />
         <Stat label="MEDEM" value={fmtEur(t.medem)} sub="pontos medidos no mês" icon={<Calculator size={15} />} accent="var(--amber)" delay={80} />
-        <Stat label="A pagar aos comerciais" value={fmtEur(t.due)} sub="total do auto final" icon={<HandCoins size={15} />} accent="var(--sky)" delay={120} />
+        <Stat
+          label="A pagar aos comerciais"
+          value={fmtEur(pt.due)}
+          sub="pela tabela de cada um"
+          icon={<HandCoins size={15} />}
+          accent="var(--sky)"
+          delay={120}
+        />
       </div>
 
       <div className="card mt-4 flex flex-wrap gap-x-8 gap-y-2 px-4 py-3 text-[12.5px]">
@@ -558,10 +609,15 @@ function FinalTab({ month, finalData }: { month: string; finalData?: Finance["fi
         </Link>
       </div>
 
+      <SemTabelaPayout people={people} />
+
       <div className="card rise mt-6 overflow-hidden" style={{ animationDelay: "160ms" }}>
         <div className="border-b border-line px-4 py-3">
           <div className="font-display text-[13px] font-semibold">Auto final por comercial</div>
-          <div className="text-[11.5px] text-ink-3">Valores do ficheiro da Iberdrola carregado para {monthLabel(month)}.</div>
+          <div className="text-[11.5px] text-ink-3">
+            Valores do ficheiro da Iberdrola de {monthLabel(month)}, com cada comercial pago pela sua tabela. O cartão A receber mostra a faturação da empresa, pela
+            tabela da empresa.
+          </div>
         </div>
         {!people.length ? (
           <Empty title="O ficheiro não tem comerciais identificados" text="Confirma se o Excel tem a coluna do comercial ou do NIF do comercial preenchida." />
@@ -573,7 +629,7 @@ function FinalTab({ month, finalData }: { month: string; finalData?: Finance["fi
                   <th className="label-mono px-4 py-3 font-normal">Pessoa</th>
                   <th className="label-mono px-4 py-3 font-normal">Tabela</th>
                   <th className="label-mono px-4 py-3 text-right font-normal">Vendas</th>
-                  <th className="label-mono px-4 py-3 text-right font-normal">A receber</th>
+                  <th className="label-mono px-4 py-3 text-right font-normal">Comissão</th>
                   <th className="label-mono px-4 py-3 text-right font-normal">Chargeback</th>
                   <th className="label-mono px-4 py-3 text-right font-normal">MEDEM</th>
                   <th className="label-mono px-4 py-3 text-right font-normal">A pagar</th>
@@ -595,10 +651,10 @@ function FinalTab({ month, finalData }: { month: string; finalData?: Finance["fi
               <tfoot>
                 <tr className="border-t border-line bg-surface-2/40">
                   <td className="px-4 py-3 font-semibold" colSpan={3}>Total</td>
-                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(t.gross)}</td>
-                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(t.chargeback)}</td>
-                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(t.medem)}</td>
-                  <td className="num px-4 py-3 text-right font-semibold text-volt">{fmtEur(t.due)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(pt.gross)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(pt.chargeback)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(pt.medem)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold text-volt">{fmtEur(pt.due)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -850,7 +906,7 @@ function ExpenseForm({ month, initial, onClose }: { month: string; initial: { id
 
 /**
  * Previsão de Comissões: o que o CRM já diz que há a pagar aos comerciais no mês,
- * com a tabela comissional da empresa aplicada — os mesmos números da Previsão de
+ * cada um pela tabela que tem atribuída — os mesmos números da Previsão de
  * Pagamentos. O Excel da Iberdrola não entra aqui: a conta fechada está no separador
  * Comissões.
  *
@@ -858,8 +914,11 @@ function ExpenseForm({ month, initial, onClose }: { month: string; initial: { id
  * já filtrada do servidor.
  */
 function PrevisaoComissoesTab({ month, forecast, com }: { month: string; forecast?: Finance["forecast"]; com?: Finance["commissions"] }) {
-  const people: Person[] = forecast?.people ?? [];
-  const t = forecast?.totals ?? { gross: 0, chargeback: 0, due: 0, sales: 0, people: 0 };
+  // Pagamento aos comerciais: cada um pela tabela que tem — a mesma conta (e o mesmo
+  // total) da Previsão de Pagamentos.
+  const pay = forecast?.payout;
+  const people: Person[] = pay?.people ?? [];
+  const t = pay?.totals ?? { gross: 0, chargeback: 0, due: 0, sales: 0, people: 0 };
   const registado = com?.registered ?? 0;
   const pago = com?.paid ?? 0;
   const porPagar = com?.pending ?? 0;
@@ -919,18 +978,20 @@ function PrevisaoComissoesTab({ month, forecast, com }: { month: string; forecas
         />
       </div>
 
+      <SemTabelaPayout people={people} />
+
       <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="card rise overflow-hidden" style={{ animationDelay: "160ms" }}>
           <div className="border-b border-line px-4 py-3">
             <div className="font-display text-[13px] font-semibold">Previsão de Comissões de Empresa</div>
             <div className="text-[11.5px] text-ink-3">
-              Conta do mês com as vendas do CRM e a tabela comissional aplicada. Só entram os funcionários D2D Consulting.
+              Conta do mês com as vendas do CRM e a tabela de cada comercial — a mesma da Previsão de Pagamentos. Só entram os funcionários D2D Consulting.
             </div>
           </div>
           <table className="w-full text-[12.5px]">
             <tbody>
               <ContaRow
-                label="Comissão bruta (tabela)"
+                label="Comissão bruta (tabela de cada um)"
                 value={fmtEur(t.gross)}
                 note={`${t.sales} venda(s) de ${t.people} pessoa(s) em ${monthLabel(month)}`}
                 strong
@@ -982,7 +1043,7 @@ function PrevisaoComissoesTab({ month, forecast, com }: { month: string; forecas
       <div className="card rise mt-6 overflow-hidden" style={{ animationDelay: "240ms" }}>
         <div className="border-b border-line px-4 py-3">
           <div className="font-display text-[13px] font-semibold">Comissão prevista por pessoa</div>
-          <div className="text-[11.5px] text-ink-3">O que o CRM prevê pagar a cada comercial, com a tabela aplicada, e o que já está registado em Pagamentos.</div>
+          <div className="text-[11.5px] text-ink-3">O que o CRM prevê pagar a cada comercial, pela tabela que ele tem, e o que já está registado em Pagamentos.</div>
         </div>
         {!linhas.length ? (
           <Empty
