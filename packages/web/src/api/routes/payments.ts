@@ -149,6 +149,12 @@ type Breakdown = {
   to: string;
   people: PersonBlock[];
   totals: { due: number; gross: number; chargeback: number; extras: number; missingTable: number; pelQty: number; ddQty: number; feQty: number };
+  /**
+   * Com a Tabela Comissao da empresa: o escalao que ficou em uso e a contagem que o
+   * escolheu. Serve para se perceber, no ecra, porque e que mudar outro escalao da
+   * tabela nao mexe na previsao.
+   */
+  companyBand: { tableName: string; sales: number; min: number | null; max: number | null; luz: number | null; gas: number | null; dd: number | null; fe: number | null; pel: number | null } | null;
 };
 
 const SERVICE_LABEL: Record<string, string> = { LUZ: "Luz", "GÁS": "Gás", GAS: "Gás", DUAL: "Dual", SOLAR: "Solar" };
@@ -722,7 +728,31 @@ export async function buildBreakdown(
     feQty: people.reduce((s, r) => s + r.feQty, 0),
   };
 
-  return { month: m, from, to, people, totals };
+  // O escalao da tabela da empresa e o mesmo para todos: fica aqui registado, com a
+  // contagem que o escolheu, para o Centro de Custos o poder mostrar.
+  const companyBands = companyTable ? cRows.filter((r) => r.tableId === companyTable.id && r.kind === "clients") : [];
+  const bandOfCompany =
+    companyTable && companyBands.length
+      ? (companyBands.find((b) => companyBandSales >= (b.min ?? 0) && (b.max == null || companyBandSales <= b.max)) ??
+        [...companyBands.filter((b) => b.max == null && companyBandSales >= (b.min ?? 0))].pop() ??
+        null)
+      : null;
+  const companyBand =
+    companyTable && bandOfCompany
+      ? {
+          tableName: companyTable.name,
+          sales: companyBandSales,
+          min: bandOfCompany.min,
+          max: bandOfCompany.max,
+          luz: bandOfCompany.luz,
+          gas: bandOfCompany.gas,
+          dd: bandOfCompany.dd,
+          fe: bandOfCompany.fe,
+          pel: bandOfCompany.pel,
+        }
+      : null;
+
+  return { month: m, from, to, people, totals, companyBand };
 }
 
 /** Aplica os valores manuais (penalizações, km, extras) por cima do cálculo automático. */

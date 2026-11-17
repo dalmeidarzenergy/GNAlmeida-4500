@@ -265,6 +265,8 @@ async function companyFinance(m: string) {
     month: m,
     /** Tabela comissional aplicada pela empresa (null = cada comercial usa a sua). */
     companyTable: applied,
+    /** Escalão dessa tabela que ficou em uso no mês, e as vendas que o escolheram. */
+    companyBand: breakdown.companyBand ?? null,
     forecast,
     final,
     /** Funcionários com a caixa D2D desligada e vendas no mês (ficam fora do Centro de Custos). */

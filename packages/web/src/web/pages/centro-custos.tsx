@@ -36,6 +36,7 @@ import {
   Search,
   Table2,
   Check,
+  RefreshCw,
 } from "lucide-react";
 import { PageHeader, Stat, Empty, Tabs, Modal, Field, SubmitRow, Pill, ConfirmDelete } from "../components/ui/kit";
 import {
@@ -57,6 +58,19 @@ function pad(v: number) {
 
 function todayLisbon() {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
+}
+
+/** Hora de Lisboa, com segundos — para se ver se um número é recente. */
+function lidoEm(d: Date) {
+  return d.toLocaleTimeString("pt-PT", { timeZone: "Europe/Lisbon", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+/** Como se lê um escalão da tabela: "0 a 10 clientes", "26 ou mais clientes". */
+function bandLabel(b: { min: number | null; max: number | null }) {
+  const min = b.min ?? 0;
+  if (b.max == null) return `${min} ou mais clientes`;
+  if (b.max === min) return `${min} clientes`;
+  return `${min} a ${b.max} clientes`;
 }
 
 function parseYM(ym: string) {
@@ -161,10 +175,16 @@ export default function CentroCustosPage() {
   const lucro = data?.profit;
 
   const loading = finance.isLoading && !data;
+  // Quando foi a ultima vez que estes numeros vieram do servidor: se alguem
+  // desconfiar de um valor, compara este relogio com a hora da alteracao.
+  const lido = finance.dataUpdatedAt ? new Date(finance.dataUpdatedAt) : null;
 
   // Tabela aplicada sem valores preenchidos: sem escalões nao ha comissoes nenhumas.
   const appliedTable = (tables.data ?? []).find((t) => t.id === data?.companyTable?.id);
   const semValores = !!appliedTable && appliedTable.clientRows.every((r) => !r.luz && !r.gas && !r.dd && !r.fe && !r.pel);
+  // Escalão da tabela da empresa que o mês está mesmo a usar: é o único que conta
+  // para a previsão. Mostra-se para ninguém estar a mudar outro e a esperar efeito.
+  const band = data?.companyBand ?? null;
   // Vendas de quem não tem a caixa "Funcionário D2D Consulting" ligada: ficam fora daqui.
   const excluidos = data?.excluded ?? [];
 
@@ -189,13 +209,30 @@ export default function CentroCustosPage() {
               ))}
             </select>
           </label>
-          <div className="ml-auto pb-1">
-            <span className="label-mono mb-1 block">Tabela aplicada</span>
-            <button type="button" className="btn btn-ghost" onClick={() => setOpenTable(true)} aria-label="Tabela Comissão">
-              <Table2 size={15} />
-              Tabela Comissão
-              <span className="ml-1 max-w-[190px] truncate text-ink-3">{data?.companyTable?.name ?? "por escolher"}</span>
+          <div className="ml-auto flex items-end gap-2 pb-1">
+            <div className="pb-2 text-right">
+              <span className="label-mono block">Lido do servidor</span>
+              <span className="font-mono text-[11.5px] tabular-nums text-ink-3">{lido ? lidoEm(lido) : "—"}</span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => void finance.refetch()}
+              disabled={finance.isFetching}
+              aria-label="Atualizar números"
+              title="Voltar a ler vendas, tabelas, despesas e auto final"
+            >
+              <RefreshCw size={15} className={finance.isFetching ? "animate-spin" : undefined} />
+              Atualizar
             </button>
+            <div>
+              <span className="label-mono mb-1 block">Tabela aplicada</span>
+              <button type="button" className="btn btn-ghost" onClick={() => setOpenTable(true)} aria-label="Tabela Comissão">
+                <Table2 size={15} />
+                Tabela Comissão
+                <span className="ml-1 max-w-[190px] truncate text-ink-3">{data?.companyTable?.name ?? "por escolher"}</span>
+              </button>
+            </div>
           </div>
         </div>
         <div className="mt-3 min-w-0">
@@ -216,15 +253,41 @@ export default function CentroCustosPage() {
       </div>
 
       {data?.companyTable ? (
-        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-2">
-          <Pill tone="volt">{data.companyTable.isDefault ? "Tabela Empresa" : "Tabela Comissão"}</Pill>
-          <span>
-            A previsão e o auto final usam a tabela <span className="font-semibold text-ink">{data.companyTable.name}</span> para todos os comerciais. O escalão sobe com o
-            total de vendas da empresa no mês.
-          </span>
-          <button type="button" className="text-volt underline underline-offset-2 hover:no-underline" onClick={() => setOpenTable(true)}>
-            mudar
-          </button>
+        <div className="mb-4 text-[12px] text-ink-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Pill tone="volt">{data.companyTable.isDefault ? "Tabela Empresa" : "Tabela Comissão"}</Pill>
+            <span>
+              A previsão e o auto final usam a tabela <span className="font-semibold text-ink">{data.companyTable.name}</span> para todos os comerciais. O escalão sobe com o
+              total de vendas da empresa no mês.
+            </span>
+            <button type="button" className="text-volt underline underline-offset-2 hover:no-underline" onClick={() => setOpenTable(true)}>
+              mudar
+            </button>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-ink-2">
+            <span className="label-mono">Escalão em uso</span>
+            {band ? (
+              <>
+                <span className="font-semibold text-ink">{bandLabel(band)}</span>
+                <span className="text-ink-3">·</span>
+                <span>
+                  {band.sales} venda{band.sales === 1 ? "" : "s"} de luz
+                  {(f?.totals.sales ?? 0) > band.sales ? ` de ${f?.totals.sales} no total` : " no mês"}
+                </span>
+                <span className="text-ink-3">·</span>
+                <span>
+                  {fmtEur(band.luz ?? 0)} luz / {fmtEur(band.gas ?? 0)} gás
+                </span>
+                <span className="max-w-[420px] text-ink-3">— é este escalão que paga as vendas; os outros desta tabela não entram nesta conta.</span>
+              </>
+            ) : (
+              <span className="text-ink-3">nenhum — esta tabela ainda não tem escalões com valores, por isso a previsão fica a 0 €.</span>
+            )}
+          </div>
+          <div className="mt-1 text-[11.5px] text-ink-3">
+            Só os escalões desta tabela entram aqui — alterar outra tabela em Tabelas Comissionais não mexe na previsão. Se os valores mudaram há instantes, usa
+            <span className="text-ink-2"> Atualizar</span> acima.
+          </div>
         </div>
       ) : (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-3">
