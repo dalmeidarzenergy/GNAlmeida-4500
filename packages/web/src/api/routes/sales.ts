@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, like, or, sql } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
 import {
   CORE_MAP,
@@ -729,6 +729,75 @@ export const sales = {
      * o que foi feito / o que falta, o próximo seguimento e os anexos.
      */
     reports: {
+      /**
+       * Todos os reports, do mais recente para o mais antigo: é a secção onde
+       * fica o registo de tudo o que os comerciais vão escrevendo às leads.
+       * O âmbito é o mesmo das leads (vendedor: as dele; chefe: as da equipa).
+       */
+      all: requireView("clientes-a-tratar")
+        .input(
+          z
+            .object({
+              kind: z.enum(LEAD_REPORT_KINDS).optional(),
+              ownerId: z.number().optional(),
+              q: z.string().trim().optional(),
+              limit: z.number().min(1).max(1000).optional(),
+            })
+            .optional(),
+        )
+        .handler(async ({ input, context }) => {
+          const own = scopeSeller(context);
+          const teamScope = await scopeSellerIds(context);
+          const conds: any[] = [];
+          if (own) conds.push(eq(leads.ownerId, own));
+          else if (teamScope) conds.push(inArray(leads.ownerId, teamScope.length ? teamScope : [-1]));
+          if (input?.ownerId) conds.push(eq(leads.ownerId, input.ownerId));
+          if (input?.kind) conds.push(eq(leadReports.kind, input.kind));
+          const q = input?.q?.trim();
+          if (q) {
+            const term = `%${q}%`;
+            conds.push(
+              or(
+                like(leadReports.note, term),
+                like(leads.name, term),
+                like(leadReports.authorName, term),
+                like(leads.nif, term),
+              )!,
+            );
+          }
+          const rows = await db
+            .select({
+              id: leadReports.id,
+              leadId: leadReports.leadId,
+              kind: leadReports.kind,
+              stage: leadReports.stage,
+              problemType: leadReports.problemType,
+              note: leadReports.note,
+              followUp: leadReports.followUp,
+              authorName: leadReports.authorName,
+              authorId: leadReports.authorId,
+              createdAt: leadReports.createdAt,
+              leadName: leads.name,
+              leadNif: leads.nif,
+              leadService: leads.service,
+              leadStage: leads.stage,
+              leadConvertedAt: leads.convertedAt,
+              leadConvertedSaleId: leads.convertedSaleId,
+              ownerId: leads.ownerId,
+              ownerName: employees.name,
+            })
+            .from(leadReports)
+            .innerJoin(leads, eq(leads.id, leadReports.leadId))
+            .leftJoin(employees, eq(employees.id, leads.ownerId))
+            .where(conds.length ? and(...conds) : undefined)
+            .orderBy(desc(leadReports.createdAt), desc(leadReports.id))
+            .limit(input?.limit ?? 500);
+          const ids = rows.map((r) => r.id);
+          const docs = ids.length
+            ? await db.select().from(leadDocuments).where(inArray(leadDocuments.reportId, ids))
+            : [];
+          return rows.map((r) => ({ ...r, documents: docs.filter((d) => d.reportId === r.id).sort((a, b) => b.id - a.id) }));
+        }),
       list: requireView("clientes-a-tratar").input(z.object({ leadId: z.number() })).handler(async ({ input, context }) => {
         const lead = await scopedLead(context, input.leadId);
         const rows = await db.select().from(leadReports).where(eq(leadReports.leadId, lead.id)).orderBy(desc(leadReports.createdAt), desc(leadReports.id));

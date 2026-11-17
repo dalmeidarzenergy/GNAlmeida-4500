@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearch } from "wouter";
 import { ArrowRight, CalendarClock, CheckCircle2, ClipboardList, FileText, MessageSquarePlus, Paperclip, Pencil, Plus, Trash2, Upload, UserPlus } from "lucide-react";
 import { useAdvanceLead, useLead, useLeadDocuments, useLeadReports, useLeadReportsMutation, useLeads, useRemoveLead, useSaveLead } from "../queries/sales";
 import { useEmployeeOptions } from "../queries/hr";
@@ -673,6 +673,10 @@ export default function ClientesATratarPage() {
   const [edit, setEdit] = useState<Lead | null | "new">(null);
   const [advancing, setAdvancing] = useState<Lead | null>(null);
   const [reporting, setReporting] = useState<Lead | null>(null);
+  // Chegou de outro sítio com ?lead=<id>: abre logo a ficha dessa lead.
+  const search = useSearch();
+  const deepLead = Number(new URLSearchParams(search).get("lead") ?? 0);
+  const deepDone = useRef(0);
 
   const all = leads.data ?? [];
   const list = useMemo(() => {
@@ -682,6 +686,14 @@ export default function ClientesATratarPage() {
       .filter((l) => owner == null || l.ownerId === owner)
       .filter((l) => !s || l.name.toLowerCase().includes(s) || (l.nif ?? "").includes(s) || (l.phone ?? "").replace(/\s/g, "").includes(s.replace(/\s/g, "")));
   }, [all, q, stage, owner]);
+
+  useEffect(() => {
+    if (!deepLead || deepDone.current === deepLead) return;
+    const found = all.find((l) => l.id === deepLead);
+    if (!found) return;
+    deepDone.current = deepLead;
+    setEdit(found);
+  }, [deepLead, all]);
 
   const paged = list.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const count = (s: Stage) => all.filter((l) => l.stage === s).length;

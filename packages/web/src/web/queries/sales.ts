@@ -125,6 +125,7 @@ export function useLeadDocuments() {
 
 export const useLeadReports = (leadId: number | null) =>
   useQuery({ ...orpc.sales.leads.reports.list.queryOptions({ input: { leadId: leadId ?? 0 } }), enabled: leadId != null });
+export const useAllLeadReports = () => useQuery(orpc.sales.leads.reports.all.queryOptions({ input: {} }));
 export function useLeadReportsMutation() {
   const inv = useLeadInv();
   const create = useMutation(orpc.sales.leads.reports.create.mutationOptions({ onSuccess: inv }));
