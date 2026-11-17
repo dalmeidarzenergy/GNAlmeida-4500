@@ -246,19 +246,20 @@ async function companyFinance(m: string) {
 
   /* -------------------------------------------------------------------- lucro */
 
-  // Receita: o que a Iberdrola paga (auto final). Sem Excel do mês, usa-se a previsão
-  // do CRM e diz-se que é previsão — nunca se apresenta uma previsão como final.
-  const revenue = final.loaded ? final.totals.gross : forecast.totals.gross;
-  const revenueSource = final.loaded ? "final" : "previsao";
-  // Comissões: o registado no mês; se ainda não há autos lançados, o que o auto manda pagar.
-  const commissionsUsed = registado > 0 ? registado : revenueSource === "final" ? final.totals.due : forecast.totals.due;
-  const commissionsSource = registado > 0 ? "registado" : revenueSource === "final" ? "auto" : "previsao";
-  const profit = round2(revenue - commissionsUsed - totalDespesas);
+  // Duas contas separadas, cada uma com a sua fonte — nunca uma a herdar valores da
+  // outra:
+  //  - prevista: vendas e comissões do CRM, as mesmas da Previsão de Pagamentos;
+  //  - final:    valores do Excel da Iberdrola, quando o mês tem ficheiro carregado.
+  // As despesas são do mês e são as mesmas nas duas (já se conhecem sem o Excel).
+  const forecastRevenue = round2(forecast.totals.gross);
+  const forecastCommissions = round2(registado > 0 ? registado : forecast.totals.due);
+  const forecastProfitValue = round2(forecastRevenue - forecastCommissions - totalDespesas);
 
-  // Previsão do lucro: a mesma conta, mas com a receita e as comissões do CRM (ainda
-  // sem o Excel da Iberdrola). As despesas são as do mês — já conhecidas.
-  const forecastCommissions = registado > 0 ? registado : forecast.totals.due;
-  const forecastProfitValue = round2(forecast.totals.gross - forecastCommissions - totalDespesas);
+  const finalRevenue = round2(final.totals.gross);
+  const finalCommissions = round2(final.totals.due);
+  const finalProfitValue = round2(finalRevenue - finalCommissions - totalDespesas);
+
+  const margin = (value: number, revenue: number) => (revenue > 0 ? value / revenue : null);
 
   const result = {
     month: m,
@@ -271,23 +272,34 @@ async function companyFinance(m: string) {
     expenses: { ...despesas, total: despesas.manual, monthTotal: totalDespesas },
     commissions,
     profit: {
-      revenue,
-      revenueSource,
-      commissions: commissionsUsed,
-      commissionsSource,
+      /** Despesas do mês (massa salarial + frota + lançadas à mão) — iguais nas duas contas. */
       expenses: totalDespesas,
-      value: profit,
-      margin: revenue > 0 ? profit / revenue : null,
-      // O mesmo cálculo com a previsão do CRM, para se ver o que muda se o Excel não vier igual.
-      forecastProfit: forecastProfitValue,
-      /** A conta do lucro feita só com a previsão do CRM (aba "Previsão Lucro de Empresa"). */
+      /**
+       * Conta fechada, com o Excel da Iberdrola (abas Auto Final, Comissões e Lucro da
+       * Empresa). Enquanto o mês não tiver ficheiro, `loaded` é falso e não há conta.
+       */
+      final: {
+        loaded: final.loaded,
+        revenue: finalRevenue,
+        commissions: finalCommissions,
+        expenses: totalDespesas,
+        value: finalProfitValue,
+        margin: margin(finalProfitValue, finalRevenue),
+        sales: final.people.reduce((sum, p) => sum + (p.sales ?? 0), 0),
+        people: final.totals.people,
+        chargeback: round2(final.totals.chargeback),
+      },
+      /**
+       * Conta prevista, com as vendas do CRM e as mesmas comissões da Previsão de
+       * Pagamentos (abas Previsão Auto, Previsão Comissões e Previsão Lucro).
+       */
       forecast: {
-        revenue: round2(forecast.totals.gross),
-        commissions: round2(forecastCommissions),
+        revenue: forecastRevenue,
+        commissions: forecastCommissions,
         commissionsSource: registado > 0 ? "registado" : "previsao",
         expenses: totalDespesas,
         value: forecastProfitValue,
-        margin: forecast.totals.gross > 0 ? forecastProfitValue / forecast.totals.gross : null,
+        margin: margin(forecastProfitValue, forecastRevenue),
         sales: forecast.totals.sales,
         people: forecast.totals.people,
         chargeback: round2(forecast.totals.chargeback),
