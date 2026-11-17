@@ -126,6 +126,8 @@ export default function CentroCustosPage() {
   // Tabela aplicada sem valores preenchidos: sem escalões nao ha comissoes nenhumas.
   const appliedTable = (tables.data ?? []).find((t) => t.id === data?.companyTable?.id);
   const semValores = !!appliedTable && appliedTable.clientRows.every((r) => !r.luz && !r.gas && !r.dd && !r.fe && !r.pel);
+  // Vendas de quem não tem a caixa "Funcionário D2D Consulting" ligada: ficam fora daqui.
+  const excluidos = data?.excluded ?? [];
 
   return (
     <>
@@ -200,6 +202,27 @@ export default function CentroCustosPage() {
           </Link>
         </div>
       ) : null}
+
+      {excluidos.length > 0 && (
+        <div className="mb-4 rounded-[10px] border border-line bg-surface-2 px-3 py-2 text-[12px] text-ink-2">
+          <span className="font-semibold text-ink">
+            {excluidos.length === 1 ? "1 pessoa fora do Centro de Custos" : `${excluidos.length} pessoas fora do Centro de Custos`}
+          </span>{" "}
+          — {excluidos.length === 1 ? "não tem" : "não têm"} a caixa{" "}
+          <span className="font-medium text-ink">Funcionário D2D Consulting</span> ligada na ficha — vendas, massa salarial, frota e comissões{" "}
+          {excluidos.length === 1 ? "dela ficam" : "delas ficam"} de fora:{" "}
+          {excluidos.map((e, i) => (
+            <span key={e.employeeId}>
+              {i > 0 ? ", " : ""}
+              {e.employeeName} ({e.sales} venda{e.sales === 1 ? "" : "s"})
+            </span>
+          ))}
+          .{" "}
+          <Link to="/funcionarios" className="text-volt underline underline-offset-2 hover:no-underline">
+            Abrir funcionários
+          </Link>
+        </div>
+      )}
 
       <TabelaComissaoModal open={openTable} onClose={() => setOpenTable(false)} current={data?.companyTable ? { id: data.companyTable.id, isDefault: !!data.companyTable.isDefault } : null} month={month} />
 

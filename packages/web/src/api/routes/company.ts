@@ -106,17 +106,23 @@ async function companyFinance(m: string) {
   const applied = await companyCommissionTable();
   const companyTableId = applied?.id ?? null;
 
-  const [breakdown, calc, costs, imports, manual, pays, staff] = await Promise.all([
+  const [breakdown, calc, costs, imports, manual, paysAll, staff] = await Promise.all([
     buildBreakdown(m, { companyTableId, d2dOnly: true }),
     buildCalc(m, { companyTableId, d2dOnly: true }),
-    costCentersReport(m),
+    costCentersReport(m, { d2dOnly: true }),
     db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m)),
     manualExpenses(m),
     db.select().from(payments).where(eq(payments.month, m)),
-    db.select({ id: employees.id, name: employees.name }).from(employees),
+    db
+      .select({ id: employees.id, name: employees.name, d2dConsulting: employees.d2dConsulting })
+      .from(employees),
   ]);
 
   const nome = new Map(staff.map((s) => [s.id, s.name] as const));
+  /** Funcionários com a caixa "Funcionário D2D Consulting" ligada: os únicos que contam aqui. */
+  const staffD2D = new Set(staff.filter((s) => s.d2dConsulting).map((s) => s.id));
+  /** Pagamentos registados: só os de quem conta para o Centro de Custos. */
+  const pays = paysAll.filter((p) => staffD2D.has(p.employeeId));
 
   /* ------------------------------------------------------------ previsão (CRM) */
 
@@ -142,6 +148,21 @@ async function companyFinance(m: string) {
       people: breakdown.people.length,
     },
   };
+
+  /* ------------------------------------------- quem fica fora do Centro de Custos */
+
+  // Funcionários sem a caixa "Funcionário D2D Consulting": as vendas deles não entram
+  // no Centro de Custos. Mostram-se à parte para não parecer que faltam pessoas.
+  const foraD2D = staff.filter((s) => !s.d2dConsulting);
+  let excluded: { employeeId: number; employeeName: string; sales: number; gross: number }[] = [];
+  if (foraD2D.length) {
+    const everything = await buildBreakdown(m, { companyTableId });
+    const dentro = new Set(breakdown.people.map((p) => p.employeeId));
+    excluded = everything.people
+      .filter((p) => !dentro.has(p.employeeId))
+      .map((p) => ({ employeeId: p.employeeId, employeeName: p.employeeName, sales: p.totalSales, gross: round2(p.gross) }))
+      .sort((a, b) => b.sales - a.sales);
+  }
 
   /* --------------------------------------------------------- auto final (Excel) */
 
@@ -238,6 +259,8 @@ async function companyFinance(m: string) {
     companyTable: applied,
     forecast,
     final,
+    /** Funcionários com a caixa D2D desligada e vendas no mês (ficam fora do Centro de Custos). */
+    excluded,
     expenses: { ...despesas, total: despesas.manual, monthTotal: totalDespesas },
     commissions,
     profit: {

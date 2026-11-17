@@ -650,7 +650,8 @@ function emptyCost() {
   return { count: 0, payroll: 0, commissions: 0, advances: 0, fleet: 0 };
 }
 
-export async function costCentersReport(month: string) {
+export async function costCentersReport(month: string, opts: { d2dOnly?: boolean } = {}) {
+  const d2dOnly = opts.d2dOnly === true;
   const prev = shiftMonthKey(month, -1);
   const from = `${prev}-01`;
   const to = `${month}-31`;
@@ -664,11 +665,15 @@ export async function costCentersReport(month: string) {
         hireDate: employees.hireDate,
         terminationDate: employees.terminationDate,
         departmentId: employees.departmentId,
+        d2dConsulting: employees.d2dConsulting,
       })
       .from(employees),
     db.select({ id: departments.id, name: departments.name, color: departments.color }).from(departments),
   ]);
-  const deptOf = new Map<number, number | null>(emps.map((e) => [e.id, e.departmentId ?? null]));
+  // Centro de Custos: só as pessoas com a caixa "Funcionário D2D Consulting" ligada.
+  const staff = d2dOnly ? emps.filter((e) => e.d2dConsulting) : emps;
+  const conta = new Set(staff.map((e) => e.id));
+  const deptOf = new Map<number, number | null>(staff.map((e) => [e.id, e.departmentId ?? null]));
 
   const [pays, advs, entries, maint, cards, cars] = await Promise.all([
     db.select({ employeeId: payments.employeeId, month: payments.month, kind: payments.kind, amount: payments.amount }).from(payments),
@@ -711,7 +716,7 @@ export async function costCentersReport(month: string) {
 
   // Massa salarial: quem esteve ativo no mes (e no mes anterior, para a comparacao).
   for (const ym of [month, prev]) {
-    for (const e of emps) {
+    for (const e of staff) {
       if (!activeInMonth(e, ym)) continue;
       const b = bucket(e.departmentId, ym);
       b.count += 1;
@@ -720,11 +725,13 @@ export async function costCentersReport(month: string) {
   }
 
   for (const p of pays) {
+    if (d2dOnly && !conta.has(p.employeeId)) continue;
     if (p.month !== month && p.month !== prev) continue;
     bucket(deptOf.get(p.employeeId), p.month).commissions += p.amount ?? 0;
   }
 
   for (const a of advs) {
+    if (d2dOnly && !conta.has(a.employeeId)) continue;
     const ym = (a.date ?? "").slice(0, 7);
     if (ym !== month && ym !== prev) continue;
     bucket(deptOf.get(a.employeeId), ym).advances += a.amount ?? 0;
@@ -732,12 +739,17 @@ export async function costCentersReport(month: string) {
 
   for (const f of entries) {
     if (!f.spentOn || f.spentOn < from || f.spentOn > to) continue;
+    // Consumos atribuídos a quem está fora do Centro de Custos também ficam de fora.
+    const donoConsumo = fleetOwner(f.employeeId ?? null, f.cardId ?? null, f.vehicleId ?? null);
+    if (d2dOnly && donoConsumo != null && !conta.has(donoConsumo)) continue;
     const ym = f.spentOn.slice(0, 7);
     if (ym !== month && ym !== prev) continue;
     bucket(deptOf.get(fleetOwner(f.employeeId ?? null, f.cardId ?? null, f.vehicleId ?? null) ?? -1), ym).fleet += f.amount ?? 0;
   }
 
   for (const m of maint) {
+    const donoViatura = carOwner.get(m.vehicleId) ?? null;
+    if (d2dOnly && donoViatura != null && !conta.has(donoViatura)) continue;
     const day = m.doneOn ?? m.scheduledOn;
     if (!day || day < from || day > to) continue;
     const ym = day.slice(0, 7);
