@@ -253,6 +253,11 @@ async function companyFinance(m: string) {
   const commissionsSource = registado > 0 ? "registado" : revenueSource === "final" ? "auto" : "previsao";
   const profit = round2(revenue - commissionsUsed - totalDespesas);
 
+  // Previsão do lucro: a mesma conta, mas com a receita e as comissões do CRM (ainda
+  // sem o Excel da Iberdrola). As despesas são as do mês — já conhecidas.
+  const forecastCommissions = registado > 0 ? registado : forecast.totals.due;
+  const forecastProfitValue = round2(forecast.totals.gross - forecastCommissions - totalDespesas);
+
   const result = {
     month: m,
     /** Tabela comissional aplicada pela empresa (null = cada comercial usa a sua). */
@@ -272,7 +277,19 @@ async function companyFinance(m: string) {
       value: profit,
       margin: revenue > 0 ? profit / revenue : null,
       // O mesmo cálculo com a previsão do CRM, para se ver o que muda se o Excel não vier igual.
-      forecastProfit: round2(forecast.totals.gross - (registado > 0 ? registado : forecast.totals.due) - totalDespesas),
+      forecastProfit: forecastProfitValue,
+      /** A conta do lucro feita só com a previsão do CRM (aba "Previsão Lucro de Empresa"). */
+      forecast: {
+        revenue: round2(forecast.totals.gross),
+        commissions: round2(forecastCommissions),
+        commissionsSource: registado > 0 ? "registado" : "previsao",
+        expenses: totalDespesas,
+        value: forecastProfitValue,
+        margin: forecast.totals.gross > 0 ? forecastProfitValue / forecast.totals.gross : null,
+        sales: forecast.totals.sales,
+        people: forecast.totals.people,
+        chargeback: round2(forecast.totals.chargeback),
+      },
     },
   };
 
