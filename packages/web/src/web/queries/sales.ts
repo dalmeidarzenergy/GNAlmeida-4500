@@ -86,3 +86,35 @@ export function useSetReady() {
   );
 }
 export const useImportSales = () => useMutation(orpc.sales.orders.importMany.mutationOptions({ onSuccess: useInv() }));
+
+/* ------------------------------------------------------------------ *
+ * Clientes a ser tratados (leads)
+ * ------------------------------------------------------------------ */
+
+export const useLeads = () => useQuery(orpc.sales.leads.list.queryOptions());
+export const useLead = (id: number | null) =>
+  useQuery({ ...orpc.sales.leads.get.queryOptions({ input: { id: id ?? 0 } }), enabled: id != null });
+
+function useLeadInv() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: orpc.sales.key() });
+    qc.invalidateQueries({ queryKey: orpc.reports.key() });
+  };
+}
+
+export function useSaveLead() {
+  const inv = useLeadInv();
+  const c = useMutation(orpc.sales.leads.create.mutationOptions({ onSuccess: inv }));
+  const u = useMutation(orpc.sales.leads.update.mutationOptions({ onSuccess: inv }));
+  return { create: c, update: u, isPending: c.isPending || u.isPending };
+}
+export const useRemoveLead = () => useMutation(orpc.sales.leads.remove.mutationOptions({ onSuccess: useLeadInv() }));
+/** Avançar: a lead passa a cliente e a venda é criada. */
+export const useAdvanceLead = () => useMutation(orpc.sales.leads.advance.mutationOptions({ onSuccess: useLeadInv() }));
+export function useLeadDocuments() {
+  const inv = useLeadInv();
+  const up = useMutation(orpc.sales.leads.documents.upload.mutationOptions({ onSuccess: inv }));
+  const rm = useMutation(orpc.sales.leads.documents.remove.mutationOptions({ onSuccess: inv }));
+  return { upload: up, remove: rm, isPending: up.isPending };
+}

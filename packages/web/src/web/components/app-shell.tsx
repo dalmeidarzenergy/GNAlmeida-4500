@@ -36,6 +36,7 @@ const NAV: NavGroup[] = [
     icon: ShoppingCart,
     items: [
       { to: "/clientes", key: "clientes", label: "Clientes", icon: Contact },
+      { to: "/clientes-a-tratar", key: "clientes-a-tratar", label: "Clientes a ser tratados", icon: UserSearch },
       { to: "/vendas", key: "vendas", label: "Vendas", icon: ShoppingCart },
       { to: "/vendas-criticas", key: "vendas-criticas", label: "Vendas Críticas", icon: Timer },
       { to: "/estado-vtv", key: "estado-vtv", label: "Estado VTV", icon: ShieldAlert },

@@ -177,6 +177,36 @@ if (existsSync(dbPath)) {
         console.log("Tabela Empresa criada (vazia) para o Centro de Custos.");
       }
     }
+    // Clientes a ser tratados (leads): fichas em tratamento que ainda nao sao
+    // clientes. So quando sao avancadas nascem o cliente e a venda.
+    db.run(`CREATE TABLE IF NOT EXISTS leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      nif TEXT,
+      phone TEXT,
+      email TEXT,
+      service TEXT NOT NULL DEFAULT 'LUZ',
+      details TEXT,
+      stage TEXT NOT NULL DEFAULT 'nova',
+      source TEXT,
+      expected_close TEXT,
+      owner_id INTEGER,
+      converted_client_id INTEGER,
+      converted_sale_id INTEGER,
+      converted_at INTEGER,
+      created_at INTEGER NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS lead_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'outro',
+      name TEXT NOT NULL,
+      path TEXT NOT NULL,
+      size INTEGER NOT NULL DEFAULT 0,
+      mime TEXT,
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    )`);
     // Consumos dos cartoes frota (abastecimentos, carregamentos, portagens).
     db.run(`CREATE TABLE IF NOT EXISTS fuel_entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

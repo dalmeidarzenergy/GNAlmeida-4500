@@ -17,8 +17,9 @@ import {
 } from "../shared/client-forms";
 import { requireView, requireEdit, requireRoles } from "../middleware/auth";
 import { db } from "../database";
-import { clients, employees, saleStatusHistory, sales as salesTbl, salesTargets, suppliers as supTbl, teamMemberships, teams, user } from "../database/schema";
+import { clients, employees, leadDocuments, leads, saleStatusHistory, sales as salesTbl, salesTargets, suppliers as supTbl, teamMemberships, teams, user } from "../database/schema";
 import { localPhotoUrl } from "../lib/s3";
+import { removePublic, writePublic } from "../lib/public-files";
 import { activeInMonth } from "../shared/hierarchy";
 import { notifySaleImmediate, notifyAdminsSaleReady } from "../lib/notify";
 
@@ -31,6 +32,74 @@ const clientInput = z.object({
 });
 
 const detailsSchema = z.record(z.string(), z.union([z.string(), z.boolean(), z.null()]));
+
+/** Estados pelos quais passa uma lead em tratamento. */
+const LEAD_STAGES = ["nova", "contacto", "proposta", "negociacao", "docs"] as const;
+/** Tipos de documento que se anexam a uma lead. */
+const LEAD_DOC_KINDS = ["fatura", "identificacao", "contrato", "cpe", "outro"] as const;
+/** Ficheiros ate 12 MB (base64). Acima disto o corpo do pedido fica enorme. */
+const MAX_LEAD_UPLOAD = 12 * 1024 * 1024;
+
+/** Lead = formulário completo da venda do serviço escolhido + dados de tratamento. */
+const leadInput = z.object({
+  service: z.enum(SERVICE_LABELS as [string, ...string[]], { message: "Indique o serviço a aderir (LUZ, GÁS, DUAL ou SOLAR)." }),
+  details: detailsSchema,
+  stage: z.enum(LEAD_STAGES).default("nova"),
+  email: z.string().trim().nullable().optional(),
+  /** Como chegou a lead (texto livre). */
+  source: z.string().trim().nullable().optional(),
+  /** Data prevista de fecho (YYYY-MM-DD). */
+  expectedClose: z.string().trim().nullable().optional(),
+  /** Comercial responsável (ignorado para vendedores: são sempre eles). */
+  ownerId: z.number().nullable().optional(),
+});
+
+/** Colunas de pesquisa da lead, tiradas do formulário da venda. */
+function leadCore(details: Details, email?: string | null) {
+  const name = String(details.name ?? "").trim();
+  if (!name) throw new ORPCError("BAD_REQUEST", { message: "Indique o nome do cliente." });
+  return {
+    name,
+    nif: String(details.nif ?? "").trim() || null,
+    phone: String(details.contact ?? "").trim() || null,
+    email: String(email ?? "").trim() || null,
+  };
+}
+
+/** Lead que o utilizador pode tratar (vendedor: só as dele; chefe: as da equipa). */
+async function scopedLead(ctx: Ctx, id: number) {
+  const own = scopeSeller(ctx);
+  const team = await scopeSellerIds(ctx);
+  const [lead] = await db.select().from(leads).where(eq(leads.id, id));
+  if (!lead) throw new ORPCError("NOT_FOUND", { message: "Lead não encontrada." });
+  const denied = own ? lead.ownerId !== own : team && lead.ownerId != null && !team.includes(lead.ownerId);
+  if (denied) throw new ORPCError("NOT_FOUND", { message: "Lead não encontrada." });
+  return lead;
+}
+
+function decodeLeadUpload(content: string, fallbackMime: string) {
+  const m = content.match(/^data:([^;]+);base64,/);
+  if (!m) throw new ORPCError("BAD_REQUEST", { message: "Ficheiro inválido." });
+  const mime = m[1] || fallbackMime;
+  const buf = Buffer.from(content.slice(m[0].length), "base64");
+  if (buf.byteLength > MAX_LEAD_UPLOAD) {
+    throw new ORPCError("BAD_REQUEST", { message: "Ficheiro demasiado grande (máximo 12 MB)." });
+  }
+  return { mime, buf };
+}
+
+function leadFileExt(mime: string, name: string) {
+  const fromName = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+  if (fromName && /^[a-z0-9]{1,6}$/.test(fromName)) return fromName;
+  const map: Record<string, string> = {
+    "application/pdf": "pdf",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/heic": "heic",
+  };
+  return map[mime] ?? "bin";
+}
 
 /** Venda IBERDROLA: serviço + formulário completo (inclui nome/NIF/contacto do cliente). */
 const saleFormInput = z.object({
@@ -501,6 +570,172 @@ export const sales = {
       await db.delete(salesTbl).where(inArray(salesTbl.id, ids));
       return { ok: true, count: ids.length };
     }),
+  },
+  /**
+   * Clientes a ser tratados (leads). Fichas em tratamento: têm todos os dados
+   * da conversão da venda e os documentos anexados, mas ainda não são clientes.
+   * Só quando são avançadas é que nascem o cliente e a venda — até lá não
+   * aparecem em Clientes nem em Vendas.
+   */
+  leads: {
+    list: requireView("clientes-a-tratar").handler(async ({ context }) => {
+      const own = scopeSeller(context);
+      const teamScope = await scopeSellerIds(context);
+      const scope = own
+        ? eq(leads.ownerId, own)
+        : teamScope
+          ? inArray(leads.ownerId, teamScope.length ? teamScope : [-1])
+          : undefined;
+      return db
+        .select({
+          id: leads.id,
+          name: leads.name,
+          nif: leads.nif,
+          phone: leads.phone,
+          email: leads.email,
+          service: leads.service,
+          details: leads.details,
+          stage: leads.stage,
+          source: leads.source,
+          expectedClose: leads.expectedClose,
+          ownerId: leads.ownerId,
+          ownerName: employees.name,
+          convertedAt: leads.convertedAt,
+          convertedClientId: leads.convertedClientId,
+          convertedSaleId: leads.convertedSaleId,
+          createdAt: leads.createdAt,
+          docCount: sql<number>`(select count(*) from lead_documents d where d.lead_id = ${leads.id})`,
+        })
+        .from(leads)
+        .leftJoin(employees, eq(employees.id, leads.ownerId))
+        .where(scope ? and(sql`${leads.convertedAt} is null`, scope) : sql`${leads.convertedAt} is null`)
+        .orderBy(desc(leads.createdAt), desc(leads.id));
+    }),
+    /** Ficha completa de uma lead (com os anexos). */
+    get: requireView("clientes-a-tratar").input(z.object({ id: z.number() })).handler(async ({ input, context }) => {
+      const lead = await scopedLead(context, input.id);
+      const documents = await db.select().from(leadDocuments).where(eq(leadDocuments.leadId, lead.id)).orderBy(desc(leadDocuments.id));
+      return { ...lead, documents };
+    }),
+    create: requireEdit("clientes-a-tratar").input(leadInput).handler(async ({ input, context }) => {
+      const ownerId = await resolveOwner(context, input.ownerId);
+      const core = leadCore(input.details, input.email);
+      const [row] = await db
+        .insert(leads)
+        .values({
+          ...core,
+          service: input.service,
+          details: input.details,
+          stage: input.stage,
+          source: input.source ?? null,
+          expectedClose: input.expectedClose || null,
+          ownerId,
+        })
+        .returning();
+      return row;
+    }),
+    update: requireEdit("clientes-a-tratar")
+      .input(leadInput.extend({ id: z.number() }))
+      .handler(async ({ input, context }) => {
+        const lead = await scopedLead(context, input.id);
+        const ownerId = scopeSeller(context) ? lead.ownerId : await resolveOwner(context, input.ownerId);
+        const core = leadCore(input.details, input.email);
+        await db
+          .update(leads)
+          .set({
+            ...core,
+            service: input.service,
+            details: input.details,
+            stage: input.stage,
+            source: input.source ?? null,
+            expectedClose: input.expectedClose || null,
+            ownerId,
+          })
+          .where(eq(leads.id, lead.id));
+        return { ok: true };
+      }),
+    remove: requireEdit("clientes-a-tratar").input(z.object({ id: z.number() })).handler(async ({ input, context }) => {
+      const lead = await scopedLead(context, input.id);
+      const files = await db.select({ path: leadDocuments.path }).from(leadDocuments).where(eq(leadDocuments.leadId, lead.id));
+      await db.delete(leadDocuments).where(eq(leadDocuments.leadId, lead.id));
+      await db.delete(leads).where(eq(leads.id, lead.id));
+      for (const f of files) removePublic(f.path);
+      return { ok: true };
+    }),
+    /**
+     * Avançar: a lead passa a cliente e a venda é criada com os dados já
+     * recolhidos. Se faltar algum campo obrigatório da venda, a conversão é
+     * recusada com a indicação do que falta — nada fica a meio.
+     */
+    advance: requireEdit("clientes-a-tratar").input(z.object({ id: z.number() })).handler(async ({ input, context }) => {
+      const lead = await scopedLead(context, input.id);
+      if (lead.convertedAt) throw new ORPCError("BAD_REQUEST", { message: "Esta lead já foi avançada." });
+      const service = lead.service ?? "LUZ";
+      const ownerId = await resolveOwner(context, lead.ownerId);
+      const values: Details = { ...(lead.details ?? {}) };
+      // A ficha da lead manda nos dados principais do cliente.
+      values.name = lead.name;
+      if (lead.nif) values.nif = lead.nif;
+      if (lead.phone) values.contact = lead.phone;
+      const { core, details: saleDetails, status, date } = splitSaleForm(service, values, await saleFormWithCustom(service));
+      const clientId = await upsertSaleClient(context, core as { name: string; nif: string; phone: string }, ownerId, null);
+      const number = await nextNumber(date);
+      const [created] = await db
+        .insert(salesTbl)
+        .values({ clientId, sellerId: ownerId, date, status, supplier: SUPPLIER, service, details: saleDetails, total: 0, number })
+        .returning();
+      if (!created) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Não foi possível criar a venda." });
+      const sale = created;
+      await logStatus(sale.id, "luz", status, null, context.user.id);
+      if (service === "DUAL") await logStatus(sale.id, "gas", gasStatus(saleDetails), null, context.user.id);
+      await notifySaleImmediate(sale.id);
+      await db
+        .update(leads)
+        .set({ convertedClientId: clientId, convertedSaleId: sale.id, convertedAt: new Date() })
+        .where(eq(leads.id, lead.id));
+      return { ok: true, clientId, saleId: sale.id, number };
+    }),
+    /** Anexos da lead: ficha de cliente, fatura, contrato assinado, CPE… */
+    documents: {
+      upload: requireEdit("clientes-a-tratar")
+        .input(
+          z.object({
+            leadId: z.number(),
+            name: z.string().min(1, "Indique o nome do documento."),
+            content: z.string(),
+            mime: z.string().nullable().optional(),
+            kind: z.enum(LEAD_DOC_KINDS).default("outro"),
+            notes: z.string().nullable().optional(),
+          }),
+        )
+        .handler(async ({ input, context }) => {
+          const lead = await scopedLead(context, input.leadId);
+          const { mime, buf } = decodeLeadUpload(input.content, input.mime ?? "application/octet-stream");
+          const filename = `${Date.now()}-${crypto.randomUUID()}.${leadFileExt(mime, input.name)}`;
+          const path = writePublic("leads", filename, buf);
+          const [row] = await db
+            .insert(leadDocuments)
+            .values({
+              leadId: lead.id,
+              kind: input.kind,
+              name: input.name,
+              path,
+              size: buf.byteLength,
+              mime,
+              notes: input.notes ?? null,
+            })
+            .returning();
+          return row;
+        }),
+      remove: requireEdit("clientes-a-tratar").input(z.object({ id: z.number() })).handler(async ({ input, context }) => {
+        const [doc] = await db.select().from(leadDocuments).where(eq(leadDocuments.id, input.id));
+        if (!doc) throw new ORPCError("NOT_FOUND", { message: "Documento não encontrado." });
+        await scopedLead(context, doc.leadId);
+        await db.delete(leadDocuments).where(eq(leadDocuments.id, doc.id));
+        removePublic(doc.path);
+        return { ok: true };
+      }),
+    },
   },
   targets: {
     list: requireView("metas").input(z.object({ month: z.string() })).handler(async ({ input, context }) => {

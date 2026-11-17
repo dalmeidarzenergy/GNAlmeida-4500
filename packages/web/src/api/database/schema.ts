@@ -1017,3 +1017,52 @@ export const renamedSuppliers = sqliteTable("renamed_suppliers", {
   name: text("name").notNull(),
   createdAt: createdAt(),
 });
+
+/**
+ * Clientes a ser tratados (leads): a ficha que os comerciais preenchem antes de
+ * haver cliente. Guarda o formulário completo da venda do serviço escolhido
+ * (as mesmas chaves de `SALE_FORMS`) e todos os dados de contacto. Só quando a
+ * lead é avançada é que nasce o cliente (`clients`) e a venda (`sales`) — até
+ * lá não aparece nem em Clientes nem em Vendas.
+ */
+export const leads = sqliteTable("leads", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  nif: text("nif"),
+  phone: text("phone"),
+  email: text("email"),
+  /** LUZ, GÁS, DUAL, SOLAR ou MEDEM — o formulário que a lead usa. */
+  service: text("service").notNull().default("LUZ"),
+  /** Dados da conversão: as mesmas chaves do formulário da venda do serviço. */
+  details: text("details", { mode: "json" }).$type<Record<string, string | boolean | null>>(),
+  /** Estado da lead: nova | contacto | proposta | negociacao | docs. */
+  stage: text("stage").notNull().default("nova"),
+  /** Como chegou a lead (rua, referência, telefone, site…). Texto livre. */
+  source: text("source"),
+  /** Data prevista de fecho (YYYY-MM-DD). */
+  expectedClose: text("expected_close"),
+  /** Comercial responsável pela lead. */
+  ownerId: integer("owner_id").references(() => employees.id, { onDelete: "set null" }),
+  /** Cliente e venda criados quando a lead é avançada (nulos enquanto está em tratamento). */
+  convertedClientId: integer("converted_client_id").references(() => clients.id, { onDelete: "set null" }),
+  convertedSaleId: integer("converted_sale_id").references(() => sales.id, { onDelete: "set null" }),
+  convertedAt: integer("converted_at", { mode: "timestamp" }),
+  createdAt: createdAt(),
+});
+
+/** Documentos anexados a uma lead (ficha de cliente, fatura, CPE, contrato assinado…). */
+export const leadDocuments = sqliteTable("lead_documents", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  leadId: integer("lead_id")
+    .notNull()
+    .references(() => leads.id, { onDelete: "cascade" }),
+  /** Tipo do documento: fatura | identificacao | contrato | cpe | outro. */
+  kind: text("kind").notNull().default("outro"),
+  name: text("name").notNull(),
+  /** URL público do ficheiro em public/uploads/leads/. */
+  path: text("path").notNull(),
+  size: integer("size").notNull().default(0),
+  mime: text("mime"),
+  notes: text("notes"),
+  createdAt: createdAt(),
+}, (t) => [index("idx_lead_documents_lead").on(t.leadId)]);

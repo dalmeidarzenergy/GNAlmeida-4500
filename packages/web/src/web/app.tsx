@@ -12,6 +12,7 @@ const TeamsPage = lazy(() => import("./pages/teams"));
 const AbsencesPage = lazy(() => import("./pages/absences"));
 const RecruitmentPage = lazy(() => import("./pages/recruitment"));
 const ClientsPage = lazy(() => import("./pages/clients"));
+const ClientesATratarPage = lazy(() => import("./pages/clientes-a-tratar"));
 const SalesPage = lazy(() => import("./pages/sales"));
 const CriticalSalesPage = lazy(() => import("./pages/critical-sales"));
 const VtvStatusPage = lazy(() => import("./pages/vtv-status"));
@@ -64,6 +65,7 @@ const routes: [string, React.ComponentType][] = [
   ["/centro-custos", CentroCustosPage],
   ["/frota", FrotaPage],
   ["/clientes", ClientsPage],
+  ["/clientes-a-tratar", ClientesATratarPage],
   ["/vendas/importar", SalesImportPage],
   ["/vendas", SalesPage],
   ["/vendas-criticas", CriticalSalesPage],
