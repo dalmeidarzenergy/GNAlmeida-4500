@@ -118,3 +118,16 @@ export function useLeadDocuments() {
   const rm = useMutation(orpc.sales.leads.documents.remove.mutationOptions({ onSuccess: inv }));
   return { upload: up, remove: rm, isPending: up.isPending };
 }
+
+/* ------------------------------------------------------------------ *
+ * Reports à venda (dentro da lead)
+ * ------------------------------------------------------------------ */
+
+export const useLeadReports = (leadId: number | null) =>
+  useQuery({ ...orpc.sales.leads.reports.list.queryOptions({ input: { leadId: leadId ?? 0 } }), enabled: leadId != null });
+export function useLeadReportsMutation() {
+  const inv = useLeadInv();
+  const create = useMutation(orpc.sales.leads.reports.create.mutationOptions({ onSuccess: inv }));
+  const remove = useMutation(orpc.sales.leads.reports.remove.mutationOptions({ onSuccess: inv }));
+  return { create, remove, isPending: create.isPending };
+}

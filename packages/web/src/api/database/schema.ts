@@ -1050,12 +1050,43 @@ export const leads = sqliteTable("leads", {
   createdAt: createdAt(),
 });
 
+/**
+ * Reports feitos à venda (pelo comercial) enquanto a lead está em tratamento.
+ * Cada report guarda o que foi feito, o estado em que a venda ficou, se há
+ * problema, o próximo seguimento e os anexos do momento em que foi escrito.
+ */
+export const leadReports = sqliteTable("lead_reports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  leadId: integer("lead_id")
+    .notNull()
+    .references(() => leads.id, { onDelete: "cascade" }),
+  /** Tipo: atualizacao (processo) | contacto (visita/contacto) | problema (obstáculo). */
+  kind: text("kind").notNull().default("atualizacao"),
+  /** Estado em que a venda ficou depois deste report. */
+  stage: text("stage"),
+  /** Só para reports de problema: KO, falta de documento, cliente não responde… */
+  problemType: text("problem_type"),
+  /** O que foi feito / o que falta. */
+  note: text("note").notNull(),
+  /** Próximo seguimento (YYYY-MM-DD). */
+  followUp: text("follow_up"),
+  /** Quem escreveu (nome no momento do report, para o histórico não perder o autor). */
+  authorName: text("author_name"),
+  authorId: text("author_id"),
+  createdAt: createdAt(),
+}, (t) => [
+  index("idx_lead_reports_lead").on(t.leadId),
+  index("idx_lead_reports_follow").on(t.followUp),
+]);
+
 /** Documentos anexados a uma lead (ficha de cliente, fatura, CPE, contrato assinado…). */
 export const leadDocuments = sqliteTable("lead_documents", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   leadId: integer("lead_id")
     .notNull()
     .references(() => leads.id, { onDelete: "cascade" }),
+  /** Report a que o anexo pertence (nulo = documento da ficha da lead). */
+  reportId: integer("report_id").references(() => leadReports.id, { onDelete: "cascade" }),
   /** Tipo do documento: fatura | identificacao | contrato | cpe | outro. */
   kind: text("kind").notNull().default("outro"),
   name: text("name").notNull(),
@@ -1065,4 +1096,7 @@ export const leadDocuments = sqliteTable("lead_documents", {
   mime: text("mime"),
   notes: text("notes"),
   createdAt: createdAt(),
-}, (t) => [index("idx_lead_documents_lead").on(t.leadId)]);
+}, (t) => [
+  index("idx_lead_documents_lead").on(t.leadId),
+  index("idx_lead_documents_report").on(t.reportId),
+]);

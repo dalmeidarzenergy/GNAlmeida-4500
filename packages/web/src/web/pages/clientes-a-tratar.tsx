@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, CheckCircle2, FileText, Paperclip, Pencil, Plus, Trash2, Upload, UserPlus } from "lucide-react";
-import { useAdvanceLead, useLead, useLeadDocuments, useLeads, useRemoveLead, useSaveLead } from "../queries/sales";
+import { ArrowRight, CalendarClock, CheckCircle2, ClipboardList, FileText, MessageSquarePlus, Paperclip, Pencil, Plus, Trash2, Upload, UserPlus } from "lucide-react";
+import { useAdvanceLead, useLead, useLeadDocuments, useLeadReports, useLeadReportsMutation, useLeads, useRemoveLead, useSaveLead } from "../queries/sales";
 import { useEmployeeOptions } from "../queries/hr";
 import { useMe } from "../queries/me";
 import { PageHeader, Modal, Field, SubmitRow, SearchBox, Empty, TableSkeleton, Tabs, Stat, Pill, Pagination, Avatar } from "../components/ui/kit";
@@ -12,7 +12,7 @@ import { DynamicField } from "../components/sale-form";
 import { useCustomSuppliers, useSupplierOverrides } from "../queries/suppliers";
 
 type Lead = NonNullable<ReturnType<typeof useLeads>["data"]>[number];
-type LeadFile = { id: number; name: string; path: string; size: number; kind: string; createdAt: string | Date };
+type LeadFile = { id: number; name: string; path: string; size: number; kind: string; reportId?: number | null; createdAt: string | Date };
 
 /** Estados de tratamento de uma lead (o último passo é o botão Avançar). */
 const STAGES = [
@@ -41,6 +41,32 @@ const DOC_KINDS = [
 
 const fmtSize = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} kB`);
 
+/** Data e hora do report — registada pelo servidor, não se escreve à mão. */
+const fmtDateTime = (d: string | Date | null | undefined) => {
+  if (!d) return "—";
+  const date = typeof d === "string" ? new Date(d) : d;
+  return `${date.toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric" })} às ${date.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" })}`;
+};
+
+/** Tipos de report à venda. */
+const REPORT_KINDS = [
+  { key: "atualizacao", label: "Atualização", tone: "sky", hint: "O que foi feito e o que falta no processo." },
+  { key: "contacto", label: "Contacto", tone: "volt", hint: "Visita, chamada ou tentativa de contacto com o cliente." },
+  { key: "problema", label: "Problema", tone: "red", hint: "Obstáculo que trava a venda." },
+] as const;
+type ReportKind = (typeof REPORT_KINDS)[number]["key"];
+const reportKindOf = (k: string) => REPORT_KINDS.find((x) => x.key === k) ?? REPORT_KINDS[0];
+
+/** Obstáculos que se sinalizam num report de problema. */
+const PROBLEM_TYPES = [
+  { key: "ko", label: "KO" },
+  { key: "documento", label: "Falta de documento" },
+  { key: "sem-resposta", label: "Cliente não responde" },
+  { key: "dados", label: "Dados errados / incompletos" },
+  { key: "outro", label: "Outro" },
+] as const;
+const problemOf = (k: string | null | undefined) => PROBLEM_TYPES.find((x) => x.key === k)?.label ?? null;
+
 /** Campos da lead: o formulário do serviço escolhido, sem os campos da venda. */
 function leadForm(service: string, custom: { name: string; scopes: string[] }[] | undefined, removed: string[], renamed: Record<string, string>) {
   return (getSaleForm(service) ?? [])
@@ -59,7 +85,8 @@ function LeadFiles({ leadId }: { leadId: number }) {
   const docs = useLeadDocuments();
   const [kind, setKind] = useState("identificacao");
   const [error, setError] = useState<string | null>(null);
-  const files = ((lead.data?.documents ?? []) as LeadFile[]).slice().sort((a, b) => b.id - a.id);
+  // Os anexos de um report vivem na mesma tabela mas mostram-se no report, não na ficha.
+  const files = ((lead.data?.documents ?? []) as LeadFile[]).filter((d) => d.reportId == null).slice().sort((a, b) => b.id - a.id);
 
   const onPick = async (file: File | undefined) => {
     if (!file) return;
@@ -135,6 +162,293 @@ function LeadFiles({ leadId }: { leadId: number }) {
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Reports à venda (feitos na lead, com data e hora automáticas)
+ * ------------------------------------------------------------------ */
+
+const REPORT_MAX_FILES = 10;
+
+const REPORT_PLACEHOLDER: Record<ReportKind, string> = {
+  atualizacao: "O que foi feito nesta visita ou chamada e o que falta para fechar a venda.",
+  contacto: "Com quem falou, o que disse o cliente e o que ficou combinado.",
+  problema: "O que está a travar a venda e o que é preciso para desbloquear.",
+};
+
+/** Formulário de um report: tipo, estado, texto, seguimento e anexos. */
+function ReportForm({ lead, onDone, onCancel }: { lead: Lead; onDone: () => void; onCancel: () => void }) {
+  const reports = useLeadReportsMutation();
+  const [kind, setKind] = useState<ReportKind>("atualizacao");
+  const [stage, setStage] = useState<Stage>((lead.stage as Stage) ?? "nova");
+  const [moveStage, setMoveStage] = useState(true);
+  const [problemType, setProblemType] = useState<(typeof PROBLEM_TYPES)[number]["key"]>("ko");
+  const [note, setNote] = useState("");
+  const [followUp, setFollowUp] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const meta = reportKindOf(kind);
+
+  const pick = (list: FileList | null) => {
+    if (!list?.length) return;
+    const next = [...files, ...Array.from(list)];
+    if (next.length > REPORT_MAX_FILES) {
+      setError(`Máximo ${REPORT_MAX_FILES} ficheiros por report (máx. 12 MB cada).`);
+      return;
+    }
+    setError(null);
+    setFiles(next);
+  };
+
+  const submit = async () => {
+    setError(null);
+    if (note.trim().length < 3) return setError("Escreva o que foi feito ou o que falta.");
+    try {
+      const content = await Promise.all(
+        files.map(async (f) => ({
+          name: f.name,
+          content: await new Promise<string>((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(String(fr.result));
+            fr.onerror = () => reject(new Error("Não foi possível ler o ficheiro."));
+            fr.readAsDataURL(f);
+          }),
+          mime: f.type || null,
+          kind: "outro" as const,
+        })),
+      );
+      await reports.create.mutateAsync({
+        leadId: lead.id,
+        kind,
+        stage,
+        problemType: kind === "problema" ? problemType : null,
+        note: note.trim(),
+        followUp: followUp || null,
+        moveStage,
+        files: content,
+      });
+      onDone();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap gap-2">
+        {REPORT_KINDS.map((k) => (
+          <button
+            key={k.key}
+            type="button"
+            aria-pressed={kind === k.key}
+            className={`btn h-9 text-[12px] ${kind === k.key ? "btn-primary" : "btn-ghost"}`}
+            onClick={() => {
+              setKind(k.key);
+              if (k.key === "problema") setMoveStage(false);
+            }}
+          >
+            {k.label}
+          </button>
+        ))}
+      </div>
+      <p className="mb-4 text-[12px] text-ink-3">{meta.hint}</p>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Estado da lead">
+          <select aria-label="Estado da lead no report" className="input" value={stage} onChange={(e) => setStage(e.target.value as Stage)}>
+            {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Próximo seguimento">
+          <input aria-label="Próximo seguimento" className="input" type="date" value={followUp} onChange={(e) => setFollowUp(e.target.value)} />
+        </Field>
+        {kind === "problema" && (
+          <Field label="Tipo de problema">
+            <select
+              aria-label="Tipo de problema"
+              className="input"
+              value={problemType}
+              onChange={(e) => setProblemType(e.target.value as (typeof PROBLEM_TYPES)[number]["key"])}
+            >
+              {PROBLEM_TYPES.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+
+      <label className="mt-3 flex items-center gap-2 text-[12.5px] text-ink-2">
+        <input type="checkbox" aria-label="Atualizar o estado da lead" checked={moveStage} onChange={(e) => setMoveStage(e.target.checked)} />
+        Passar a lead para o estado escolhido
+      </label>
+
+      <div className="mt-4">
+        <Field label="Report *">
+          <textarea
+            aria-label="Report"
+            className="input min-h-[120px]"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={REPORT_PLACEHOLDER[kind]}
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="label-mono">Anexos (máx. {REPORT_MAX_FILES})</span>
+          <label className="btn btn-ghost h-9 cursor-pointer text-[12px]">
+            <Paperclip size={13} /> Anexar
+            <input
+              aria-label="Anexos do report"
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                pick(e.target.files);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+        </div>
+        {files.length > 0 && (
+          <ul className="divide-y divide-line rounded-[10px] border border-line">
+            {files.map((f, i) => (
+              <li key={`${f.name}-${i}`} className="flex items-center gap-3 px-3 py-2">
+                <FileText size={14} className="shrink-0 text-ink-3" />
+                <span className="min-w-0 flex-1 truncate text-[12.5px]">{f.name}</span>
+                <span className="num shrink-0 text-[11px] text-ink-3">{fmtSize(f.size)}</span>
+                <button
+                  type="button"
+                  aria-label={`Remover ${f.name}`}
+                  className="btn-icon hover:!text-danger"
+                  onClick={() => setFiles(files.filter((_, x) => x !== i))}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-ink-3">
+        <CalendarClock size={13} /> A data e a hora são registadas automaticamente.
+      </p>
+      {error && <p className="mt-3 rounded-[10px] border border-danger/30 bg-danger/10 px-3 py-2 text-[12.5px] text-danger">{error}</p>}
+
+      <div className="mt-5 flex justify-end gap-2 border-t border-line pt-4">
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button type="button" className="btn btn-primary" disabled={reports.isPending} onClick={() => void submit()}>
+          {reports.isPending ? "A guardar…" : "Registar report"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Report a partir da linha da tabela. Quem só consulta vê o histórico. */
+function ReportModal({ lead, canEdit, onClose }: { lead: Lead | null; canEdit: boolean; onClose: () => void }) {
+  if (!lead) return null;
+  if (!canEdit) {
+    return (
+      <Modal open onClose={onClose} title={`Reports — ${lead.name}`} size="wide">
+        <LeadReports lead={lead} canEdit={false} />
+      </Modal>
+    );
+  }
+  return (
+    <Modal open onClose={onClose} title={`Report — ${lead.name}`} size="wide">
+      <ReportForm lead={lead} onDone={onClose} onCancel={onClose} />
+    </Modal>
+  );
+}
+
+/** Histórico de reports da lead, do mais recente para o mais antigo. */
+function LeadReports({ lead, canEdit }: { lead: Lead; canEdit: boolean }) {
+  const reports = useLeadReports(lead.id);
+  const { remove } = useLeadReportsMutation();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const rows = reports.data ?? [];
+
+  return (
+    <div className="rounded-[12px] border border-line bg-bg p-4">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <span className="label-mono flex items-center gap-1.5"><ClipboardList size={13} /> Reports</span>
+          <p className="mt-1 text-[12px] text-ink-3">Cada visita, chamada ou atualização ao processo desta venda. A data e a hora ficam registadas.</p>
+        </div>
+        {canEdit && !open && (
+          <button type="button" className="btn btn-ghost h-9 text-[12px]" onClick={() => setOpen(true)}>
+            <MessageSquarePlus size={14} /> Novo report
+          </button>
+        )}
+      </div>
+
+      {open && canEdit && (
+        <div className="mb-4 rounded-[10px] border border-volt/30 bg-volt/5 p-3">
+          <ReportForm lead={lead} onDone={() => setOpen(false)} onCancel={() => setOpen(false)} />
+        </div>
+      )}
+
+      {error && <p className="mb-2 rounded-[10px] border border-danger/30 bg-danger/10 px-3 py-2 text-[12.5px] text-danger">{error}</p>}
+
+      {reports.isLoading ? (
+        <p className="text-[12.5px] text-ink-3">A carregar reports…</p>
+      ) : !rows.length ? (
+        <p className="rounded-[10px] border border-dashed border-line px-3 py-4 text-center text-[12.5px] text-ink-3">
+          Sem reports. O primeiro report conta o que foi feito ao cliente.
+        </p>
+      ) : (
+        <ol className="space-y-2.5">
+          {rows.map((r) => {
+            const k = reportKindOf(r.kind);
+            const problem = problemOf(r.problemType);
+            const docs = r.documents ?? [];
+            return (
+              <li key={r.id} className="rounded-[10px] border border-line bg-surface p-3">
+                <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                  <Pill label={k.label} tone={k.tone} />
+                  <span className="text-[11.5px] text-ink-2">{stageOf(r.stage ?? "nova").label}</span>
+                  {problem && <span className="text-[11.5px] text-danger">· {problem}</span>}
+                  <span className="num ml-auto text-[11.5px] text-ink-3">{fmtDateTime(r.createdAt)}</span>
+                </div>
+                <p className="whitespace-pre-wrap text-[13px] text-ink">{r.note}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-ink-3">
+                  <span className="font-medium text-ink-2">{r.authorName ?? "—"}</span>
+                  {r.followUp && (
+                    <span className="inline-flex items-center gap-1"><CalendarClock size={12} /> Seguimento: {fmtDate(r.followUp)}</span>
+                  )}
+                  {docs.map((d) => (
+                    <a key={d.id} href={d.path} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-volt">
+                      <Paperclip size={12} /> {d.name}
+                    </a>
+                  ))}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      aria-label="Eliminar report"
+                      className="btn-icon ml-auto hover:!text-danger"
+                      onClick={async () => {
+                        setError(null);
+                        try {
+                          await remove.mutateAsync({ id: r.id });
+                        } catch (err) {
+                          setError(errMsg(err));
+                        }
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
       )}
     </div>
   );
@@ -249,6 +563,7 @@ function LeadForm({ initial, onClose, canEdit }: { initial: Lead | null; onClose
           Os documentos anexam-se depois de guardar a lead — abre a ficha e usa "Anexar".
         </p>
       )}
+      {initial && <div className="mt-5"><LeadReports lead={initial} canEdit={canEdit} /></div>}
 
       <SubmitRow
         pending={save.isPending}
@@ -357,6 +672,7 @@ export default function ClientesATratarPage() {
   const [page, setPage] = useState(1);
   const [edit, setEdit] = useState<Lead | null | "new">(null);
   const [advancing, setAdvancing] = useState<Lead | null>(null);
+  const [reporting, setReporting] = useState<Lead | null>(null);
 
   const all = leads.data ?? [];
   const list = useMemo(() => {
@@ -449,8 +765,16 @@ export default function ClientesATratarPage() {
                           <span className="inline-flex items-center gap-1 text-[12.5px] text-ink-2"><Paperclip size={13} />{Number(l.docCount ?? 0)}</span>
                         </td>
                         <td className="num text-[12.5px] text-ink-2">{fmtDate(l.expectedClose)}</td>
-                        <td className="w-40 whitespace-nowrap text-right">
+                        <td className="w-64 whitespace-nowrap text-right">
                           {canEdit && <span className="btn-icon"><Pencil size={14} /></span>}
+                          <button
+                            type="button"
+                            title={canEdit ? "Registar um report desta lead" : "Ver os reports desta lead"}
+                            className="btn btn-ghost ml-1 h-8 text-[12px]"
+                            onClick={(e) => { e.stopPropagation(); setReporting(l); }}
+                          >
+                            Report <MessageSquarePlus size={13} />
+                          </button>
                           {canEdit && (
                             <button
                               type="button"
@@ -482,6 +806,7 @@ export default function ClientesATratarPage() {
       </Modal>
 
       <AdvanceModal lead={advancing} onClose={() => setAdvancing(null)} />
+      <ReportModal lead={reporting} canEdit={canEdit} onClose={() => setReporting(null)} />
     </div>
   );
 }

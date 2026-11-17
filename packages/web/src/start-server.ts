@@ -196,9 +196,23 @@ if (existsSync(dbPath)) {
       converted_at INTEGER,
       created_at INTEGER NOT NULL
     )`);
+    // Reports feitos à venda enquanto a lead está em tratamento.
+    db.run(`CREATE TABLE IF NOT EXISTS lead_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lead_id INTEGER NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'atualizacao',
+      stage TEXT,
+      problem_type TEXT,
+      note TEXT NOT NULL,
+      follow_up TEXT,
+      author_name TEXT,
+      author_id TEXT,
+      created_at INTEGER NOT NULL
+    )`);
     db.run(`CREATE TABLE IF NOT EXISTS lead_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       lead_id INTEGER NOT NULL,
+      report_id INTEGER,
       kind TEXT NOT NULL DEFAULT 'outro',
       name TEXT NOT NULL,
       path TEXT NOT NULL,
@@ -207,6 +221,8 @@ if (existsSync(dbPath)) {
       notes TEXT,
       created_at INTEGER NOT NULL
     )`);
+    // Bases criadas antes dos reports: acrescenta a coluna do report ao anexo.
+    ensureColumn("lead_documents", "report_id", "integer");
     // Consumos dos cartoes frota (abastecimentos, carregamentos, portagens).
     db.run(`CREATE TABLE IF NOT EXISTS fuel_entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

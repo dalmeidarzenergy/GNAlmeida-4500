@@ -17,7 +17,7 @@ import {
 } from "../shared/client-forms";
 import { requireView, requireEdit, requireRoles } from "../middleware/auth";
 import { db } from "../database";
-import { clients, employees, leadDocuments, leads, saleStatusHistory, sales as salesTbl, salesTargets, suppliers as supTbl, teamMemberships, teams, user } from "../database/schema";
+import { clients, employees, leadDocuments, leadReports, leads, saleStatusHistory, sales as salesTbl, salesTargets, suppliers as supTbl, teamMemberships, teams, user } from "../database/schema";
 import { localPhotoUrl } from "../lib/s3";
 import { removePublic, writePublic } from "../lib/public-files";
 import { activeInMonth } from "../shared/hierarchy";
@@ -37,6 +37,12 @@ const detailsSchema = z.record(z.string(), z.union([z.string(), z.boolean(), z.n
 const LEAD_STAGES = ["nova", "contacto", "proposta", "negociacao", "docs"] as const;
 /** Tipos de documento que se anexam a uma lead. */
 const LEAD_DOC_KINDS = ["fatura", "identificacao", "contrato", "cpe", "outro"] as const;
+/** Tipo de report: atualização do processo, contacto/visita ou problema a resolver. */
+const LEAD_REPORT_KINDS = ["atualizacao", "contacto", "problema"] as const;
+/** Obstáculos que o comercial sinaliza num report de problema. */
+const LEAD_PROBLEM_TYPES = ["ko", "documento", "sem-resposta", "dados", "outro"] as const;
+/** Anexos por report (cada um até 12 MB). */
+const MAX_REPORT_FILES = 10;
 /** Ficheiros ate 12 MB (base64). Acima disto o corpo do pedido fica enorme. */
 const MAX_LEAD_UPLOAD = 12 * 1024 * 1024;
 
@@ -52,6 +58,28 @@ const leadInput = z.object({
   expectedClose: z.string().trim().nullable().optional(),
   /** Comercial responsável (ignorado para vendedores: são sempre eles). */
   ownerId: z.number().nullable().optional(),
+});
+
+/** Report da venda: o que foi feito, o estado em que ficou, seguimento e anexos. */
+const leadReportInput = z.object({
+  leadId: z.number(),
+  kind: z.enum(LEAD_REPORT_KINDS).default("atualizacao"),
+  stage: z.enum(LEAD_STAGES).nullable().optional(),
+  problemType: z.enum(LEAD_PROBLEM_TYPES).nullable().optional(),
+  note: z.string().trim().min(3, "Escreva o que foi feito ou o que falta."),
+  followUp: z.string().trim().nullable().optional(),
+  /** Muda o estado da lead para `stage` (o report guarda sempre o estado). */
+  moveStage: z.boolean().default(false),
+  files: z
+    .array(
+      z.object({
+        name: z.string().min(1, "Indique o nome do documento."),
+        content: z.string(),
+        mime: z.string().nullable().optional(),
+        kind: z.enum(LEAD_DOC_KINDS).default("outro"),
+      }),
+    )
+    .optional(),
 });
 
 /** Colunas de pesquisa da lead, tiradas do formulário da venda. */
@@ -695,6 +723,73 @@ export const sales = {
         .where(eq(leads.id, lead.id));
       return { ok: true, clientId, saleId: sale.id, number };
     }),
+    /**
+     * Reports feitos à venda enquanto a lead está em tratamento. Cada report
+     * regista sozinho a data e a hora, o autor, o estado em que a venda ficou,
+     * o que foi feito / o que falta, o próximo seguimento e os anexos.
+     */
+    reports: {
+      list: requireView("clientes-a-tratar").input(z.object({ leadId: z.number() })).handler(async ({ input, context }) => {
+        const lead = await scopedLead(context, input.leadId);
+        const rows = await db.select().from(leadReports).where(eq(leadReports.leadId, lead.id)).orderBy(desc(leadReports.createdAt), desc(leadReports.id));
+        const files = await db.select().from(leadDocuments).where(eq(leadDocuments.leadId, lead.id));
+        return rows.map((r) => ({ ...r, documents: files.filter((d) => d.reportId === r.id).sort((a, b) => b.id - a.id) }));
+      }),
+      create: requireEdit("clientes-a-tratar").input(leadReportInput).handler(async ({ input, context }) => {
+        const lead = await scopedLead(context, input.leadId);
+        if (lead.convertedAt) throw new ORPCError("BAD_REQUEST", { message: "Esta lead já foi avançada — o report faz-se na venda." });
+        const files = input.files ?? [];
+        if (files.length > MAX_REPORT_FILES) {
+          throw new ORPCError("BAD_REQUEST", { message: `Máximo ${MAX_REPORT_FILES} ficheiros por report.` });
+        }
+        // Valida todos os ficheiros antes de gravar o report: ou entra tudo, ou nada.
+        const decoded = files.map((f) => ({ ...f, ...decodeLeadUpload(f.content, f.mime ?? "application/octet-stream") }));
+        const who = context.user as { id?: string; name?: string | null; email?: string | null };
+        const [row] = await db
+          .insert(leadReports)
+          .values({
+            leadId: lead.id,
+            kind: input.kind,
+            stage: input.stage ?? lead.stage,
+            problemType: input.kind === "problema" ? (input.problemType ?? "outro") : null,
+            note: input.note,
+            followUp: input.followUp || null,
+            authorName: who.name?.trim() || who.email || null,
+            authorId: who.id ?? null,
+          })
+          .returning();
+        if (!row) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Não foi possível gravar o report." });
+        for (const f of decoded) {
+          const filename = `${Date.now()}-${crypto.randomUUID()}.${leadFileExt(f.mime, f.name)}`;
+          const path = writePublic("leads", filename, f.buf);
+          await db.insert(leadDocuments).values({
+            leadId: lead.id,
+            reportId: row.id,
+            kind: f.kind,
+            name: f.name,
+            path,
+            size: f.buf.byteLength,
+            mime: f.mime,
+          });
+        }
+        // O estado da lead avança com o report, quando o comercial o pede.
+        if (input.moveStage && input.stage && input.stage !== lead.stage) {
+          await db.update(leads).set({ stage: input.stage }).where(eq(leads.id, lead.id));
+        }
+        const documents = await db.select().from(leadDocuments).where(eq(leadDocuments.reportId, row.id)).orderBy(desc(leadDocuments.id));
+        return { ...row, documents };
+      }),
+      remove: requireEdit("clientes-a-tratar").input(z.object({ id: z.number() })).handler(async ({ input, context }) => {
+        const [report] = await db.select().from(leadReports).where(eq(leadReports.id, input.id));
+        if (!report) throw new ORPCError("NOT_FOUND", { message: "Report não encontrado." });
+        await scopedLead(context, report.leadId);
+        const files = await db.select({ path: leadDocuments.path }).from(leadDocuments).where(eq(leadDocuments.reportId, report.id));
+        await db.delete(leadDocuments).where(eq(leadDocuments.reportId, report.id));
+        await db.delete(leadReports).where(eq(leadReports.id, report.id));
+        for (const f of files) removePublic(f.path);
+        return { ok: true };
+      }),
+    },
     /** Anexos da lead: ficha de cliente, fatura, contrato assinado, CPE… */
     documents: {
       upload: requireEdit("clientes-a-tratar")
@@ -706,6 +801,8 @@ export const sales = {
             mime: z.string().nullable().optional(),
             kind: z.enum(LEAD_DOC_KINDS).default("outro"),
             notes: z.string().nullable().optional(),
+            /** Quando o anexo pertence a um report. */
+            reportId: z.number().nullable().optional(),
           }),
         )
         .handler(async ({ input, context }) => {
@@ -713,10 +810,15 @@ export const sales = {
           const { mime, buf } = decodeLeadUpload(input.content, input.mime ?? "application/octet-stream");
           const filename = `${Date.now()}-${crypto.randomUUID()}.${leadFileExt(mime, input.name)}`;
           const path = writePublic("leads", filename, buf);
+          if (input.reportId != null) {
+            const [rep] = await db.select({ id: leadReports.id }).from(leadReports).where(eq(leadReports.id, input.reportId));
+            if (!rep) throw new ORPCError("NOT_FOUND", { message: "Report não encontrado." });
+          }
           const [row] = await db
             .insert(leadDocuments)
             .values({
               leadId: lead.id,
+              reportId: input.reportId ?? null,
               kind: input.kind,
               name: input.name,
               path,
