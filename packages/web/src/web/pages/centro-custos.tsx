@@ -1,11 +1,13 @@
 /**
  * Página "Centro de Custos": o dinheiro da empresa num mês.
  *
- * Cinco abas, pela ordem em que o dinheiro se decide:
+ * Sete abas, pela ordem em que o dinheiro se decide:
  *  - Previsão Auto  — cálculo das vendas do CRM (antes de chegar o Excel da Iberdrola)
  *  - Auto Final     — valores do ficheiro da Iberdrola já carregado para o mês
  *  - Despesas Empresa — massa salarial + frota + despesas lançadas à mão
+ *  - Previsão Comissões — o que o CRM diz que há a pagar aos comerciais
  *  - Comissões      — o que está registado a pagar aos comerciais
+ *  - Previsão Lucro — lucro com receita e comissões do CRM, antes do Excel
  *  - Lucro da Empresa — Auto Final (o que a Iberdrola paga) − comissões − despesas
  *
  * A previsão e o auto final são exatamente os mesmos cálculos da Previsão de
@@ -43,7 +45,7 @@ import {
 import { useCommissionTables } from "../queries/commission-tables";
 import { fmtEur, fmtEur2, monthLabel, errMsg } from "../lib/format";
 
-type TabKey = "previsao" | "final" | "despesas" | "comissoes" | "previsaoLucro" | "lucro";
+type TabKey = "previsao" | "final" | "despesas" | "previsaoComissoes" | "comissoes" | "previsaoLucro" | "lucro";
 
 function pad(v: number) {
   return v < 10 ? "0" + v : "" + v;
@@ -137,27 +139,29 @@ export default function CentroCustosPage() {
         subtitle="O que entra e o que sai na empresa em cada mês: previsão e auto final da Iberdrola, despesas, comissões e o lucro que fica."
       />
 
-      <div className="card rise mb-4 flex flex-wrap items-end gap-3 p-4" style={{ animationDelay: "0ms" }}>
-        <label className="flex flex-col gap-1">
-          <span className="label-mono">Mês de referência</span>
-          <select className="input w-52" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Mês de referência">
-            {months.map((m) => (
-              <option key={m} value={m}>
-                {monthLabel(m)}
-                {m === todayLisbon().slice(0, 7) ? " (atual)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="ml-auto pb-1">
-          <span className="label-mono mb-1 block">Tabela aplicada</span>
-          <button type="button" className="btn btn-ghost" onClick={() => setOpenTable(true)} aria-label="Tabela Comissão">
-            <Table2 size={15} />
-            Tabela Comissão
-            <span className="ml-1 max-w-[190px] truncate text-ink-3">{data?.companyTable?.name ?? "por escolher"}</span>
-          </button>
+      <div className="card rise mb-4 p-4" style={{ animationDelay: "0ms" }}>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1">
+            <span className="label-mono">Mês de referência</span>
+            <select className="input w-52" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Mês de referência">
+              {months.map((m) => (
+                <option key={m} value={m}>
+                  {monthLabel(m)}
+                  {m === todayLisbon().slice(0, 7) ? " (atual)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="ml-auto pb-1">
+            <span className="label-mono mb-1 block">Tabela aplicada</span>
+            <button type="button" className="btn btn-ghost" onClick={() => setOpenTable(true)} aria-label="Tabela Comissão">
+              <Table2 size={15} />
+              Tabela Comissão
+              <span className="ml-1 max-w-[190px] truncate text-ink-3">{data?.companyTable?.name ?? "por escolher"}</span>
+            </button>
+          </div>
         </div>
-        <div className="min-w-0 flex-1 pb-1">
+        <div className="mt-3 min-w-0">
           <Tabs
             value={tab}
             onChange={setTab}
@@ -165,6 +169,7 @@ export default function CentroCustosPage() {
               { key: "previsao" as const, label: "Previsão Auto" },
               { key: "final" as const, label: "Auto Final" },
               { key: "despesas" as const, label: "Despesas Empresa" },
+              { key: "previsaoComissoes" as const, label: "Previsão Comissões" },
               { key: "comissoes" as const, label: "Comissões", count: com?.rows.filter((r) => r.registered > 0).length ?? 0 },
               { key: "previsaoLucro" as const, label: "Previsão Lucro" },
               { key: "lucro" as const, label: "Lucro da Empresa" },
@@ -239,6 +244,8 @@ export default function CentroCustosPage() {
         <FinalTab month={month} finalData={fin} forecast={f} />
       ) : tab === "despesas" ? (
         <DespesasTab month={month} exp={exp} />
+      ) : tab === "previsaoComissoes" ? (
+        <PrevisaoComissoesTab month={month} forecast={f} com={com} fin={fin} />
       ) : tab === "comissoes" ? (
         <ComissoesTab month={month} com={com} />
       ) : tab === "previsaoLucro" ? (
@@ -735,6 +742,229 @@ function ExpenseForm({ month, initial, onClose }: { month: string; initial: { id
       </div>
       <SubmitRow pending={save.isPending} onCancel={onClose} error={error} />
     </form>
+  );
+}
+
+/* ------------------------------------------------------ previsão de comissões */
+
+/**
+ * Previsão de Comissões: o que o CRM já diz que há a pagar aos comerciais no mês,
+ * com a tabela comissional da empresa aplicada — antes de chegar o Excel da
+ * Iberdrola. Ao lado do previsto mostra o que já está registado em Pagamentos e o
+ * que o auto final manda pagar, para a diferença se ver a tempo.
+ *
+ * Só entra quem tem a caixa "Funcionário D2D Consulting" ligada: a previsão chega
+ * já filtrada do servidor.
+ */
+function PrevisaoComissoesTab({ month, forecast, com, fin }: { month: string; forecast?: Finance["forecast"]; com?: Finance["commissions"]; fin?: Finance["final"] }) {
+  const people: Person[] = forecast?.people ?? [];
+  const t = forecast?.totals ?? { gross: 0, chargeback: 0, due: 0, sales: 0, people: 0 };
+  const registado = com?.registered ?? 0;
+  const pago = com?.paid ?? 0;
+  const porPagar = com?.pending ?? 0;
+  const finalLoaded = !!fin?.loaded;
+  const autoFinal = fin?.totals.due ?? 0;
+
+  // O previsto já desconta o chargeback e as penalizações; o que sobra entre a
+  // comissão bruta e o previsto são esses acertos (o "a pagar" nunca desce de 0 €).
+  const acertos = Math.round((t.gross - t.chargeback - t.due) * 100) / 100;
+  const diferenca = Math.round((registado - t.due) * 100) / 100;
+  const faceFinal = Math.round((t.due - autoFinal) * 100) / 100;
+
+  // Registado por pessoa (Pagamentos). A previsão manda na ordem das linhas; quem só
+  // tem pagamento registado entra à parte, para o total bater com Pagamentos.
+  const registos = new Map((com?.rows ?? []).map((r) => [r.employeeId, r] as const));
+  const linhas = people.map((p) => ({ ...p, registered: registos.get(p.employeeId)?.registered ?? 0 }));
+  const dentro = new Set(linhas.map((l) => l.employeeId));
+  for (const r of com?.rows ?? []) {
+    if (dentro.has(r.employeeId) || r.registered <= 0) continue;
+    linhas.push({ employeeId: r.employeeId, employeeName: r.employeeName, tableName: null, sales: 0, gross: 0, chargeback: 0, due: 0, registered: r.registered });
+  }
+  linhas.sort((a, b) => b.due - a.due || b.registered - a.registered);
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Comissões previstas"
+          value={fmtEur(t.due)}
+          sub={`${t.people} pessoa(s) · ${t.sales} venda(s) em ${monthLabel(month)}`}
+          icon={<HandCoins size={15} />}
+          accent="var(--volt)"
+          delay={0}
+        />
+        <Stat
+          label="Registado a pagar"
+          value={fmtEur(registado)}
+          sub={`${fmtEur(pago)} já pago · ${fmtEur(porPagar)} pendente`}
+          icon={<FileCheck2 size={15} />}
+          accent="var(--sky)"
+          delay={40}
+        />
+        <Stat
+          label="Previsto no auto final"
+          value={finalLoaded ? fmtEur(autoFinal) : "—"}
+          sub={finalLoaded ? "o que o Excel da Iberdrola manda pagar" : "Excel do mês ainda por carregar"}
+          icon={<Calculator size={15} />}
+          accent="var(--amber)"
+          delay={80}
+        />
+        <Stat
+          label="Por registar"
+          value={fmtEur(-diferenca)}
+          sub={Math.abs(diferenca) < 0.005 ? "previsão toda lançada em Pagamentos" : "previsão ainda não lançada em Pagamentos"}
+          icon={<Receipt size={15} />}
+          accent={Math.abs(diferenca) < 0.005 ? "var(--volt)" : "var(--amber)"}
+          delay={120}
+        />
+      </div>
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="card rise overflow-hidden" style={{ animationDelay: "160ms" }}>
+          <div className="border-b border-line px-4 py-3">
+            <div className="font-display text-[13px] font-semibold">Previsão de Comissões de Empresa</div>
+            <div className="text-[11.5px] text-ink-3">
+              Conta do mês com as vendas do CRM e a tabela comissional aplicada — antes de chegar o Excel da Iberdrola. Só entram os funcionários D2D Consulting.
+            </div>
+          </div>
+          <table className="w-full text-[12.5px]">
+            <tbody>
+              <ContaRow
+                label="Comissão bruta (tabela)"
+                value={fmtEur(t.gross)}
+                note={`${t.sales} venda(s) de ${t.people} pessoa(s) em ${monthLabel(month)}`}
+                strong
+              />
+              <ContaRow label="Chargeback" value={`− ${fmtEur(t.chargeback)}`} note="baixas e anulações descontadas no mês" />
+              {Math.abs(acertos) > 0.005 && (
+                <ContaRow
+                  label="Penalizações e acertos"
+                  value={`${acertos >= 0 ? "−" : "+"} ${fmtEur(Math.abs(acertos))}`}
+                  note="vendas sem prémio e o mínimo de 0 € por pessoa"
+                />
+              )}
+              <ContaRow label="Comissões previstas a pagar" value={fmtEur(t.due)} strong tone="var(--volt)" />
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card rise p-5" style={{ animationDelay: "200ms" }}>
+          <div className="label-mono mb-3 flex items-center gap-2">
+            <Calculator size={13} />
+            Previsto, registado e real
+          </div>
+          <div className="space-y-1 text-[12px]">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-ink-3">Previsão (CRM)</span>
+              <span className="num font-semibold">{fmtEur(t.due)}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-ink-3">Registado</span>
+              <span className="num text-ink-2">
+                {fmtEur(registado)}{" "}
+                {registado > 0 && Math.abs(diferenca) > 0.005 && (
+                  <span style={{ color: diferenca > 0 ? "var(--volt)" : "var(--rose)" }}>
+                    ({diferenca > 0 ? "+" : "−"}
+                    {fmtEur(Math.abs(diferenca))})
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-ink-3">Auto final</span>
+              <span className="num text-ink-2">{finalLoaded ? fmtEur(autoFinal) : "por carregar"}</span>
+            </div>
+          </div>
+          {finalLoaded ? (
+            <div className="mt-3 text-[11.5px] text-ink-3">
+              O auto final de {monthLabel(month)} está carregado: a previsão ficou {fmtEur(Math.abs(faceFinal))} {faceFinal >= 0 ? "acima" : "abaixo"} do que o Excel manda
+              pagar. O separador Comissões fecha a conta com o valor real.
+            </div>
+          ) : (
+            <>
+              <div className="mt-3 text-[11.5px] text-ink-3">
+                A previsão serve para decidir pagamentos a tempo; quando o Excel da Iberdrola entrar, o separador Comissões passa a fechar a conta com ele.
+              </div>
+              <Link to="/auto-iberdrola" className="btn btn-ghost mt-4 w-full justify-center">
+                Carregar auto final
+              </Link>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="card rise mt-6 overflow-hidden" style={{ animationDelay: "240ms" }}>
+        <div className="border-b border-line px-4 py-3">
+          <div className="font-display text-[13px] font-semibold">Comissão prevista por pessoa</div>
+          <div className="text-[11.5px] text-ink-3">O que o CRM prevê pagar a cada comercial, com a tabela aplicada, e o que já está registado em Pagamentos.</div>
+        </div>
+        {!linhas.length ? (
+          <Empty
+            title="Sem comissões previstas neste mês"
+            text={`Não há vendas em fornecimento com tabela atribuída em ${monthLabel(month)}. A previsão de comissões aparece assim que houver vendas no CRM.`}
+            action={<Link to="/vendas" className="btn btn-ghost">Ver vendas</Link>}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="border-b border-line text-left text-ink-3">
+                  <th className="label-mono px-4 py-3 font-normal">Pessoa</th>
+                  <th className="label-mono px-4 py-3 font-normal">Tabela</th>
+                  <th className="label-mono px-4 py-3 text-right font-normal">Vendas</th>
+                  <th className="label-mono px-4 py-3 text-right font-normal">Comissão bruta</th>
+                  <th className="label-mono px-4 py-3 text-right font-normal">Chargeback</th>
+                  <th className="label-mono px-4 py-3 text-right font-normal">Prevista</th>
+                  <th className="label-mono px-4 py-3 text-right font-normal">Registada</th>
+                  <th className="label-mono px-4 py-3 text-right font-normal">Diferença</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linhas.map((l) => {
+                  const d = Math.round((l.registered - l.due) * 100) / 100;
+                  return (
+                    <tr key={l.employeeId} className="border-b border-line last:border-b-0 hover:bg-surface-2/60">
+                      <td className="px-4 py-2.5 font-medium">{l.employeeName}</td>
+                      <td className="px-4 py-2.5 text-ink-2">{l.tableName ?? <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right text-ink-2">{l.sales ? l.sales : <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right">{l.gross ? fmtEur(l.gross) : <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right text-ink-2">{l.chargeback ? fmtEur(l.chargeback) : <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right font-semibold">{l.due ? fmtEur(l.due) : <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right text-ink-2">{l.registered ? fmtEur(l.registered) : <span className="text-ink-3">—</span>}</td>
+                      <td className="num px-4 py-2.5 text-right">
+                        {!l.registered || Math.abs(d) < 0.005 ? (
+                          <span className="text-ink-3">—</span>
+                        ) : (
+                          <span className={d < 0 ? "text-rose" : "text-volt"}>
+                            {d > 0 ? "+" : ""}
+                            {fmtEur(d)}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-line bg-surface-2/40">
+                  <td className="px-4 py-3 font-semibold" colSpan={2}>
+                    Total
+                  </td>
+                  <td className="num px-4 py-3 text-right font-semibold">{t.sales}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(t.gross)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(t.chargeback)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold text-volt">{fmtEur(t.due)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">{fmtEur(registado)}</td>
+                  <td className="num px-4 py-3 text-right font-semibold">
+                    {registado <= 0 || Math.abs(diferenca) < 0.005 ? "—" : `${diferenca > 0 ? "+" : ""}${fmtEur(diferenca)}`}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 

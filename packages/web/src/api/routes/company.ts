@@ -5,7 +5,9 @@
  *  - Previsão Auto  — cálculo das vendas do CRM, antes de chegar o Excel da Iberdrola
  *  - Auto Final     — valores do ficheiro da Iberdrola já carregado para o mês
  *  - Despesas       — massa salarial + frota + despesas lançadas à mão
+ *  - Previsão Comissões — o que o CRM diz que há a pagar aos comerciais
  *  - Comissões      — o que está registado a pagar aos comerciais nesse mês
+ *  - Previsão Lucro — o lucro com a receita e as comissões do CRM, antes do Excel
  *  - Lucro          — Auto Final (o que a Iberdrola paga) menos comissões e despesas
  *
  * A previsão e o auto final vêm dos mesmos cálculos que já alimentam a Previsão de
@@ -297,7 +299,7 @@ async function companyFinance(m: string) {
 }
 
 export const companyRoute = {
-  /** Números das cinco abas do Centro de Custos para um mês. */
+  /** Números de todas as abas do Centro de Custos para um mês. */
   finance: requireView("empresa")
     .input(z.object({ month }))
     .handler(async ({ input }) => companyFinance(input.month)),
