@@ -65,14 +65,6 @@ function lidoEm(d: Date) {
   return d.toLocaleTimeString("pt-PT", { timeZone: "Europe/Lisbon", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-/** Como se lê um escalão da tabela: "0 a 10 clientes", "26 ou mais clientes". */
-function bandLabel(b: { min: number | null; max: number | null }) {
-  const min = b.min ?? 0;
-  if (b.max == null) return `${min} ou mais clientes`;
-  if (b.max === min) return `${min} clientes`;
-  return `${min} a ${b.max} clientes`;
-}
-
 function parseYM(ym: string) {
   const [yy, mm] = ym.split("-");
   return { y: Number(yy), m: Number(mm) };
@@ -182,9 +174,6 @@ export default function CentroCustosPage() {
   // Tabela aplicada sem valores preenchidos: sem escalões nao ha comissoes nenhumas.
   const appliedTable = (tables.data ?? []).find((t) => t.id === data?.companyTable?.id);
   const semValores = !!appliedTable && appliedTable.clientRows.every((r) => !r.luz && !r.gas && !r.dd && !r.fe && !r.pel);
-  // Escalão da tabela da empresa que o mês está mesmo a usar: é o único que conta
-  // para a previsão. Mostra-se para ninguém estar a mudar outro e a esperar efeito.
-  const band = data?.companyBand ?? null;
   // Vendas de quem não tem a caixa "Funcionário D2D Consulting" ligada: ficam fora daqui.
   const excluidos = data?.excluded ?? [];
 
@@ -264,26 +253,6 @@ export default function CentroCustosPage() {
             <button type="button" className="text-volt underline underline-offset-2 hover:no-underline" onClick={() => setOpenTable(true)}>
               mudar
             </button>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-ink-2">
-            <span className="label-mono">Escalão em uso</span>
-            {band ? (
-              <>
-                <span className="font-semibold text-ink">{bandLabel(band)}</span>
-                <span className="text-ink-3">·</span>
-                <span>
-                  {band.sales} venda{band.sales === 1 ? "" : "s"} de luz
-                  {(f?.totals.sales ?? 0) > band.sales ? ` de ${f?.totals.sales} no total` : " no mês"}
-                </span>
-                <span className="text-ink-3">·</span>
-                <span>
-                  {fmtEur(band.luz ?? 0)} luz / {fmtEur(band.gas ?? 0)} gás
-                </span>
-                <span className="max-w-[420px] text-ink-3">— é este escalão que valoriza a faturação da empresa; os outros desta tabela não entram nesta conta.</span>
-              </>
-            ) : (
-              <span className="text-ink-3">nenhum — esta tabela ainda não tem escalões com valores, por isso a previsão fica a 0 €.</span>
-            )}
           </div>
           <div className="mt-1 text-[11.5px] text-ink-3">
             Mexer na tabela de um comercial não muda esta faturação — muda o que ele tem a receber, na aba{" "}
