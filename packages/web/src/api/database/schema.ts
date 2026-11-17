@@ -72,6 +72,8 @@ export const employees = sqliteTable("employees", {
   forceCommissions: integer("force_commissions", { mode: "boolean" }).notNull().default(false),
   /** Desbloqueio de comissões (Auto Iberdrola): 0 = objetivo ativo; 25/50/75/100 = % do 2.º escalão a pagar. */
   forceCommissionsPct: integer("force_commissions_pct").notNull().default(0),
+  /** Funcionário D2D Consulting: quando falso, as vendas dele não entram no Centro de Custos. */
+  d2dConsulting: integer("d2d_consulting", { mode: "boolean" }).notNull().default(true),
   createdAt: createdAt(),
 });
 

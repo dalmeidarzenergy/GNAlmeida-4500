@@ -107,8 +107,8 @@ async function companyFinance(m: string) {
   const companyTableId = applied?.id ?? null;
 
   const [breakdown, calc, costs, imports, manual, pays, staff] = await Promise.all([
-    buildBreakdown(m, { companyTableId }),
-    buildCalc(m, { companyTableId }),
+    buildBreakdown(m, { companyTableId, d2dOnly: true }),
+    buildCalc(m, { companyTableId, d2dOnly: true }),
     costCentersReport(m),
     db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m)),
     manualExpenses(m),

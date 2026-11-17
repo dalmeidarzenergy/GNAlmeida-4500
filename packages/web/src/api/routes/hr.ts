@@ -56,6 +56,8 @@ const employeeInput = z.object({
   ett: z.enum(ETTS as [string, ...string[]]).nullable().optional(),
   bond: z.enum(BONDS as [string, ...string[]]).nullable().optional(),
   forceCommissions: z.boolean().optional(),
+  /** Funcionário D2D Consulting: as vendas dele contam para o Centro de Custos. */
+  d2dConsulting: z.boolean().optional(),
 });
 
 const absenceInput = z.object({
@@ -326,6 +328,7 @@ export const hr = {
           chiefTableName: sql<string | null>`(select ch.name from chief_tables ch where ch.id = ${employees.chiefTableId})`,
           ett: employees.ett,
           bond: employees.bond,
+          d2dConsulting: employees.d2dConsulting,
           bondTypes: sql<string | null>`(select p.bond_types from positions p where p.id = ${employees.positionId})`,
           departmentName: departments.name,
           departmentColor: departments.color,

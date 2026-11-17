@@ -123,6 +123,8 @@ if (existsSync(dbPath)) {
       notes TEXT,
       created_at INTEGER NOT NULL
     )`);
+    // Funcionario D2D Consulting: as vendas contam no Centro de Custos (por omissao, todos).
+    ensureColumn("employees", "d2d_consulting", "integer NOT NULL DEFAULT 1");
     // Despesas da empresa lancadas a mao (Centro de Custos > Despesas Empresa).
     db.run(`CREATE TABLE IF NOT EXISTS company_expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

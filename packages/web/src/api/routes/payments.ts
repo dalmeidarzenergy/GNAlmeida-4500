@@ -186,6 +186,8 @@ export async function buildBreakdown(
   opts: {
     /** Tabela Comissao da empresa (Centro de Custos): valoriza as vendas de todos os comerciais por esta tabela. */
     companyTableId?: number | null;
+    /** Só contam as vendas dos funcionários D2D Consulting (Centro de Custos). */
+    d2dOnly?: boolean;
   } = {},
 ): Promise<Breakdown> {
   const { from, to } = bounds(m);
@@ -401,9 +403,13 @@ export async function buildBreakdown(
     }
   }
 
-  const staff = await db
-    .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId, forceCommissions: employees.forceCommissions })
+  const staffAll = await db
+    .select({ id: employees.id, name: employees.name, commissionTableId: employees.commissionTableId, forceCommissions: employees.forceCommissions, d2dConsulting: employees.d2dConsulting })
     .from(employees);
+  // Funcionários D2D Consulting: os restantes ficam fora do Centro de Custos.
+  const d2dOnly = opts.d2dOnly === true;
+  const staff = d2dOnly ? staffAll.filter((s) => s.d2dConsulting) : staffAll;
+  const d2dIds = new Set(staff.map((s) => s.id));
   const cTables = await db.select().from(commissionTables);
   const cRows = await db.select().from(commissionRows).orderBy(asc(commissionRows.position));
   const assignments = await db.select().from(employeeTables);
@@ -422,8 +428,12 @@ export async function buildBreakdown(
         ) ?? null)
       : null;
   // Contado antes do ciclo: o agregado de equipa altera as listas por comercial.
+  // Só entram as vendas dos funcionários que contam para o Centro de Custos.
   const companyBandSales = companyTable
-    ? [...valid.values()].reduce((total, list) => total + list.filter((e) => e.energy === "luz").length, 0)
+    ? [...valid.entries()].reduce(
+        (total, [sellerId, list]) => (d2dOnly && !d2dIds.has(sellerId) ? total : total + list.filter((e) => e.energy === "luz").length),
+        0,
+      )
     : 0;
 
   const teamOfChief = (chiefId: number) => {

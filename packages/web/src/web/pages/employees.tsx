@@ -20,6 +20,7 @@ const blank = {
   name: "", email: "", phone: "", nif: "", photoKey: null as string | null, departmentId: null as number | null, positionId: null as number | null, managerId: null as number | null,
   hireDate: today(), terminationDate: "" as string, salary: 0, status: "ativo" as "ativo" | "pendente" | "suspenso" | "blacklist" | "inativo", commissionRate: 0,
   commissionTableId: null as number | null, category: null as string | null, ett: "" as string, bond: "" as string,
+  d2dConsulting: true as boolean,
 };
 
 /** Recorta ao centro (quadrado) e reduz para 512px em JPEG, para fotos leves. */
@@ -138,6 +139,7 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
       name: f.name, email: f.email, phone: f.phone || null, nif: f.nif || null, photoKey: f.photoKey ?? null, departmentId: f.departmentId, positionId: f.positionId, managerId: f.managerId,
       hireDate: f.hireDate, terminationDate: f.status === "inativo" ? f.terminationDate : null, salary: Number(f.salary), status: f.status, commissionRate: Number(f.commissionRate),
       commissionTableId: f.commissionTableId, category: f.category ?? null, ett: f.ett || null, bond: f.bond || null,
+      d2dConsulting: !!f.d2dConsulting,
     };
     try {
       if (initial) await save.update.mutateAsync({ ...payload, id: initial.id });
@@ -270,6 +272,21 @@ function EmployeeForm({ initial, onClose }: { initial: Emp | null; onClose: () =
             {f.category ? "Só aparecem tabelas do grupo " + (COMMISSION_GROUP_LABEL[f.category] ?? f.category) + "." : "Escolhe primeiro a categoria comercial para ver as tabelas do grupo."}
           </p>
         </Field>
+        <label className="flex cursor-pointer items-start gap-3 rounded-[10px] border border-line bg-surface-2 px-3 py-2.5 sm:col-span-2">
+          <input
+            type="checkbox"
+            aria-label="Funcionário D2D Consulting"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--volt)]"
+            checked={!!f.d2dConsulting}
+            onChange={(e) => set("d2dConsulting", e.target.checked)}
+          />
+          <span className="text-[12.5px] leading-snug">
+            <span className="font-medium">Funcionário D2D Consulting</span>
+            <span className="mt-0.5 block text-[11.5px] text-ink-3">
+              As vendas deste funcionário contam para o Centro de Custos. Desligado, ficam de fora da previsão e do auto final do Centro de Custos (Pagamentos e Auto Iberdrola não mudam).
+            </span>
+          </span>
+        </label>
         <EmployeeTableHistory
           employeeId={initial?.id ?? null}
           commissionOptions={commissionOptions}
@@ -501,6 +518,9 @@ export default function EmployeesPage() {
                           <div>
                             <div className="flex items-center gap-2 font-medium">
                               {e.name}
+                              {e.d2dConsulting && (
+                                <span className="rounded-full border border-volt/40 bg-volt/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-volt" title="Funcionário D2D Consulting — as vendas contam para o Centro de Custos">D2D</span>
+                              )}
                             </div>
                             <div className="mt-0.5 flex items-center gap-3 text-[11.5px] text-ink-3">
                               <span className="flex items-center gap-1"><Mail size={11} />{e.email}</span>

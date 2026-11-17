@@ -247,6 +247,8 @@ async function buildCalc(
     skipPrevChargeback?: boolean;
     /** Tabela Comissao da empresa (Centro de Custos): valoriza as vendas de todos os comerciais por esta tabela. */
     companyTableId?: number | null;
+    /** Só contam as vendas dos funcionários D2D Consulting (Centro de Custos). */
+    d2dOnly?: boolean;
   } = {},
 ) {
   const imports = await db.select({ id: iberdrolaImports.id }).from(iberdrolaImports).where(eq(iberdrolaImports.month, m));
@@ -270,9 +272,20 @@ async function buildCalc(
 
   // Funcionários: ligam o comercial do Excel por "NIF Comercial" ou "Comercial" (nome).
   // Não é usada qualquer ligação à aba Vendas.
-  const staff = await db
-    .select({ id: employees.id, name: employees.name, nif: employees.nif, commissionTableId: employees.commissionTableId, forceCommissionsPct: employees.forceCommissionsPct })
+  const staffAll = await db
+    .select({
+      id: employees.id,
+      name: employees.name,
+      nif: employees.nif,
+      commissionTableId: employees.commissionTableId,
+      forceCommissionsPct: employees.forceCommissionsPct,
+      d2dConsulting: employees.d2dConsulting,
+    })
     .from(employees);
+  // Funcionários D2D Consulting: os restantes ficam fora do Centro de Custos.
+  const d2dOnly = opts.d2dOnly === true;
+  const staff = d2dOnly ? staffAll.filter((s) => s.d2dConsulting) : staffAll;
+  const d2dStaffIds = new Set(staff.map((s) => s.id));
   const staffById = new Map(staff.map((s) => [s.id, s]));
   const staffByName = new Map(staff.map((s) => [normText(s.name), s.id] as const));
   const staffByNif = new Map(
@@ -329,6 +342,15 @@ async function buildCalc(
         unmatchedMedem.push(idVenda);
       }
     }
+  }
+
+  if (d2dOnly) {
+    // Vendas de quem não é D2D Consulting saem do cálculo (e do escalão da empresa).
+    const keep = <T extends { employeeId: number | null }>(list: T[]) =>
+      list.filter((e) => e.employeeId != null && d2dStaffIds.has(e.employeeId));
+    autoEntries.splice(0, autoEntries.length, ...keep(autoEntries));
+    cbEntries.splice(0, cbEntries.length, ...keep(cbEntries));
+    medemLines.splice(0, medemLines.length, ...keep(medemLines));
   }
 
   const cTables = await db.select().from(commissionTables);
@@ -579,7 +601,7 @@ async function buildCalc(
       .groupBy(iberdrolaImports.month)
       .orderBy(asc(iberdrolaImports.month));
     for (const { month: pm } of prevMonths) {
-      const pc = await buildCalc(pm, { skipPrevChargeback: true, companyTableId: opts.companyTableId });
+      const pc = await buildCalc(pm, { skipPrevChargeback: true, companyTableId: opts.companyTableId, d2dOnly: opts.d2dOnly });
       for (const person of pc.people) {
         for (const l of person.lines) {
           prevPaid.set(`${l.idVenda}|${l.service}`, {
@@ -629,7 +651,7 @@ async function buildCalc(
       if (x.startDate <= monthEnd && (x.endDate == null || x.endDate >= monthStart)) ceIds.add(x.commissionTableId);
     }
     const hasCe = cTables.some((t) => ceIds.has(t.id) && t.regime === "CE");
-    if (hasCe && !bySeller.has(empSt.id)) bySeller.set(empSt.id, []);
+    if (hasCe && !bySeller.has(empSt.id) && (!d2dOnly || d2dStaffIds.has(empSt.id))) bySeller.set(empSt.id, []);
   }
 
   const people: IberdrolaPerson[] = [];
