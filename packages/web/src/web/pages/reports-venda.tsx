@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { AlertTriangle, CalendarClock, ClipboardList, ExternalLink, MessageSquarePlus, Paperclip, Trash2, UserSearch, ArrowRight } from "lucide-react";
-import { useAllLeadReports, useLeadReportsMutation } from "../queries/sales";
+import { AlertTriangle, CalendarClock, ClipboardList, ExternalLink, MessageSquarePlus, Paperclip, Plus, Trash2, UserSearch, ArrowRight } from "lucide-react";
+import { useAllLeadReports, useLeadReportsMutation, useLeads } from "../queries/sales";
 import { useMe } from "../queries/me";
 import { useEmployeeOptions } from "../queries/hr";
-import { PageHeader, Stat, Pill, Tabs, SearchBox, Empty, TableSkeleton, Avatar } from "../components/ui/kit";
+import { PageHeader, Stat, Pill, Tabs, SearchBox, Empty, TableSkeleton, Avatar, Modal } from "../components/ui/kit";
 import { errMsg, fmtDate } from "../lib/format";
+import { ReportForm } from "./clientes-a-tratar";
 
 type Row = NonNullable<ReturnType<typeof useAllLeadReports>["data"]>[number];
+type Lead = NonNullable<ReturnType<typeof useLeads>["data"]>[number];
 
 /** Estados de tratamento de uma lead (o mesmo vocabulário da ficha). */
 const STAGES = [
@@ -56,6 +58,86 @@ const todayISO = () => {
 
 const PAGE = 40;
 
+/**
+ * Seletor dos clientes que estão a ser tratados (leads por avançar).
+ * Escolhido o cliente, abre o formulário do report.
+ */
+function PickLeadModal({
+  counts,
+  onClose,
+  onPick,
+}: {
+  counts: Map<number, { n: number; last: string | Date }>;
+  onClose: () => void;
+  onPick: (lead: Lead) => void;
+}) {
+  const leads = useLeads();
+  const [q, setQ] = useState("");
+  const all = leads.data ?? [];
+  const list = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return all.filter(
+      (l) =>
+        !s ||
+        l.name.toLowerCase().includes(s) ||
+        (l.nif ?? "").includes(s) ||
+        (l.phone ?? "").includes(s) ||
+        (l.ownerName ?? "").toLowerCase().includes(s),
+    );
+  }, [all, q]);
+
+  return (
+    <Modal open onClose={onClose} title="Novo Report — escolher o cliente" size="wide">
+      <p className="mb-3 text-[12.5px] text-ink-2">
+        Clientes em tratamento, ainda por avançar para Clientes e Vendas. Escolha um para registar o report.
+      </p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <SearchBox value={q} onChange={setQ} placeholder="Nome, NIF ou telemóvel…" />
+        <span className="num ml-auto text-[11.5px] text-ink-3">{list.length} cliente{list.length === 1 ? "" : "s"}</span>
+      </div>
+
+      {leads.isLoading ? (
+        <TableSkeleton cols={2} />
+      ) : !list.length ? (
+        <Empty
+          title={all.length ? "Sem resultados" : "Sem clientes a ser tratados"}
+          text={all.length ? "Nenhum cliente corresponde à pesquisa." : "Crie primeiro um cliente na sub aba Clientes a ser tratados."}
+        />
+      ) : (
+        <ul className="divide-y divide-line overflow-hidden rounded-[10px] border border-line">
+          {list.map((l) => {
+            const st = stageOf(l.stage);
+            const c = counts.get(l.id);
+            return (
+              <li key={l.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-surface-2/60"
+                  onClick={() => onPick(l)}
+                  title={`Report para ${l.name}`}
+                >
+                  <Avatar name={l.name} color="var(--sky)" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-[13px] font-semibold">{l.name}</span>
+                      <Pill label={st.label} tone={st.tone} />
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11.5px] text-ink-3">
+                      {l.service ?? "—"} · {l.nif ?? "sem NIF"} · {l.ownerName ?? "sem comercial"}
+                      {c ? ` · ${c.n} report${c.n === 1 ? "" : "s"}, último ${fmtDate(c.last)}` : " · sem reports"}
+                    </span>
+                  </span>
+                  <ArrowRight size={14} className="shrink-0 text-ink-3" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Modal>
+  );
+}
+
 export default function ReportsVendaPage() {
   const me = useMe();
   const all = useAllLeadReports();
@@ -70,9 +152,23 @@ export default function ReportsVendaPage() {
   const [onlyFollow, setOnlyFollow] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const [error, setError] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [target, setTarget] = useState<Lead | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
 
   const rows = all.data ?? [];
   const today = todayISO();
+
+  /** Nº de reports e data do último, por lead — para o seletor do report novo. */
+  const byLead = useMemo(() => {
+    const m = new Map<number, { n: number; last: string | Date }>();
+    for (const r of rows) {
+      const cur = m.get(r.leadId);
+      // A lista vem do mais recente para o mais antigo: o primeiro é o último report.
+      m.set(r.leadId, cur ? { n: cur.n + 1, last: cur.last } : { n: 1, last: r.createdAt });
+    }
+    return m;
+  }, [rows]);
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -125,10 +221,30 @@ export default function ReportsVendaPage() {
         title="Reports à venda"
         subtitle="Tudo o que os comerciais registam nas leads: visitas, contactos, atualizações e problemas. Fica guardado com data, hora e autor."
       >
+        {canEdit && (
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setOk(null);
+              setPicking(true);
+            }}
+          >
+            <Plus size={15} /> Novo Report
+          </button>
+        )}
         <button className="btn btn-ghost" onClick={() => navigate("/clientes-a-tratar")}>
           <UserSearch size={15} /> Clientes a ser tratados
         </button>
       </PageHeader>
+
+      {ok && (
+        <p className="mb-4 flex items-center gap-2 rounded-[10px] border border-volt/30 bg-volt/10 px-3 py-2 text-[12.5px] text-volt">
+          <MessageSquarePlus size={14} /> {ok}
+          <button type="button" className="btn-icon ml-auto h-6 w-6" aria-label="Fechar aviso" onClick={() => setOk(null)}>
+            <span className="text-[15px] leading-none">×</span>
+          </button>
+        </p>
+      )}
 
       <div className="rise mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat delay={0} label="Reports" value={rows.length} accent="var(--volt)" sub="no total" />
@@ -293,6 +409,30 @@ export default function ReportsVendaPage() {
             </div>
           )}
         </div>
+      )}
+
+      {picking && (
+        <PickLeadModal
+          counts={byLead}
+          onClose={() => setPicking(false)}
+          onPick={(l) => {
+            setPicking(false);
+            setTarget(l);
+          }}
+        />
+      )}
+
+      {target && (
+        <Modal open onClose={() => setTarget(null)} title={`Novo report — ${target.name}`} size="wide">
+          <ReportForm
+            lead={target}
+            onDone={() => {
+              setTarget(null);
+              setOk(`Report registado para ${target.name}.`);
+            }}
+            onCancel={() => setTarget(null)}
+          />
+        </Modal>
       )}
     </div>
   );

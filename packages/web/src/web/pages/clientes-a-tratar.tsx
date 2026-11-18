@@ -180,7 +180,7 @@ const REPORT_PLACEHOLDER: Record<ReportKind, string> = {
 };
 
 /** Formulário de um report: tipo, estado, texto, seguimento e anexos. */
-function ReportForm({ lead, onDone, onCancel }: { lead: Lead; onDone: () => void; onCancel: () => void }) {
+export function ReportForm({ lead, onDone, onCancel }: { lead: Lead; onDone: () => void; onCancel: () => void }) {
   const reports = useLeadReportsMutation();
   const [kind, setKind] = useState<ReportKind>("atualizacao");
   const [stage, setStage] = useState<Stage>((lead.stage as Stage) ?? "nova");
