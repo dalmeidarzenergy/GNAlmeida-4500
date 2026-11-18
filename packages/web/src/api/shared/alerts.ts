@@ -4,7 +4,10 @@
  * notificações imediatas), pelo job scripts/alerts.ts e pelas páginas web.
  */
 
-/** Dias para a venda chegar ao estado Control após a assinatura. */
+/**
+ * Dias para a venda chegar ao estado Control após a assinatura.
+ * O dia da assinatura não conta: assinada a 20, o prazo acaba no fim do dia 23.
+ */
 export const ALERT_DEADLINE_DAYS = 3;
 
 /** Estados antes do Control — a venda ainda está "por tratar". */
@@ -32,10 +35,11 @@ export const isGrave = (s: string | null | undefined) => !!s && (s.startsWith("K
  * Venda "crítica": ainda não resolvida dentro do prazo de contratação.
  * - Anulada nunca é crítica.
  * - Se já chegou a Control, é crítica se demorou mais de `ALERT_DEADLINE_DAYS`.
- * - Senão, é crítica se já passou o prazo (data de assinatura + dias) sem Control.
+ * - Senão, é crítica só depois de o prazo fechar (data de assinatura + dias,
+ *   sem contar o dia da assinatura). No último dia de prazo ainda não é crítica.
  */
 export const saleCritical = (date: string, status: string | null | undefined, ctrlOn: string | null | undefined, today: string) => {
   if (status === "Anulado") return false;
   if (ctrlOn) return dayDiff(date, ctrlOn) > ALERT_DEADLINE_DAYS;
-  return dayDiff(date, today) >= ALERT_DEADLINE_DAYS;
+  return dayDiff(date, today) > ALERT_DEADLINE_DAYS;
 };

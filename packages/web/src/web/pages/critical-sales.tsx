@@ -12,7 +12,11 @@ import { errMsg, fmtDate, thisMonth } from "../lib/format";
 
 type Order = NonNullable<ReturnType<typeof useOrders>["data"]>[number];
 
-/** A venda tem de chegar ao estado Control em até 3 dias após a assinatura. */
+/**
+ * A venda tem de chegar ao estado Control em até 3 dias após a assinatura.
+ * O dia da assinatura não conta: assinada a 20, tem até ao fim do dia 23 —
+ * só a partir do dia 24 é que fica fora do prazo.
+ */
 const DEADLINE_DAYS = 3;
 const PENALTY = 10; // € por venda (número), 1x mesmo em DUAL
 
@@ -21,7 +25,8 @@ const PRE_CONTROL = ["Prospeção", "Pré-Venda", "Backoffice"] as const;
 const isPreControl = (status: string) => (PRE_CONTROL as readonly string[]).includes(status);
 
 const DAY = 86400000;
-const deadineAt = (date: string) => new Date(`${date}T00:00:00`).getTime() + DEADLINE_DAYS * DAY;
+/** Fim do último dia de prazo: dia da assinatura + 3 dias, já a entrar no dia seguinte. */
+const deadlineAt = (date: string) => new Date(`${date}T00:00:00`).getTime() + (DEADLINE_DAYS + 1) * DAY;
 const daysBetween = (a: string, b: string) => Math.round((new Date(`${b}T00:00:00`).getTime() - new Date(`${a}T00:00:00`).getTime()) / DAY);
 
 function fmtDuration(ms: number) {
@@ -85,7 +90,7 @@ export default function CriticalSalesPage() {
         if (inTeam != null && !inTeam(o.sellerId, o.date)) return false;
         if (o.status === "Anulado") return false;
         if (o.ctrlOn) return daysBetween(o.date, o.ctrlOn) > DEADLINE_DAYS;
-        return deadineAt(o.date) <= now;
+        return deadlineAt(o.date) <= now;
       }),
     [all, now, month, seller, inTeam],
   );
@@ -115,7 +120,7 @@ export default function CriticalSalesPage() {
     );
   }
 
-  const urgent = pending.filter((o) => deadineAt(o.date) - now < 12 * 3600000 && deadineAt(o.date) > now).length;
+  const urgent = pending.filter((o) => deadlineAt(o.date) - now < 12 * 3600000 && deadlineAt(o.date) > now).length;
 
   const timerCell = (o: Order) => {
     if (tab === "criticas" && o.ctrlOn) {
@@ -127,7 +132,7 @@ export default function CriticalSalesPage() {
         </span>
       );
     }
-    const remaining = deadineAt(o.date) - now;
+    const remaining = deadlineAt(o.date) - now;
     if (remaining > 0) {
       const less12 = remaining < 12 * 3600000;
       return (
@@ -161,7 +166,7 @@ export default function CriticalSalesPage() {
       <PageHeader
         eyebrow="Vendas"
         title="Vendas Críticas"
-        subtitle={`A contratação tem de chegar ao estado Control em até ${DEADLINE_DAYS} dias após a assinatura. Fora do prazo aplica-se uma penalidade de ${PENALTY}€ por venda.`}
+        subtitle={`A contratação tem de chegar ao estado Control em até ${DEADLINE_DAYS} dias após a assinatura — o dia da assinatura não conta. Fora do prazo aplica-se uma penalidade de ${PENALTY}€ por venda.`}
       >
         <SearchBox value={q} onChange={setQ} placeholder="Nº, contrato, cliente, vendedor…" />
       </PageHeader>

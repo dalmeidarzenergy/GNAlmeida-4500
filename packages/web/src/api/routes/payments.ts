@@ -509,7 +509,11 @@ export async function buildBreakdown(
     return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
   };
 
-  /** Dias obrigatórios de contratação e penalização fixa por venda (nº). */
+  /**
+   * Dias obrigatórios de contratação e penalização fixa por venda (nº).
+   * O dia da assinatura não conta: assinada a 20, em Control a 23 ainda está
+   * dentro do prazo; só a 24 (4 dias) é que leva a penalização.
+   */
   const TIMING_DAYS = 3;
   const TIMING_PENALTY = 10; // € fixo por venda, 1x mesmo em DUAL
 
