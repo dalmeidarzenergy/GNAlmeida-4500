@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal, ChevronRight, Briefcase, Map, Headset, Banknote, PieChart, Settings, Ruler, FileCheck, Landmark, CarFront, Zap,
+  ClipboardList, LayoutDashboard, PenLine, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal, ChevronRight, Briefcase, Map, Headset, Banknote, PieChart, Settings, Ruler, FileCheck, Landmark, CarFront, Zap,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -110,6 +110,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/comercializadores", key: "comercializadores", label: "Comercializadores", icon: Plug },
       { to: "/catalogo-simulador", key: "catalogo-simulador", label: "Catálogo do simulador", icon: SlidersHorizontal },
+      { to: "/assinaturas", key: "assinaturas", label: "Assinaturas", icon: PenLine },
       { to: "/utilizadores", key: "utilizadores", label: "Utilizadores", icon: ShieldCheck },
     ],
   },

@@ -26,6 +26,7 @@ import { simuladorStore } from "./lib/simulador-store";
 import { simuladorCatalogo } from "./routes/simulador-catalogo";
 import { propostas } from "./routes/propostas";
 import { companyRoute } from "./routes/company";
+import { assinaturas } from "./routes/assinaturas";
 import { syncCatalog } from "./routes/campaigns";
 import { handle as aiHandle } from "./lib/simulador-ai.mjs";
 import { handle as campanhasHandle } from "./lib/simulador-campanhas.mjs";
@@ -54,6 +55,7 @@ export const router = {
   propostas,
   fleet,
   company: companyRoute,
+  assinaturas,
 };
 
 export type AppRouter = typeof router;

@@ -43,6 +43,7 @@ const HistoricoGpsPage = lazy(() => import("./pages/historico-gps"));
 const SimuladorPage = lazy(() => import("./pages/simulador"));
 const SimuladorMedemPage = lazy(() => import("./pages/simulador-medem"));
 const SimuladorPotenciaPage = lazy(() => import("./pages/simulador-potencia"));
+const AssinaturasPage = lazy(() => import("./pages/assinaturas"));
 const CompletarIbanPage = lazy(() => import("./pages/completar-iban"));
 const PropostasPage = lazy(() => import("./pages/propostas"));
 const EmpresaPage = lazy(() => import("./pages/empresa"));
@@ -90,6 +91,7 @@ const routes: [string, React.ComponentType][] = [
   ["/simulador-res-neg", SimuladorPage],
   ["/simulador-medem", SimuladorMedemPage],
   ["/simulador-potencia", SimuladorPotenciaPage],
+  ["/assinaturas", AssinaturasPage],
   ["/propostas", PropostasPage],
   ["/completar-iban", CompletarIbanPage],
   ["/", Dashboard],
