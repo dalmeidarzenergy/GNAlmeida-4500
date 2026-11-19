@@ -8,7 +8,7 @@ import { writePublic, removePublic } from "../lib/public-files";
  *  limite baixo evita pedidos gigantes e assinaturas que o Outlook corta. */
 const MAX_LOGO = 3 * 1024 * 1024;
 
-/** Uma linha da assinatura: tipo + valor. O tipo manda no icone e no link. */
+/** Uma linha da assinatura: tipo + valor. O tipo manda no icone e na cor. */
 export const LINHA_TIPOS = ["telefone", "movel", "email", "site", "morada", "extra"] as const;
 export type LinhaTipo = (typeof LINHA_TIPOS)[number];
 
@@ -17,7 +17,7 @@ const linha = z.object({
   valor: z.string().trim().max(160),
   /** Ligacao da linha ("tel:+3519...", "mailto:...", "https://..."). Vazio = sem link. */
   href: z.string().trim().max(300).default(""),
-  /** Quando falso, a linha sai com o texto simples (ex.: morada). */
+  /** Quando falso, a linha sai sem texto. */
   ativo: z.boolean().default(true),
 });
 
@@ -50,15 +50,18 @@ const template = z.object({
   logoSecundario: z.string().trim().max(300).default(""),
   /** Nome da marca a mostrar quando nao ha logo principal. */
   marca: z.string().trim().max(60).default(""),
-  cor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor invalida.").default("#1c9ad6"),
+  /* Cor da linha horizontal e dos links. O valor por omissao e o azul do
+   * exemplar da RZ Energy. */
+  cor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor invalida.").default("#0da9ff"),
   /** Cor do texto do nome e do cargo. */
   corTexto: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor invalida.").default("#111827"),
   /** Icones a esquerda de cada linha. */
   mostrarIcones: z.boolean().default(true),
-  /** Cor de fundo dos icones e do bloco de redes sociais. */
-  corIcones: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor invalida.").default("#2f6b52"),
-  /** Largura da assinatura em pixeis (a que se cola no email). */
-  largura: z.number().int().min(420).max(760).default(600),
+  /** Cor dos icones das linhas. */
+  corIcones: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor invalida.").default("#00402a"),
+  /** Largura da assinatura em pixeis (a que se cola no email).
+   *  576 = 145 (logos) + 431 (texto, a medida do exemplar). */
+  largura: z.number().int().min(420).max(760).default(576),
 });
 export type AssinaturaTemplate = z.infer<typeof template>;
 

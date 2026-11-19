@@ -10,7 +10,7 @@
  * area de transferencia ja formatada, para colar no Outlook/Gmail.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, Download, Loader2, Palette, Plus, Trash2, Upload, X } from "lucide-react";
+import { Check, Copy, Download, ImagePlus, Loader2, Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { PageHeader, Empty, Tabs } from "../components/ui/kit";
 import { assinaturaHtml, copiarFormatado } from "../lib/assinatura-html";
 import {
@@ -44,7 +44,8 @@ const TIPOS: { key: AssinaturaLinha["tipo"]; label: string }[] = [
   { key: "extra", label: "Outro" },
 ];
 
-const CORES = ["#1c9ad6", "#00A650", "#2f6b52", "#0f2a1d", "#f5a524", "#7c3aed", "#dc2626", "#374151"];
+/* Azul do exemplar + verde da barra das redes + as cores da marca. */
+const CORES = ["#0da9ff", "#00402a", "#00A650", "#2f6b52", "#0f2a1d", "#f5a524", "#7c3aed", "#dc2626", "#374151"];
 
 export default function AssinaturasPage() {
   const { data: guardado, isLoading } = useAssinatura();
@@ -264,6 +265,35 @@ export default function AssinaturasPage() {
               </div>
             </section>
 
+            {/* ------------------------------------------------ logos */}
+            <section className="card rise p-5">
+              <h2 className="font-display mb-1 text-[15px] font-semibold">Logos</h2>
+              <p className="mb-4 text-[11.5px] text-ink-3">Escolha o logo da marca e, se quiser, o segundo. Os logos ficam empilhados a esquerda, na largura do exemplar (145px).</p>
+              {!logos.data?.length ? (
+                <Empty title="Sem logos" text="Carregue o primeiro logo na aba Logos." />
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="label-mono mb-1 block">Logo principal</span>
+                    <select className="input" value={t.logoPrincipal} onChange={(e) => mexer({ logoPrincipal: e.target.value })} aria-label="Logo principal">
+                      <option value="">Sem logo (só texto)</option>
+                      {logos.data.map((l: AssinaturaLogo) => <option key={l.src} value={l.src}>{l.nome}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="label-mono mb-1 block">Logo secundário</span>
+                    <select className="input" value={t.logoSecundario} onChange={(e) => mexer({ logoSecundario: e.target.value })} aria-label="Logo secundário">
+                      <option value="">Nenhum</option>
+                      {logos.data.map((l: AssinaturaLogo) => <option key={l.src} value={l.src}>{l.nome}</option>)}
+                    </select>
+                  </label>
+                </div>
+              )}
+              <button type="button" className="btn btn-ghost mt-4" onClick={() => setAba("logos")}>
+                <ImagePlus size={15} /> Carregar outro logo
+              </button>
+            </section>
+
             {/* ------------------------------------------------ estilo */}
             <section className="card rise p-5">
               <h2 className="font-display mb-4 flex items-center gap-2 text-[15px] font-semibold"><Palette size={15} /> Estilo</h2>
@@ -278,7 +308,7 @@ export default function AssinaturasPage() {
                   </div>
                 </div>
                 <div>
-                  <span className="label-mono mb-2 block">Cor dos ícones e das redes</span>
+                  <span className="label-mono mb-2 block">Cor dos ícones dos contactos</span>
                   <div className="flex flex-wrap items-center gap-2">
                     {CORES.map((c) => (
                       <button key={c} type="button" onClick={() => mexer({ corIcones: c })} aria-label={`Ícones ${c}`} className={`h-7 w-7 rounded-full border-2 transition ${t.corIcones.toLowerCase() === c.toLowerCase() ? "border-ink" : "border-transparent"}`} style={{ background: c }} />
@@ -286,13 +316,14 @@ export default function AssinaturasPage() {
                     <input type="color" value={t.corIcones} onChange={(e) => mexer({ corIcones: e.target.value })} aria-label="Cor de ícones personalizada" className="h-7 w-10 cursor-pointer rounded border border-line bg-transparent" />
                   </div>
                 </div>
+                <p className="text-[11.5px] text-ink-3">Os ícones das redes ficam sempre na barra verde-escura do exemplar.</p>
                 <label className="flex items-center gap-2 text-[12.5px]">
                   <input type="checkbox" checked={t.mostrarIcones} onChange={() => mexer({ mostrarIcones: !t.mostrarIcones })} className="h-4 w-4 accent-[#00A650]" aria-label="Mostrar ícones" />
                   Mostrar ícones à esquerda de cada linha
                 </label>
                 <div>
                   <span className="label-mono mb-1 block">Largura: <span className="num">{t.largura}px</span></span>
-                  <input type="range" min={420} max={760} step={10} value={t.largura} onChange={(e) => mexer({ largura: Number(e.target.value) })} aria-label="Largura da assinatura" className="w-full accent-[#00A650]" />
+                  <input type="range" min={462} max={760} step={2} value={t.largura} onChange={(e) => mexer({ largura: Number(e.target.value) })} aria-label="Largura da assinatura" className="w-full accent-[#00A650]" />
                 </div>
               </div>
             </section>
