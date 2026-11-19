@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal, ChevronRight, Briefcase, Map, Headset, Banknote, PieChart, Settings, Ruler, FileCheck, Landmark, CarFront,
+  ClipboardList, LayoutDashboard, Users, UsersRound, Building2, CalendarDays, UserSearch, Contact, ShoppingCart, Target, Megaphone, BarChart3, TrendingUp, ShieldCheck, LogOut, Menu, X, Calendar, MapPin, Route, Calculator, Sun, Moon, Scale, Gauge, Table, Wallet, FileSpreadsheet, Sparkles, CreditCard, Timer, ShieldAlert, Mail, Plug, Pin, PinOff, FileText, HandCoins, SlidersHorizontal, ChevronRight, Briefcase, Map, Headset, Banknote, PieChart, Settings, Ruler, FileCheck, Landmark, CarFront, Zap,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient } from "../lib/auth";
@@ -61,6 +61,7 @@ const NAV: NavGroup[] = [
       { to: "/campanhas", key: "campanhas", label: "Campanhas", icon: Megaphone },
       { to: "/simulador-res-neg", key: "simulador-iberdrola", label: "Simulador RES/NEG", icon: Calculator },
       { to: "/simulador-medem", key: "simulador-medem", label: "Simulador Medem", icon: Ruler },
+      { to: "/simulador-potencia", key: "simulador-potencia", label: "Simulador de Potência", icon: Zap },
       { to: "/completar-iban", key: "completar-iban", label: "Completar IBAN", icon: CreditCard },
     ],
   },
