@@ -24,10 +24,22 @@ export const LINHA_ICONE: Record<string, string> = {
 };
 
 /** URL do icone de um tipo, na cor pedida. `base` e a origem da app (o cliente
- *  de email precisa do endereco completo). */
+ *  de email precisa do endereco completo).
+ *
+ *  A cor vai no caminho em 6 digitos: `#abc` e expandido para `aabbcc` e uma cor
+ *  vazia ou invalida cai no verde da casa, senao o URL apontava para um icone
+ *  que nao existe e a assinatura ficava com um espaco vazio. */
 export function urlIcone(tipo: string, cor: string, base = "") {
   const nome = LINHA_ICONE[tipo] ?? "extra";
-  return `${base}/api/assinaturas/icone/${nome}/${cor.replace("#", "").toLowerCase()}`;
+  return `${base}/api/assinaturas/icone/${nome}/${corHex6(cor) ?? "00402a"}`;
+}
+
+/** Cor normalizada em 6 digitos (sem `#`), ou null se nao for uma cor. */
+export function corHex6(cor: string): string | null {
+  const c = (cor || "").trim().replace(/^#/, "").toLowerCase();
+  if (/^[0-9a-f]{6}$/.test(c)) return c;
+  if (/^[0-9a-f]{3}$/.test(c)) return c[0]! + c[0]! + c[1]! + c[1]! + c[2]! + c[2]!;
+  return null;
 }
 
 /** Junta a origem aos caminhos relativos (`/logos/...`), que num email nao

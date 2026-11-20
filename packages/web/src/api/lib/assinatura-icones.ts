@@ -32,10 +32,12 @@ export function iconeDe(tipo: string): string | null {
 
 const cache = new Map<string, Uint8Array>();
 
+/** Cor `#rrggbb` ou `#rgb` -> canais; null se nao for uma cor. */
 function hex(cor: string) {
-  const m = /^#?([0-9a-fA-F]{6})$/.exec(cor.trim());
-  if (!m) return null;
-  const n = parseInt(m[1]!, 16);
+  let c = (cor || "").trim().replace(/^#/, "");
+  if (/^[0-9a-fA-F]{3}$/.test(c)) c = c[0]! + c[0]! + c[1]! + c[1]! + c[2]! + c[2]!;
+  if (!/^[0-9a-fA-F]{6}$/.test(c)) return null;
+  const n = parseInt(c, 16);
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
 
