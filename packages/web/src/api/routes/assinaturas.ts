@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { ORPCError } from "@orpc/server";
+import type { Hono } from "hono";
 import { requireEdit, requireView } from "../middleware/auth";
 import { LOGOS_KEY, dadosKey, settingsGet, settingsSet, templateKey } from "../lib/assinaturas-store";
 import { writePublic, removePublic } from "../lib/public-files";
+import { iconePng } from "../lib/assinatura-icones";
 
 /** Ficheiros ate 3 MB (base64). Um logo de assinatura e sempre pequeno; um
  *  limite baixo evita pedidos gigantes e assinaturas que o Outlook corta. */
@@ -99,6 +101,27 @@ export const LOGOS_BASE: AssinaturaLogo[] = [
   { nome: "RZ Energy", src: "/logos/rzenergy.png", proprio: false },
   { nome: "Iberdrola Colaborador", src: "/logos/iberdrola-colaborador.png", proprio: false },
 ];
+
+/**
+ * Rotas HTTP do criador de assinaturas.
+ *
+ * `/api/assinaturas/icone/:tipo/:cor` e publico de proposito: o cliente de
+ * email vai buscar o icone sem sessao. So devolve o icone tingido, nunca dados
+ * de ninguem.
+ */
+export function assinaturasRoutes(app: Hono) {
+  app.get("/api/assinaturas/icone/:tipo/:cor", async (c) => {
+    const buf = await iconePng(c.req.param("tipo"), c.req.param("cor"));
+    if (!buf) return c.notFound();
+    return new Response(buf as unknown as BodyInit, {
+      headers: {
+        "Content-Type": "image/png",
+        /* A cor e o tipo estao no URL: o ficheiro nunca muda. */
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
+    });
+  });
+}
 
 export const assinaturas = {
   /** Galeria de logos (os da app + os carregados pelo utilizador). */

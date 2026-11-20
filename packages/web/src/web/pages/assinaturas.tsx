@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, Download, ImagePlus, Loader2, Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { PageHeader, Empty, Tabs } from "../components/ui/kit";
-import { assinaturaHtml, copiarFormatado } from "../lib/assinatura-html";
+import { assinaturaHtml, copiarFormatado, urlIcone } from "../lib/assinatura-html";
 import {
   useAssinatura, useAssinaturaLogos, useLogoUpload, useLogoRemove, useAssinaturaSave,
 } from "../queries/assinaturas";
@@ -75,7 +75,10 @@ export default function AssinaturasPage() {
     const ro = new ResizeObserver(medir);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [aba]);
+    /* `aba` faz remontar a caixa; `isLoading`/`largura` trazem o elemento a
+     * existencia so depois de os dados chegarem — sem eles a medicao ficava a
+     * zero e a pre-visualizacao reflowava em vez de encolher. */
+  }, [aba, isLoading, t?.largura]);
 
   useEffect(() => {
     if (!guardado) return;
@@ -90,7 +93,10 @@ export default function AssinaturasPage() {
     });
   }, [guardado]);
 
-  const html = useMemo(() => (t && d ? assinaturaHtml(t, d) : ""), [t, d]);
+  /* Origem da app: o HTML da assinatura leva URLs completos, porque num email
+   * um `/logos/...` relativo nao resolve para lado nenhum. */
+  const base = typeof window === "undefined" ? "" : window.location.origin;
+  const html = useMemo(() => (t && d ? assinaturaHtml(t, d, base) : ""), [t, d, base]);
 
   /* `zoom` (e nao `transform: scale`) porque encolhe tambem o espaco ocupado:
    * com transform a caixa ficava com a altura da assinatura em tamanho real e
@@ -314,6 +320,17 @@ export default function AssinaturasPage() {
                       <button key={c} type="button" onClick={() => mexer({ corIcones: c })} aria-label={`Ícones ${c}`} className={`h-7 w-7 rounded-full border-2 transition ${t.corIcones.toLowerCase() === c.toLowerCase() ? "border-ink" : "border-transparent"}`} style={{ background: c }} />
                     ))}
                     <input type="color" value={t.corIcones} onChange={(e) => mexer({ corIcones: e.target.value })} aria-label="Cor de ícones personalizada" className="h-7 w-10 cursor-pointer rounded border border-line bg-transparent" />
+                  </div>
+                  {/* Os mesmos icones que saem na assinatura, na cor escolhida.
+                      Sobre uma tira clara, porque a assinatura e vista em fundo
+                      claro e uma cor escura perder-se-ia no cartao. */}
+                  <div className="mt-3 flex flex-wrap items-center gap-3" aria-label="Ícones das linhas">
+                    <span className="flex items-center gap-2 rounded-md border border-line bg-[#f1f3ef] px-2.5 py-1.5">
+                      {TIPOS.filter((x) => x.key !== "extra").map((x) => (
+                        <img key={x.key} src={urlIcone(x.key, t.corIcones, base)} alt="" width={15} height={15} className="h-[15px] w-[15px]" title={x.label} />
+                      ))}
+                    </span>
+                    <span className="text-[11px] text-ink-3">telefone · email · site · morada</span>
                   </div>
                 </div>
                 <p className="text-[11.5px] text-ink-3">Os ícones das redes ficam sempre na barra verde-escura do exemplar.</p>

@@ -26,7 +26,7 @@ import { simuladorStore } from "./lib/simulador-store";
 import { simuladorCatalogo } from "./routes/simulador-catalogo";
 import { propostas } from "./routes/propostas";
 import { companyRoute } from "./routes/company";
-import { assinaturas } from "./routes/assinaturas";
+import { assinaturas, assinaturasRoutes } from "./routes/assinaturas";
 import { syncCatalog } from "./routes/campaigns";
 import { handle as aiHandle } from "./lib/simulador-ai.mjs";
 import { handle as campanhasHandle } from "./lib/simulador-campanhas.mjs";
@@ -66,6 +66,7 @@ const app = createApp(router);
 d2d(app);
 simulador(app);
 iberdrolaRoutes(app);
+assinaturasRoutes(app);
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 // Simulador RES/NEG — backend routes

@@ -11,16 +11,32 @@
  */
 import type { AssinaturaDados, AssinaturaLinha, AssinaturaRede, AssinaturaTemplate } from "../../api/routes/assinaturas";
 
-/** Icones dos contactos. Glifos de texto (nao webfonts: os clientes de email
- *  nao carregam fontes externas e o icone desaparecia). */
+/** Icones dos contactos. Sao imagens servidas pelo servidor em
+ *  `/api/assinaturas/icone/<tipo>/<cor>`: um PNG tingido com a cor escolhida,
+ *  porque nem o Outlook nem o Gmail aceitam webfonts nem recolorir por CSS. */
 export const LINHA_ICONE: Record<string, string> = {
-  telefone: "✆",
-  movel: "✆",
-  email: "✉",
-  site: "◍",
-  morada: "◉",
-  extra: "•",
+  telefone: "telefone",
+  movel: "movel",
+  email: "email",
+  site: "site",
+  morada: "morada",
+  extra: "extra",
 };
+
+/** URL do icone de um tipo, na cor pedida. `base` e a origem da app (o cliente
+ *  de email precisa do endereco completo). */
+export function urlIcone(tipo: string, cor: string, base = "") {
+  const nome = LINHA_ICONE[tipo] ?? "extra";
+  return `${base}/api/assinaturas/icone/${nome}/${cor.replace("#", "").toLowerCase()}`;
+}
+
+/** Junta a origem aos caminhos relativos (`/logos/...`), que num email nao
+ *  resolvem para lado nenhum. */
+export function urlAbsoluta(src: string, base = "") {
+  if (!src) return "";
+  if (/^(https?:|data:)/i.test(src)) return src;
+  return `${base}${src.startsWith("/") ? "" : "/"}${src}`;
+}
 
 /** Simbolos das redes, no mesmo espirito: texto, nao imagem. */
 export const REDE_LABEL: Record<string, string> = {
@@ -66,17 +82,29 @@ function corValor(l: AssinaturaLinha, t: AssinaturaTemplate) {
   return t.cor;
 }
 /** Uma linha de contacto: icone a esquerda (opcional) e o valor a direita. */
-function linhaTabela(l: AssinaturaLinha, t: AssinaturaTemplate) {
+function linhaTabela(l: AssinaturaLinha, t: AssinaturaTemplate, base: string) {
   const valor = valorLinha(l);
   if (!valor) return "";
   const cor = corValor(l, t);
   const conteudo = l.href
     ? `<a href="${esc(l.href)}" style="color:${cor};text-decoration:underline;">${esc(valor)}</a>`
     : `<span style="color:${cor};">${esc(valor)}</span>`;
+  /* O icone e uma imagem: `width`/`height` em atributo (para o Outlook, que
+   * ignora o tamanho do CSS) e o CSS a repetir o mesmo. */
   const icone = t.mostrarIcones
-    ? `<td width="46" valign="top" style="width:46px;padding:0 0 8px;font-family:${LETRA};font-size:13px;line-height:15px;color:${t.corIcones};">${LINHA_ICONE[l.tipo] ?? "•"}</td>`
+    ? `<td width="${COL_ICONE}" valign="top" style="width:${COL_ICONE}px;padding:1px 0 8px;"><img src="${esc(urlIcone(l.tipo, t.corIcones, base))}" alt="" width="${ICONE}" height="${ICONE}" style="display:block;width:${ICONE}px;height:${ICONE}px;border:0;background:transparent;" /></td>`
     : "";
   return `<tr>${icone}<td valign="top" style="padding:0 0 8px;font-family:${LETRA};font-size:12px;line-height:15px;">${conteudo}</td></tr>`;
+}
+
+/**
+ * Linha horizontal de separacao.
+ *
+ * Nao pode ser `border-top` num `<div>`: o Outlook descarta-a. Uma celula de
+ * tabela com `bgcolor` e 1px de altura e o que se ve em todos os clientes.
+ */
+function divisor(cor: string) {
+  return `<tr><td height="1" bgcolor="${cor}" style="height:1px;line-height:1px;font-size:1px;background-color:${cor};">&nbsp;</td></tr>`;
 }
 
 /** Barra verde-escura com os icones das redes, como no exemplar. */
@@ -96,22 +124,28 @@ function blocoRedes(d: AssinaturaDados, t: AssinaturaTemplate) {
 const COL_LOGOS = 145;
 /** Altura maxima de um logo, para o principal nao dominar a assinatura. */
 const LOGO_MAX_H = 46;
-const LOGO_GAP = 12;
+/** Espaco entre um logo e o seguinte. */
+const LOGO_GAP = 14;
+/** Largura da coluna do icone e tamanho do proprio icone. */
+const COL_ICONE = 42;
+const ICONE = 14;
 
 /** Assinatura completa em HTML de email. */
-export function assinaturaHtml(t: AssinaturaTemplate, d: AssinaturaDados) {
+export function assinaturaHtml(t: AssinaturaTemplate, d: AssinaturaDados, base = "") {
   const colDir = Math.max(320, t.largura - COL_LOGOS);
 
-  const logos = [t.logoPrincipal, t.logoSecundario]
-    .filter(Boolean)
+  /* Cada logo vai no seu <tr> com o espaco em `padding` da celula: `margin`
+   * num <img> e ignorada pelo Outlook, e os logos ficavam colados. */
+  const srcs = [t.logoPrincipal, t.logoSecundario].filter(Boolean);
+  const logos = srcs
     .map(
       (src, i) =>
-        `<img src="${esc(src)}" alt="" width="${COL_LOGOS}" style="display:block;width:${COL_LOGOS}px;max-width:100%;height:auto;max-height:${LOGO_MAX_H}px;border:0;background:transparent;${i ? `margin:${LOGO_GAP}px 0 0;` : "margin:0;"}" />`,
+        `<tr><td style="padding:${i ? LOGO_GAP : 0}px 0 0;"><img src="${esc(urlAbsoluta(src, base))}" alt="" width="${COL_LOGOS}" style="display:block;width:${COL_LOGOS}px;max-width:100%;height:auto;max-height:${LOGO_MAX_H}px;border:0;background:transparent;" /></td></tr>`,
     )
     .join("");
   /* Sem logo escolhido, a coluna mostra o nome da marca em texto. */
   const marca = logos
-    ? logos
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">${logos}</table>`
     : `<div style="font-family:${LETRA};font-size:19px;font-weight:bold;color:${TINTA};letter-spacing:0.04em;line-height:24px;">${esc(t.marca || d.nomeEmpresa)}</div>`;
 
   /* Nome e cargo numa celula e os icones das redes na celula ao lado, como no
@@ -127,27 +161,29 @@ export function assinaturaHtml(t: AssinaturaTemplate, d: AssinaturaDados) {
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr><td valign="top" style="padding:2px 0 0;">${nome}${cargo}</td><td width="14" style="width:14px;padding:0;">&nbsp;</td><td valign="top" style="padding:0;">${redesAoNome}</td></tr></table>`
     : nome + cargo;
 
-  const linhas = d.linhas.map((l) => linhaTabela(l, t)).join("");
+  const linhas = d.linhas.map((l) => linhaTabela(l, t, base)).join("");
   const nota = d.nota
     ? `<div style="font-family:${LETRA};font-size:10.5px;color:#6b7280;line-height:15px;padding:10px 0 0;">${esc(d.nota)}</div>`
     : "";
 
-  /* A linha horizontal vai de fora a fora da coluna do texto (no exemplar
-   * ocupa os 431px todos) e fica 8px acima do topo do nome.
+  /* Duas linhas horizontais, como no exemplar: uma acima do nome e outra
+   * imediatamente por baixo do cargo, a separar a identificacao dos contactos.
+   * Vao de fora a fora da coluna do texto (os 431px do exemplar).
    *
    * `background:transparent` e a cor de tinta explicitas: a assinatura cola-se
    * dentro do corpo do email e tem de deixar ver o fundo do cliente (claro ou
    * escuro). Sem isto, herda o que estiver a volta. */
+  const corLinha = t.cor || AZUL;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${t.largura}" bgcolor="transparent" style="border-collapse:collapse;background:transparent;background-color:transparent;width:${t.largura}px;max-width:100%;font-family:${LETRA};font-size:12px;color:${TINTA};">
   <tr>
     <td width="${COL_LOGOS}" valign="top" style="width:${COL_LOGOS}px;padding:0;vertical-align:top;">${marca}</td>
     <td width="26" style="width:26px;padding:0;">&nbsp;</td>
     <td width="${colDir - 26}" valign="top" style="width:${colDir - 26}px;padding:0;">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:100%;">
-        <tr><td style="padding:0 0 8px;font-family:${LETRA};font-size:1px;line-height:1px;color:${t.cor || AZUL};"><div style="border-top:1px solid ${t.cor || AZUL};font-size:1px;line-height:1px;">&nbsp;</div></td></tr>
-        <tr><td style="padding:0 0 10px;">${identidade}</td></tr>
-        <tr><td style="padding:0 0 16px;"><div style="border-top:1px solid ${t.cor || AZUL};font-size:1px;line-height:1px;">&nbsp;</div></td></tr>
-        <tr><td style="padding:0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tbody>${linhas}</tbody></table></td></tr>
+        ${divisor(corLinha)}
+        <tr><td style="padding:8px 0 12px;">${identidade}</td></tr>
+        ${divisor(corLinha)}
+        <tr><td style="padding:16px 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tbody>${linhas}</tbody></table></td></tr>
         ${nota ? `<tr><td style="padding:0;">${nota}</td></tr>` : ""}
       </table>
     </td>
