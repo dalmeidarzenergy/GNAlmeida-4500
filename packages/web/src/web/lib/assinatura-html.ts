@@ -106,7 +106,7 @@ export function assinaturaHtml(t: AssinaturaTemplate, d: AssinaturaDados) {
     .filter(Boolean)
     .map(
       (src, i) =>
-        `<img src="${esc(src)}" alt="" width="${COL_LOGOS}" style="display:block;width:${COL_LOGOS}px;max-width:100%;height:auto;max-height:${LOGO_MAX_H}px;border:0;${i ? `margin:${LOGO_GAP}px 0 0;` : "margin:0;"}" />`,
+        `<img src="${esc(src)}" alt="" width="${COL_LOGOS}" style="display:block;width:${COL_LOGOS}px;max-width:100%;height:auto;max-height:${LOGO_MAX_H}px;border:0;background:transparent;${i ? `margin:${LOGO_GAP}px 0 0;` : "margin:0;"}" />`,
     )
     .join("");
   /* Sem logo escolhido, a coluna mostra o nome da marca em texto. */
@@ -133,8 +133,12 @@ export function assinaturaHtml(t: AssinaturaTemplate, d: AssinaturaDados) {
     : "";
 
   /* A linha horizontal vai de fora a fora da coluna do texto (no exemplar
-   * ocupa os 431px todos) e fica 8px acima do topo do nome. */
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${t.largura}" style="border-collapse:collapse;width:${t.largura}px;max-width:100%;">
+   * ocupa os 431px todos) e fica 8px acima do topo do nome.
+   *
+   * `background:transparent` e a cor de tinta explicitas: a assinatura cola-se
+   * dentro do corpo do email e tem de deixar ver o fundo do cliente (claro ou
+   * escuro). Sem isto, herda o que estiver a volta. */
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="${t.largura}" bgcolor="transparent" style="border-collapse:collapse;background:transparent;background-color:transparent;width:${t.largura}px;max-width:100%;font-family:${LETRA};font-size:12px;color:${TINTA};">
   <tr>
     <td width="${COL_LOGOS}" valign="top" style="width:${COL_LOGOS}px;padding:0;vertical-align:top;">${marca}</td>
     <td width="26" style="width:26px;padding:0;">&nbsp;</td>
@@ -151,19 +155,64 @@ export function assinaturaHtml(t: AssinaturaTemplate, d: AssinaturaDados) {
 </table>`;
 }
 
+/** Texto simples equivalente, para os clientes que colam so texto. */
+function textoSimples(html: string) {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(div|p|tr|table)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /**
  * Copia a assinatura para a area de transferencia ja formatada, para colar
  * no Outlook/Gmail a manter o formato.
  *
- * O navegador normal so aceita HTML no evento `copy`; por isso montamos um
- * contentor fora do ecra, selecionamos-no e disparamos `document.execCommand`.
+ * Importante: o HTML e escrito no clipboard **tal e qual**. O caminho antigo
+ * (selecionar um div e `execCommand("copy")`) passava pelo serializador do
+ * navegador, que cola ao elemento raiz os estilos herdados da pagina — no tema
+ * escuro da app isso metia `background-color: rgb(12,14,13)` e `color: rgb(238,
+ * 242, 234)` na assinatura, e o resultado aparecia com um bloco escuro em vez
+ * de fundo transparente. Como a assinatura assenta dentro do corpo do email,
+ * o fundo tem de ser o do cliente.
+ *
+ * Ordem: `navigator.clipboard.write` com `ClipboardItem` (copia exata, sem
+ * serializador) e, se o navegador nao souber, `execCommand` num contentor fora
+ * do ecra com fundo/cor/fonte **explicitos** — o serializer copia o estilo
+ * computado do elemento copiado, por isso um contentor com `background:
+ * transparent` faz com que ele deixe de ir buscar o fundo escuro da app.
  */
 export async function copiarFormatado(html: string): Promise<void> {
+  const texto = textoSimples(html);
+
+  try {
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([texto], { type: "text/plain" }),
+        }),
+      ]);
+      return;
+    }
+  } catch {
+    /* segue para o execCommand */
+  }
+
+  /* Recurso: contentor invisivel que corta a heranca do tema da app. O iframe
+   * nao serve — o Chrome recusa `execCommand("copy")` dentro dele. */
   const holder = document.createElement("div");
   holder.contentEditable = "true";
-  holder.style.position = "fixed";
-  holder.style.left = "-9999px";
-  holder.style.top = "0";
+  holder.style.cssText =
+    "position:fixed;left:-9999px;top:0;background:transparent;background-color:transparent;color:#111827;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:400;font-style:normal;line-height:normal;letter-spacing:normal;text-align:left;text-transform:none;";
   holder.innerHTML = html;
   document.body.appendChild(holder);
   try {
@@ -174,8 +223,9 @@ export async function copiarFormatado(html: string): Promise<void> {
     sel?.addRange(range);
     const ok = document.execCommand("copy");
     sel?.removeAllRanges();
-    if (!ok) await navigator.clipboard.writeText(holder.innerText);
+    if (!ok) await navigator.clipboard.writeText(texto);
   } finally {
     document.body.removeChild(holder);
+    window.focus();
   }
 }
