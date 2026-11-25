@@ -160,15 +160,16 @@ export default function EvolutionPage() {
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <div className="label-mono">Evolução {g.tab.toLowerCase()}</div>
-                <div className="mt-1 font-display text-[16px] font-semibold">Vendas inseridas vs. em fornecimento</div>
+                <div className="mt-1 font-display text-[16px] font-semibold">Vendas inseridas, em fornecimento e baixas</div>
               </div>
-              <div className="flex items-center gap-4 text-[12px]">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px]">
                 <span className="flex items-center gap-1.5 text-ink-2"><span className="h-2.5 w-2.5 rounded-sm bg-sky/60" /> Inseridas</span>
                 <span className="flex items-center gap-1.5 text-ink-2"><span className="h-0.5 w-4 rounded bg-volt" /> Em Fornecimento</span>
+                <span className="flex items-center gap-1.5 text-ink-2"><span className="w-4 border-t-2 border-dashed border-danger" /> Baixas</span>
                 <Tabs value={cumulative ? "acum" : "periodo"} onChange={(v) => setCumulative(v === "acum")} items={[{ key: "periodo", label: `Por ${g.unit}` }, { key: "acum", label: "Acumulado" }]} />
               </div>
             </div>
-            {d.inserted === 0 ? <Empty title="Sem vendas no período" /> : <EvolutionChart data={d.series} cumulative={cumulative} />}
+            {d.inserted === 0 && d.supplied === 0 && d.baixas === 0 ? <Empty title="Sem vendas no período" /> : <EvolutionChart data={d.series} cumulative={cumulative} />}
           </div>
 
           <div className="card rise overflow-hidden">

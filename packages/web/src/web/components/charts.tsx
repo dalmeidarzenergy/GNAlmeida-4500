@@ -79,28 +79,49 @@ export function Donut({ data, height = 220, money = false }: { data: { name: str
   );
 }
 
-function EvolutionTip({ active, payload, label }: any) {
+type EvolutionPoint = {
+  label: string;
+  inserted: number;
+  supplied: number;
+  baixas: number;
+  cumInserted: number;
+  cumSupplied: number;
+  cumBaixas: number;
+};
+
+function EvolutionTip({ active, payload, label, cumulative }: {
+  active?: boolean;
+  payload?: readonly { dataKey?: string | number; color?: string; name?: string | number; value?: number; payload: EvolutionPoint }[];
+  label?: string | number;
+  cumulative: boolean;
+}) {
   if (!active || !payload?.length) return null;
-  const p = payload[0]?.payload;
+  const p = payload[0].payload;
+  const inserted = cumulative ? p.cumInserted : p.inserted;
+  const rate = (count: number) => inserted ? `${Math.round((count / inserted) * 100)}%` : "—";
   return (
     <div className="rounded-[10px] border border-line bg-[var(--sidebar-bg)]/95 px-3 py-2 shadow-xl backdrop-blur">
       <div className="label-mono mb-1">{label}</div>
-      {payload.map((x: any) => (
+      {payload.map((x) => (
         <div key={x.dataKey} className="num flex items-center gap-2 text-[12.5px]">
           <span className="h-2 w-2 rounded-full" style={{ background: x.color }} />
           <span className="text-ink-2">{x.name}</span>
           <span className="ml-auto pl-3 font-semibold">{x.value}</span>
         </div>
       ))}
-      {p?.rate != null && <div className="num mt-1 text-[11.5px] text-ink-3">Taxa: {Math.round(p.rate * 100)}%</div>}
+      <div className="num mt-1 border-t border-line pt-1 text-[11.5px] text-ink-3">
+        <div>Taxa em Fornecimento: {rate(cumulative ? p.cumSupplied : p.supplied)}</div>
+        <div>Taxa de Baixas: {rate(cumulative ? p.cumBaixas : p.baixas)}</div>
+      </div>
     </div>
   );
 }
 
-/** Vendas inseridas (barras) e em fornecimento (linha) por período. */
-export function EvolutionChart({ data, height = 320, cumulative = false }: { data: { label: string; inserted: number; supplied: number; cumInserted: number; cumSupplied: number; rate: number | null }[]; height?: number; cumulative?: boolean }) {
+/** Vendas inseridas, em fornecimento e baixas por período ou acumuladas. */
+export function EvolutionChart({ data, height = 320, cumulative = false }: { data: EvolutionPoint[]; height?: number; cumulative?: boolean }) {
   const ins = cumulative ? "cumInserted" : "inserted";
   const sup = cumulative ? "cumSupplied" : "supplied";
+  const baixas = cumulative ? "cumBaixas" : "baixas";
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={data} margin={{ top: 10, right: 6, left: -8, bottom: 0 }}>
@@ -113,7 +134,7 @@ export function EvolutionChart({ data, height = 320, cumulative = false }: { dat
         <CartesianGrid stroke="#1f2420" vertical={false} />
         <XAxis dataKey="label" {...axis} interval="preserveStartEnd" minTickGap={14} />
         <YAxis {...axis} width={40} allowDecimals={false} />
-        <Tooltip content={<EvolutionTip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+        <Tooltip content={<EvolutionTip cumulative={cumulative} />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
         {cumulative ? (
           <Area type="linear" name="Inseridas" dataKey={ins} stroke="#38bdf8" strokeWidth={2} fill="rgba(56,189,248,0.10)" dot={false} />
         ) : (
@@ -124,6 +145,7 @@ export function EvolutionChart({ data, height = 320, cumulative = false }: { dat
         ) : (
           <Line type="linear" name="Em Fornecimento" dataKey={sup} stroke="#206a9f" strokeWidth={2.4} dot={{ r: 3, fill: "#206a9f", stroke: "#0c0e0d", strokeWidth: 1.5 }} activeDot={{ r: 5 }} />
         )}
+        <Line type="linear" name="Baixas" dataKey={baixas} stroke="var(--danger)" strokeWidth={2.4} strokeDasharray="5 4" dot={false} activeDot={{ r: 5 }} />
       </ComposedChart>
     </ResponsiveContainer>
   );
