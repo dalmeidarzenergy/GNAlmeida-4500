@@ -552,6 +552,18 @@ async function suppliedOn(from: string, to: string, scope: SellerScope, services
   return rows.map((r) => r.on).filter((d) => d >= from && d <= to);
 }
 
+/** Última passagem a Baixa por venda que continua nesse estado, pela energia principal. */
+async function baixasOn(from: string, to: string, scope: SellerScope, services: string[]) {
+  const on = sql<string>`max(${saleStatusHistory.changedOn})`;
+  return db
+    .select({ on })
+    .from(saleStatusHistory)
+    .innerJoin(sales, eq(sales.id, saleStatusHistory.saleId))
+    .where(and(eq(saleStatusHistory.energy, "luz"), eq(saleStatusHistory.status, "Baixa"), eq(sales.status, "Baixa"), sellerWhere(scope), inArray(sales.service, services)))
+    .groupBy(saleStatusHistory.saleId)
+    .having(and(gte(on, from), lte(on, to)));
+}
+
 async function evolutionReport(granularity: "dia" | "semana" | "mes" | "todos", month: string, sellerId: SellerScope, services: string[] = DEFAULT_SERVICES) {
   let buckets: Bucket[];
   if (granularity === "todos") {
@@ -567,15 +579,21 @@ async function evolutionReport(granularity: "dia" | "semana" | "mes" | "todos", 
     .select({ date: sales.date })
     .from(sales)
     .where(and(gte(sales.date, from), lte(sales.date, to), sellerWhere(sellerId), inArray(sales.service, services)));
-  const supRows = await suppliedOn(from, to, sellerId, services);
+  const [supRows, baixaRows] = await Promise.all([
+    suppliedOn(from, to, sellerId, services),
+    baixasOn(from, to, sellerId, services),
+  ]);
   let cumIns = 0;
   let cumSup = 0;
+  let cumBaixas = 0;
   const series = buckets.map((b) => {
     const inserted = rows.filter((r) => r.date >= b.from && r.date <= b.to).length;
     const supplied = supRows.filter((d) => d >= b.from && d <= b.to).length;
+    const baixas = baixaRows.filter((r) => r.on >= b.from && r.on <= b.to).length;
     cumIns += inserted;
     cumSup += supplied;
-    return { ...b, inserted, supplied, rate: inserted ? supplied / inserted : null, cumInserted: cumIns, cumSupplied: cumSup };
+    cumBaixas += baixas;
+    return { ...b, inserted, supplied, baixas, rate: inserted ? supplied / inserted : null, cumInserted: cumIns, cumSupplied: cumSup, cumBaixas };
   });
   // Ritmo do mês escolhido (independente da granularidade): média por dia útil e previsão de fecho.
   const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
@@ -615,6 +633,7 @@ async function evolutionReport(granularity: "dia" | "semana" | "mes" | "todos", 
     series,
     inserted: cumIns,
     supplied: cumSup,
+    baixas: cumBaixas,
     rate: cumIns ? cumSup / cumIns : null,
     avgInserted: series.length ? cumIns / series.length : 0,
     avgSupplied: series.length ? cumSup / series.length : 0,

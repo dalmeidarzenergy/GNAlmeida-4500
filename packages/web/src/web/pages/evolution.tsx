@@ -18,6 +18,7 @@ const GRAN: Record<Granularity, { tab: string; unit: string; avgUnit: string; co
 };
 
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+const taxaBaixas = ({ baixas, inserted }: { baixas: number; inserted: number }) => pct(inserted ? baixas / inserted : null);
 const dec = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1).replace(".", ","));
 
 function downloadCsv(name: string, rows: (string | number)[][]) {
@@ -63,7 +64,11 @@ export default function EvolutionPage() {
         {d && (
           <button
             className="btn btn-ghost"
-            onClick={() => downloadCsv(`evolucao-${gran}-${month}.csv`, [[g.col, "Inseridas", "Em Fornecimento", "Taxa"], ...d.series.map((x) => [x.label, x.inserted, x.supplied, pct(x.rate)]), ["Total", d.inserted, d.supplied, pct(d.rate)]])}
+            onClick={() => downloadCsv(`evolucao-${gran}-${month}.csv`, [
+              [g.col, "Inseridas", "Em Fornecimento", "Baixas", "Taxa em Fornecimento", "Taxa de Baixas", "Acum. baixas"],
+              ...d.series.map((x) => [x.label, x.inserted, x.supplied, x.baixas, pct(x.rate), taxaBaixas(x), x.cumBaixas]),
+              ["Total", d.inserted, d.supplied, d.baixas, pct(d.rate), taxaBaixas(d), d.baixas],
+            ])}
           >
             <Download size={14} /> Exportar CSV
           </button>
@@ -75,7 +80,7 @@ export default function EvolutionPage() {
           <div className="mb-4 grid grid-cols-2 gap-4 xl:grid-cols-4">
             <Stat label="Vendas inseridas" value={d.inserted} accent="var(--sky)" sub={`média ${dec(d.avgInserted)} / ${g.avgUnit}`} />
             <Stat delay={40} label="Em Fornecimento" value={d.supplied} accent="var(--volt)" sub={`média ${dec(d.avgSupplied)} / ${g.avgUnit}`} />
-            <Stat delay={80} label="Taxa de sucesso" value={pct(d.rate)} sub="em fornecimento / inseridas no período" />
+            <Stat delay={80} label="Taxa em Fornecimento" value={pct(d.rate)} sub="em fornecimento / inseridas no período" />
             <Stat delay={120} label={`Melhor ${g.unit}`} value={d.best ? d.best.label : "—"} sub={d.best ? `${d.best.inserted} venda(s) inserida(s)` : "sem vendas"} />
           </div>
 
@@ -174,9 +179,12 @@ export default function EvolutionPage() {
                     <th className="label-mono px-5 py-3 font-normal">{g.col}</th>
                     <th className="label-mono px-5 py-3 text-right font-normal">Inseridas</th>
                     <th className="label-mono px-5 py-3 text-right font-normal">Em Fornecimento</th>
-                    <th className="label-mono px-5 py-3 text-right font-normal">Taxa</th>
+                    <th className="label-mono px-5 py-3 text-right font-normal">Baixas</th>
+                    <th className="label-mono px-5 py-3 text-right font-normal">Taxa em Fornecimento</th>
+                    <th className="label-mono px-5 py-3 text-right font-normal">Taxa de Baixas</th>
                     <th className="label-mono px-5 py-3 text-right font-normal">Acum. inseridas</th>
                     <th className="label-mono px-5 py-3 text-right font-normal">Acum. em fornec.</th>
+                    <th className="label-mono px-5 py-3 text-right font-normal">Acum. baixas</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -185,9 +193,12 @@ export default function EvolutionPage() {
                       <td className="px-5 py-2.5">{x.label}</td>
                       <td className="num px-5 py-2.5 text-right">{x.inserted}</td>
                       <td className={`num px-5 py-2.5 text-right ${x.supplied ? "text-volt" : ""}`}>{x.supplied}</td>
+                      <td className={`num px-5 py-2.5 text-right ${x.baixas ? "text-danger" : ""}`}>{x.baixas}</td>
                       <td className="num px-5 py-2.5 text-right">{pct(x.rate)}</td>
+                      <td className="num px-5 py-2.5 text-right">{taxaBaixas(x)}</td>
                       <td className="num px-5 py-2.5 text-right text-ink-2">{x.cumInserted}</td>
                       <td className="num px-5 py-2.5 text-right text-ink-2">{x.cumSupplied}</td>
+                      <td className="num px-5 py-2.5 text-right text-ink-2">{x.cumBaixas}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -195,7 +206,7 @@ export default function EvolutionPage() {
             </div>
           </div>
           <p className="mt-3 text-[12px] text-ink-3">
-            "Inseridas" contam pela data da venda. "Em Fornecimento" conta pelo dia em que a venda passou a esse estado (registado em cada mudança de estado, incluindo sábados) e só inclui as que continuam em fornecimento; nas DUAL conta o estado da luz. Com equipa escolhida, cada venda conta para a equipa onde o comercial estava na data da venda. Os dias úteis do ritmo são de segunda a sexta, sem feriados nacionais.
+            "Inseridas" contam pela data da venda. "Em Fornecimento" e "Baixas" contam pela data da última passagem ao respetivo estado, apenas para as vendas que aí permanecem. Cada taxa divide a contagem do respetivo estado pelas vendas inseridas no mesmo período; sem inseridas, mostra «—». Nas DUAL, conta o estado da luz. Com equipa escolhida, cada venda conta para a equipa onde o comercial estava na data da venda. Os dias úteis do ritmo são de segunda a sexta, sem feriados nacionais.
           </p>
         </>
       )}
