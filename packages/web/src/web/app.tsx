@@ -49,6 +49,7 @@ const PropostasPage = lazy(() => import("./pages/propostas"));
 const EmpresaPage = lazy(() => import("./pages/empresa"));
 const CentroCustosPage = lazy(() => import("./pages/centro-custos"));
 const FrotaPage = lazy(() => import("./pages/frota"));
+const PlanoMensalPage = lazy(() => import("./pages/plano-mensal"));
 
 const routes: [string, React.ComponentType][] = [
   ["/agenda", AgendaPage],
@@ -67,6 +68,7 @@ const routes: [string, React.ComponentType][] = [
   ["/empresa", EmpresaPage],
   ["/centro-custos", CentroCustosPage],
   ["/frota", FrotaPage],
+  ["/plano-mensal", PlanoMensalPage],
   ["/clientes", ClientsPage],
   ["/clientes-a-tratar", ClientesATratarPage],
   ["/reports-venda", ReportsVendaPage],

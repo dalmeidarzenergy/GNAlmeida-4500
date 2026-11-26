@@ -27,3 +27,8 @@
 - Estados mostrados como pílulas com ponto colorido
 - Sempre com estados de carregamento (skeletons) e estados vazios com ação
 - Valores em €, no formato pt-PT
+
+## Plano Mensal
+- Página de Gestão de Empresa com a tipografia e os cartões do CRM. Fundo cinzento-azulado no modo claro, cabeçalho da tabela azul-petróleo `#1B5F7E` e linha de totais azul-claro `#DCECF5`, com superfícies equivalentes no modo escuro.
+- Tabela compacta de largura total no computador; em espaço estreito, cada colaborador e o total passam a cartões de duas colunas. Verde e vermelho distinguem o sinal do lucro.
+- O botão «Exportar PDF» descarrega a simulação atual em A4 horizontal, com tabela paginada e resumo mensal. O PDF mantém o fundo branco e as cores dos totais e do lucro, independentemente do tema do CRM.

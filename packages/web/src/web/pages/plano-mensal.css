@@ -1,0 +1,105 @@
+.monthly-plan {
+  --plan-bg: color-mix(in srgb, #1b5f7e 14%, var(--bg));
+  --plan-total: #203a48;
+  --plan-green: #6ee7a6;
+  --plan-red: #ff8383;
+  container-type: inline-size;
+  min-width: 0;
+}
+
+:root[data-theme="light"] .monthly-plan {
+  --plan-bg: #eef4f7;
+  --plan-total: #dcecf5;
+  --plan-green: #166534;
+  --plan-red: #b91c1c;
+}
+
+.plan-panel {
+  margin-top: 1rem;
+  padding: clamp(12px, 2cqi, 22px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--plan-bg);
+}
+
+.plan-table-frame {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.plan-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.plan-table .plan-name-col { width: 18%; }
+.plan-table .plan-action-col { width: 42px; }
+.plan-table th, .plan-table td { padding: 9px 7px; }
+.plan-table thead { background: #1b5f7e; color: white; }
+.plan-table thead th { font-size: 11px; font-weight: 600; line-height: 1.35; text-align: right; }
+.plan-table thead th:first-child, .plan-table tfoot th { text-align: left; }
+.plan-table tbody td { border-bottom: 1px solid var(--line); }
+.plan-table td.plan-number { text-align: right; overflow-wrap: anywhere; }
+.plan-number { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.plan-table .input { min-width: 0; padding-inline: 7px; font-size: 12px; height: 35px; }
+.plan-table .plan-action { padding-inline: 4px; text-align: center; }
+.plan-table tfoot { background: var(--plan-total); font-weight: 700; }
+.plan-table tfoot th, .plan-table tfoot td { padding-block: 14px; }
+.plan-empty td { text-align: center; color: var(--ink-2); }
+.plan-mobile-label { display: none; }
+.plan-profit { color: var(--plan-green); }
+.plan-loss { color: var(--plan-red); }
+
+.plan-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 10px;
+}
+
+.plan-summary-card { min-width: 0; overflow-wrap: anywhere; }
+.plan-final { border-color: color-mix(in srgb, var(--volt) 35%, var(--line)); }
+
+@container (max-width: 840px) {
+  .plan-table-frame { overflow: visible; border: 0; background: transparent; }
+  .plan-table, .plan-table tbody, .plan-table tfoot { display: block; }
+  .plan-table thead, .plan-table colgroup { display: none; }
+  .plan-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .plan-table tbody td, .plan-table tfoot td, .plan-table tfoot th { display: block; min-width: 0; padding: 0; border: 0; }
+  .plan-table .input { height: 38px; font-size: 16px; }
+  .plan-table .plan-name { grid-column: 1 / -1; }
+  .plan-table tbody tr:not(.plan-empty) { position: relative; }
+  .plan-table tbody .plan-name .plan-mobile-label { padding-right: 38px; }
+  .plan-table tbody td.plan-action { position: absolute; top: 4px; right: 8px; padding: 0; }
+  .plan-table tfoot { background: transparent; }
+  .plan-table tfoot tr { margin: 0; background: var(--plan-total); }
+  .plan-table tfoot td.plan-empty-days, .plan-table tfoot td.plan-action { display: none; }
+  .plan-table td.plan-number { text-align: left; padding-block: 1px; }
+  .plan-empty td { grid-column: 1 / -1; }
+  .plan-mobile-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--ink-2);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+}
+
+@container (max-width: 400px) {
+  .plan-summary-grid { grid-template-columns: 1fr; }
+}

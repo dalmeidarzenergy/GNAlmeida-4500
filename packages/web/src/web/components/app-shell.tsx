@@ -91,6 +91,7 @@ const NAV: NavGroup[] = [
       { to: "/empresa", key: "empresa", label: "Gestão de Empresa", icon: Landmark },
       { to: "/centro-custos", key: "empresa", label: "Centro de Custos", icon: Wallet },
       { to: "/frota", key: "frota", label: "Frota", icon: CarFront },
+      { to: "/plano-mensal", key: "plano-mensal", label: "Plano Mensal", icon: Calculator },
     ],
   },
   {
