@@ -101,6 +101,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
   const [readingFile, setReadingFile] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState<string>();
+  const [exportBusy, setExportBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean }>();
   const [excel, setExcel] = useState<(ExcelImport & { filename: string })>();
   const [importError, setImportError] = useState<string>();
@@ -176,6 +177,18 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
     } finally { setPdfBusy(undefined); }
   }
 
+  async function exportFilteredPdf() {
+    if (exportBusy || !list.isSuccess || filterError || !filtered.length) return;
+    setExportBusy(true);
+    setNotice(undefined);
+    try {
+      const { downloadTerritoryListPdf } = await import("../lib/territory-list-pdf");
+      downloadTerritoryListPdf({ rows: filtered, filters, canViewContracts, today });
+    } catch (error) {
+      setNotice({ text: message(error, "Não foi possível exportar a lista em PDF."), error: true });
+    } finally { setExportBusy(false); }
+  }
+
   return (
     <>
       <PageHeader eyebrow="Gestão Territorial" title="Gestão de Territórios" subtitle="Regista os varrimentos por concelho e acompanha os contratos e os meses de descanso.">
@@ -186,8 +199,11 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
             {readingFile ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <FileUp size={16} aria-hidden="true" />} Importar Excel
           </button>
           <input ref={fileInput} type="file" aria-label="Ficheiro Excel" accept=".xlsx,.xls" hidden onChange={(e) => { void readFile(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }} />
-          <button type="button" className="btn btn-primary" onClick={() => setEditing(null)}><Plus size={16} aria-hidden="true" /> Novo território</button>
         </>}
+        <button type="button" className="btn btn-ghost" onClick={() => void exportFilteredPdf()} disabled={exportBusy || !list.isSuccess || !!filterError || !filtered.length} aria-busy={exportBusy} title="Exportar todos os resultados dos filtros ativos">
+          {exportBusy ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <FileDown size={16} aria-hidden="true" />} Exportar PDF
+        </button>
+        {editable && <button type="button" className="btn btn-primary" onClick={() => setEditing(null)}><Plus size={16} aria-hidden="true" /> Novo território</button>}
       </PageHeader>
       {notice && <p role={notice.error ? "alert" : "status"} className={`mb-4 rounded-lg border border-line bg-surface px-4 py-3 text-sm ${notice.error ? "text-danger" : "text-ink"}`}>{notice.text}</p>}
       <section aria-labelledby="territory-records" className="card min-w-0 overflow-hidden">
