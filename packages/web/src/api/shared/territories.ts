@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Permissions, Role } from "../permissions";
 export { normalizeTerritoryText, territoryKey } from "./territory-municipalities";
 
 export const TERRITORY_COLUMNS = ["Distrito", "Concelho", "Data último varrimento", "Mês último varrimento", "Nº contratos", "Meses descanso", "KM"] as const;
@@ -16,6 +17,10 @@ export const territoryInput = z.object({
 export type TerritoryInput = z.infer<typeof territoryInput>;
 export type TerritoryDistance = { status: "ok"; meters: number } | { status: "not_found" | "no_route" };
 export type Territory = TerritoryInput & { id: string; distance: TerritoryDistance; contracts: number | null };
+
+export function canViewTerritoryContracts({ permissions, role }: { permissions: Permissions; role: Role }) {
+  return permissions.vendas.view && role !== "vendedor" && role !== "chefe";
+}
 
 export function fullRestMonths(lastSweep: string | null, today = territoryToday()): number | null {
   if (!lastSweep) return null;

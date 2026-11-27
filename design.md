@@ -40,3 +40,4 @@
 - O Excel anterior continua a ser aceite: as colunas antigas são ignoradas e, para novos concelhos repetidos no mesmo ficheiro, fica a data mais recente. A importação não altera os concelhos já registados.
 - A ação Eliminar pede confirmação e afeta só a linha ativa, sem alterar Vendas nem o arquivo histórico.
 - Pesquisa, distrito e concelho ficam acima da tabela. Os filtros avançados, num painel recolhível com os mesmos controlos do CRM, combinam varrimento, descanso, contratos (só com acesso global a Vendas) e distância. A lista aplica os filtros antes de paginar, com 20 registos por página.
+- O nome do concelho abre um detalhe só para perfis com acesso global a Vendas. A interface separa o total em fornecimento do total de todos os estados e agrupa os registos por funcionário e mês/ano da venda, com referências e estado atual, sem dados de clientes.

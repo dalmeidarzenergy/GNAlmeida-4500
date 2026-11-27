@@ -4,9 +4,9 @@ import { z } from "zod";
 import { db } from "../database";
 import { municipalityTerritories as table, territoryRecords as archive } from "../database/territory-schema";
 import { requireEdit, requireView, type Permissions, type Role } from "../middleware/auth";
-import { territoryInput, territoryKey, TERRITORY_IMPORT_LIMIT, type Territory, type TerritoryInput } from "../shared/territories";
+import { canViewTerritoryContracts, territoryInput, territoryKey, TERRITORY_IMPORT_LIMIT, type Territory, type TerritoryInput } from "../shared/territories";
 import { mergeTerritorySweeps, territoryMunicipality } from "../shared/territory-municipalities";
-import { territoryContractCounts } from "../lib/territory-contracts";
+import { territoryContractCounts, territoryContractDetails } from "../lib/territory-contracts";
 
 const view = requireView("gestao-territorios");
 const edit = requireEdit("gestao-territorios").use(async ({ context, next }) => {
@@ -17,8 +17,7 @@ const columns = { id: table.id, district: table.district, municipality: table.mu
 
 async function withMetrics(rows: (TerritoryInput & { id: string })[], context: { permissions: Permissions; role: Role }): Promise<Territory[]> {
   // A contagem é global; perfis limitados a vendas próprias ou de equipa não a recebem.
-  const globalSales = context.permissions.vendas.view && context.role !== "vendedor" && context.role !== "chefe";
-  const totals = globalSales && rows.length ? await territoryContractCounts() : null;
+  const totals = canViewTerritoryContracts(context) && rows.length ? await territoryContractCounts() : null;
   return rows.map((row) => {
     const place = territoryMunicipality(row);
     const distance = !place ? { status: "not_found" as const } : place.meters === null ? { status: "no_route" as const } : { status: "ok" as const, meters: place.meters };
@@ -37,6 +36,13 @@ function duplicate() {
 
 export const territories = {
   list: view.handler(async ({ context }) => withMetrics(await db.select(columns).from(table).orderBy(asc(table.district), asc(table.municipality)), context)),
+  contracts: view.input(z.object({ id: z.uuid() })).handler(async ({ input, context }) => {
+    if (!canViewTerritoryContracts(context)) throw new ORPCError("FORBIDDEN", { message: "É necessário acesso global a Vendas." });
+    const [row] = await db.select({ district: table.district, municipality: table.municipality }).from(table).where(eq(table.id, input.id));
+    if (!row) throw new ORPCError("NOT_FOUND", { message: "Território não encontrado." });
+    const place = territoryMunicipality(row);
+    return { recognized: !!place, sales: place ? await territoryContractDetails(place.code) : [] };
+  }),
   history: view.handler(async () => db.select({ id: archive.id, district: archive.district, municipality: archive.municipality, lastSweep: archive.lastSweep })
     .from(archive).orderBy(desc(archive.lastSweep), asc(archive.district), asc(archive.municipality), asc(archive.id))),
   create: edit.input(territoryInput).handler(async ({ input }) => {

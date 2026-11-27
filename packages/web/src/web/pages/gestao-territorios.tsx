@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { ChevronLeft, ChevronRight, Download, FileUp, History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { ConfirmDeleteModal } from "../components/bulk-select";
+import { TerritoryContractDetails } from "../components/territory-contract-details";
 import { TerritoryFilters } from "../components/territory-filters";
 import { Empty, Field, Modal, PageHeader, SubmitRow } from "../components/ui/kit";
 import { useMe } from "../queries/me";
 import { useTerritories, useTerritoryHistory, useTerritoryMutations } from "../queries/territories";
 import { downloadTerritoryTemplate, readTerritoryExcel } from "../lib/territories-excel";
 import { emptyTerritoryFilters, filterTerritories, TERRITORY_PAGE_SIZE, territoryFilterError, type TerritoryFilters as Filters } from "../lib/territory-filters";
-import { fullRestMonths, TERRITORY_COLUMNS, TERRITORY_ROUTE_ORIGIN, territoryInput, territoryKey, territoryToday, type Territory, type TerritoryInput } from "../../api/shared/territories";
+import { canViewTerritoryContracts, fullRestMonths, TERRITORY_COLUMNS, TERRITORY_ROUTE_ORIGIN, territoryInput, territoryKey, territoryToday, type Territory, type TerritoryInput } from "../../api/shared/territories";
 import { mergeTerritorySweeps } from "../../api/shared/territory-municipalities";
 
 const noRows: Territory[] = [];
@@ -93,6 +94,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
   const [editing, setEditing] = useState<Territory | null | undefined>();
   const [deleting, setDeleting] = useState<Territory | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [contractTerritory, setContractTerritory] = useState<Territory | null>(null);
   const [readingFile, setReadingFile] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean }>();
@@ -195,7 +197,10 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
                     const date = row.lastSweep ? new Date(`${row.lastSweep}T00:00:00Z`) : null;
                     const rest = fullRestMonths(row.lastSweep, today);
                     return <tr key={row.id} className="border-b border-line last:border-b-0 hover:bg-surface-2/60">
-                      {locations.map(([key]) => <td key={key} className="max-w-52 break-words px-3 py-3">{row[key] || "—"}</td>)}
+                      <td className="max-w-52 break-words px-3 py-3">{row.district || "—"}</td>
+                      <td className="max-w-52 break-words px-3 py-3">{canViewContracts ? (
+                        <button type="button" className="text-left font-medium text-volt underline decoration-volt/50 underline-offset-4 hover:decoration-current" title="Ver contratos do concelho" onClick={() => setContractTerritory(row)}>{row.municipality}</button>
+                      ) : row.municipality || "—"}</td>
                       <td className="whitespace-nowrap px-3 py-3">{date ? dayFormat.format(date) : "—"}</td>
                       <td className="px-3 py-3 capitalize">{date ? monthFormat.format(date) : "—"}</td>
                       <td className="num px-3 py-3 text-right">{row.contracts === null ? <span title={row.distance.status === "not_found" ? "Concelho não reconhecido" : "Contagem disponível apenas com acesso global a Vendas"} className="text-ink-2">—</span> : intFormat.format(row.contracts)}</td>
@@ -228,6 +233,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
         )}
       </section>
       {historyOpen && <TerritoryHistory onClose={() => setHistoryOpen(false)} />}
+      {canViewContracts && contractTerritory && <TerritoryContractDetails territory={contractTerritory} onClose={() => setContractTerritory(null)} />}
       {editable && editing !== undefined && <TerritoryForm row={editing} onClose={() => setEditing(undefined)} onSave={async (data) => {
         if (editing) await update.mutateAsync({ id: editing.id, data });
         else { await create.mutateAsync(data); clearFilters(); }
@@ -274,6 +280,6 @@ export default function GestaoTerritoriosPage() {
   if (me.isLoading) return <div className="skeleton h-64 rounded-[14px]" />;
   const permission = me.data?.permissions?.["gestao-territorios"];
   if (!permission?.view) return <PageHeader title="Gestão de Territórios" subtitle="Não tens acesso a esta página." />;
-  const canViewContracts = !!me.data?.permissions?.vendas.view && me.data?.role !== "vendedor" && me.data?.role !== "chefe";
+  const canViewContracts = !!me.data && canViewTerritoryContracts(me.data);
   return <Territories editable={permission.edit && !permission.readOnly} canViewContracts={canViewContracts} />;
 }

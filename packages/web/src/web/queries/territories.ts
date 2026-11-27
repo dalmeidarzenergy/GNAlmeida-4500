@@ -9,6 +9,10 @@ export function useTerritoryHistory() {
   return useQuery(orpc.territories.history.queryOptions());
 }
 
+export function useTerritoryContracts(id: string) {
+  return useQuery(orpc.territories.contracts.queryOptions({ input: { id }, gcTime: 0, retry: false }));
+}
+
 export function useTerritoryMutations() {
   const qc = useQueryClient();
   const onSuccess = () => qc.invalidateQueries({ queryKey: orpc.territories.list.key() });
