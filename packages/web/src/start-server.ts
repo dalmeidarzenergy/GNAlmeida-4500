@@ -48,6 +48,18 @@ if (existsSync(dbPath)) {
     ensureColumn("simulador_propostas", "pdf_base64", "text");
     ensureColumn("simulador_propostas", "pdf_name", "text");
 
+    db.run(`CREATE TABLE IF NOT EXISTS territories (
+      id TEXT PRIMARY KEY NOT NULL,
+      location_key TEXT NOT NULL,
+      district TEXT NOT NULL,
+      municipality TEXT NOT NULL,
+      parish TEXT NOT NULL,
+      village TEXT NOT NULL DEFAULT '',
+      last_sweep TEXT,
+      contracts INTEGER NOT NULL DEFAULT 0
+    )`);
+    db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_territories_location ON territories(location_key)`);
+
     // Frota: tabelas novas. `CREATE TABLE IF NOT EXISTS` e idempotente e deixa
     // as bases antigas (sem frota) a funcionar assim que o servidor arranca.
     db.run(`CREATE TABLE IF NOT EXISTS vehicles (

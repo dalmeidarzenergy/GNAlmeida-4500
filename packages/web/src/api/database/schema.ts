@@ -3,6 +3,7 @@ import { user } from "./auth-schema";
 
 export * from "./auth-schema";
 export * from "./fleet-schema";
+export * from "./territory-schema";
 
 const createdAt = () =>
   integer("created_at", { mode: "timestamp" })

@@ -19,6 +19,7 @@ import { suppliersRoute } from "./routes/suppliers";
 import { agenda } from "./routes/agenda";
 import { d2d } from "./routes/d2d";
 import { fleet } from "./routes/fleet";
+import { territories } from "./routes/territories";
 import { simulador } from "./routes/simulador";
 import { incentivesRoutes } from "./routes/incentives";
 import { notificationsRoute } from "./routes/notifications";
@@ -54,6 +55,7 @@ export const router = {
   simuladorCatalogo,
   propostas,
   fleet,
+  territories,
   company: companyRoute,
   assinaturas,
 };

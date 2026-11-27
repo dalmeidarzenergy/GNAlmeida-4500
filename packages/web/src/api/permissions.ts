@@ -58,6 +58,7 @@ export const MODULES = [
   { key: "empresa", label: "Gestão de Empresa", group: "Análise" },
   { key: "frota", label: "Frota", group: "Análise" },
   { key: "plano-mensal", label: "Plano Mensal", group: "Gestão de Empresa" },
+  { key: "gestao-territorios", label: "Gestão de Territórios", group: "Gestão de Empresa" },
 ] as const;
 
 export type ModuleKey = (typeof MODULES)[number]["key"];
@@ -110,6 +111,7 @@ const ACCESS: Record<ModuleKey, ModuleAccess> = {
   empresa: { view: ["admin", "diretor", "rh", "backoffice"], edit: ["admin", "diretor"] },
   frota: { view: ["admin", "diretor", "rh", "backoffice", "coordenador", "chefe", "vendedor"], edit: ["admin", "diretor", "backoffice"] },
   "plano-mensal": { view: ["admin", "diretor", "rh", "backoffice"], edit: ["admin", "diretor", "rh", "backoffice"] },
+  "gestao-territorios": { view: ["admin", "diretor", "rh", "backoffice"], edit: ["admin", "diretor", "backoffice"] },
 };
 
 function buildDefaults(): Record<Role, Permissions> {

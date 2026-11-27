@@ -31,4 +31,8 @@
 ## Plano Mensal
 - Página de Gestão de Empresa com a tipografia e os cartões do CRM. Fundo cinzento-azulado no modo claro, cabeçalho da tabela azul-petróleo `#1B5F7E` e linha de totais azul-claro `#DCECF5`, com superfícies equivalentes no modo escuro.
 - Tabela compacta de largura total no computador; em espaço estreito, cada colaborador e o total passam a cartões de duas colunas. Verde e vermelho distinguem o sinal do lucro.
-- O botão «Exportar PDF» descarrega a simulação atual em A4 horizontal, com tabela paginada e resumo mensal. O PDF mantém o fundo branco e as cores dos totais e do lucro, independentemente do tema do CRM.
+- O botão «Exportar PDF» descarrega a simulação atual em A4 horizontal, com tabela paginada e resumo mensal. Os logótipos RZ Energy e Iberdrola (Colaborador Oficial) aparecem no cabeçalho de todas as páginas. O PDF mantém o fundo branco e as cores dos totais e do lucro, independentemente do tema do CRM.
+
+## Gestão de Territórios
+- Entrada imediatamente abaixo de Plano Mensal, no grupo Gestão de Empresa. Tabela pesquisável com as oito colunas da folha de referência, formulário em modal e importação Excel com pré-visualização. O mês e os meses completos de descanso são calculados a partir da data do último varrimento.
+- A coluna «KM» mostra os quilómetros de ida, de carro, desde a Rua do Mato, 1, 2000-531 Póvoa de Santarém, até um ponto viário de referência na freguesia. É calculada a partir de uma tabela CAOP/OpenStreetMap gerada localmente, sem pedidos externos nem edição manual. Usar a hierarquia distrito/concelho/freguesia; distinguir nome não reconhecido de ausência de rota.

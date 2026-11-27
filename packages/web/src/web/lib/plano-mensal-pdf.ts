@@ -7,8 +7,18 @@ const MUTED = "#4C626F";
 const profitColor = (amount: number) => isPlanLoss(amount) ? "#A1232C" : "#176343";
 const pdfText = (text: string) => text.replace(/\s+/g, " ").trim();
 
+async function loadLogo(path: string) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`Não foi possível carregar ${path}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 export async function exportPlanPdf(plan: MonthlyPlan) {
-  const { jsPDF } = await import("jspdf");
+  const [{ jsPDF }, rzLogo, iberdrolaLogo] = await Promise.all([
+    import("jspdf"),
+    loadLogo("/logos/rzenergy.png"),
+    loadLogo("/logos/iberdrola-colaborador.png"),
+  ]);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", lineHeight: 1.2 });
   const margin = 14;
   const right = doc.internal.pageSize.getWidth() - margin;
@@ -16,11 +26,24 @@ export async function exportPlanPdf(plan: MonthlyPlan) {
   const bottom = doc.internal.pageSize.getHeight() - margin - 7;
   const columns = [width - 222, 22, 25, 24, 29, 34, 32, 28, 28];
   const data = calculatePlan(plan);
+  const logos = [
+    { image: iberdrolaLogo, alias: "iberdrola", width: 53 },
+    { image: rzLogo, alias: "rzenergy", width: 39 },
+  ].map((logo) => {
+    const size = doc.getImageProperties(logo.image);
+    return { ...logo, height: logo.width * size.height / size.width };
+  });
   let y = margin;
 
   doc.setProperties({ title: "Plano Mensal", subject: "Simulação de vendas, comissões e lucro D2D" });
 
   function pageHeader(continued = false) {
+    let x = right;
+    for (const logo of logos) {
+      x -= logo.width;
+      doc.addImage(logo.image, "PNG", x, y + 8.5 - logo.height / 2, logo.width, logo.height, logo.alias, "FAST");
+      x -= 8;
+    }
     doc.setFont("helvetica", "bold").setFontSize(9).setTextColor(BLUE);
     doc.text("GESTÃO DE EMPRESA", margin, y + 3);
     doc.setFontSize(continued ? 17 : 23).setTextColor(INK);
