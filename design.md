@@ -39,3 +39,4 @@
 - «Nº contratos» soma todo o histórico de Vendas no estado «Em Fornecimento» por concelho, sem depender da freguesia ou localidade da venda. O total só está disponível com acesso global a Vendas.
 - O Excel anterior continua a ser aceite: as colunas antigas são ignoradas e, para novos concelhos repetidos no mesmo ficheiro, fica a data mais recente. A importação não altera os concelhos já registados.
 - A ação Eliminar pede confirmação e afeta só a linha ativa, sem alterar Vendas nem o arquivo histórico.
+- Pesquisa, distrito e concelho ficam acima da tabela. Os filtros avançados, num painel recolhível com os mesmos controlos do CRM, combinam varrimento, descanso, contratos (só com acesso global a Vendas) e distância. A lista aplica os filtros antes de paginar, com 20 registos por página.

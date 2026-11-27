@@ -1,14 +1,16 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { ChevronLeft, ChevronRight, Download, FileUp, History, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileUp, History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { ConfirmDeleteModal } from "../components/bulk-select";
+import { TerritoryFilters } from "../components/territory-filters";
 import { Empty, Field, Modal, PageHeader, SubmitRow } from "../components/ui/kit";
 import { useMe } from "../queries/me";
 import { useTerritories, useTerritoryHistory, useTerritoryMutations } from "../queries/territories";
 import { downloadTerritoryTemplate, readTerritoryExcel } from "../lib/territories-excel";
-import { fullRestMonths, normalizeTerritoryText, TERRITORY_COLUMNS, TERRITORY_ROUTE_ORIGIN, territoryInput, territoryKey, territoryToday, type Territory, type TerritoryInput } from "../../api/shared/territories";
+import { emptyTerritoryFilters, filterTerritories, TERRITORY_PAGE_SIZE, territoryFilterError, type TerritoryFilters as Filters } from "../lib/territory-filters";
+import { fullRestMonths, TERRITORY_COLUMNS, TERRITORY_ROUTE_ORIGIN, territoryInput, territoryKey, territoryToday, type Territory, type TerritoryInput } from "../../api/shared/territories";
 import { mergeTerritorySweeps } from "../../api/shared/territory-municipalities";
 
-const PAGE_SIZE = 25;
+const noRows: Territory[] = [];
 const locations = [["district", "Distrito"], ["municipality", "Concelho"]] as const;
 const monthFormat = new Intl.DateTimeFormat("pt-PT", { month: "long", timeZone: "UTC" });
 const dayFormat = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
@@ -84,7 +86,7 @@ function TerritoryHistory({ onClose }: { onClose: () => void }) {
   </Modal>;
 }
 
-function Territories({ editable }: { editable: boolean }) {
+function Territories({ editable, canViewContracts }: { editable: boolean; canViewContracts: boolean }) {
   const list = useTerritories();
   const { create, update, importRows, remove } = useTerritoryMutations();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -96,23 +98,34 @@ function Territories({ editable }: { editable: boolean }) {
   const [notice, setNotice] = useState<{ text: string; error?: boolean }>();
   const [excel, setExcel] = useState<(ExcelImport & { filename: string })>();
   const [importError, setImportError] = useState<string>();
-  const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState(emptyTerritoryFilters);
   const [page, setPage] = useState(1);
   const today = territoryToday();
-  const filtered = useMemo(() => {
-    const q = normalizeTerritoryText(query);
-    return (list.data ?? []).filter((row) => normalizeTerritoryText(locations.map(([key]) => row[key]).join(" ")).includes(q));
-  }, [list.data, query]);
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const rows = list.data ?? noRows;
+  const active = Object.values(filters).some(Boolean);
+  const filterError = territoryFilterError(filters, canViewContracts);
+  const filtered = useMemo(() => filterError ? noRows : filterTerritories(rows, filters, today, canViewContracts), [rows, filters, today, canViewContracts, filterError]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / TERRITORY_PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
-  const start = (currentPage - 1) * PAGE_SIZE;
-  const shown = filtered.slice(start, start + PAGE_SIZE);
+  const start = (currentPage - 1) * TERRITORY_PAGE_SIZE;
+  const shown = filtered.slice(start, start + TERRITORY_PAGE_SIZE);
   const preview = useMemo(() => {
     if (!excel) return null;
     const existing = new Set((list.data ?? []).map(territoryKey));
     const fresh = mergeTerritorySweeps(excel.rows).filter((row) => !existing.has(territoryKey(row)));
     return { fresh, skipped: excel.rows.length - fresh.length };
   }, [excel, list.data]);
+
+  function changeFilter(key: keyof Filters, value: string) {
+    setFilters((prev) => ({ ...prev, [key]: value, ...(key === "district" ? { municipality: "" }
+      : key === "sweep" ? { month: "", from: "", to: "" } : key === "distance" ? { kmMin: "", kmMax: "" } : {}) }));
+    setPage(1);
+  }
+
+  function clearFilters() {
+    setFilters(emptyTerritoryFilters);
+    setPage(1);
+  }
 
   async function readFile(file?: File) {
     if (!file) return;
@@ -131,8 +144,7 @@ function Territories({ editable }: { editable: boolean }) {
     try {
       const result = await importRows.mutateAsync(preview.fresh);
       setExcel(undefined);
-      setQuery("");
-      setPage(1);
+      clearFilters();
       setNotice({ text: `Importação concluída: ${result.inserted} adicionados, ${result.skipped + preview.skipped} duplicados ignorados.` });
     } catch (error) { setImportError(message(error, "Não foi possível concluir a importação.")); }
   }
@@ -166,16 +178,12 @@ function Territories({ editable }: { editable: boolean }) {
             <p className="mt-1 text-xs text-ink-2">Nº contratos: total por concelho de todo o histórico de Vendas em «Em Fornecimento».</p>
             <p className="mt-1 text-xs text-ink-2">KM de ida, de carro, desde {TERRITORY_ROUTE_ORIGIN} até à sede do concelho.</p>
           </div>
-          <label className="relative w-full sm:w-72">
-            <span className="sr-only">Pesquisar por localização</span>
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden="true" />
-            <input type="search" className="input w-full pl-9" placeholder="Pesquisar por localização…" value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} />
-          </label>
         </div>
         {list.isPending ? <div className="skeleton mx-4 mb-4 h-32 rounded-xl" aria-label="A carregar territórios" /> : list.isError ? (
           <Empty title="Não foi possível carregar os territórios" action={<button className="btn btn-ghost" onClick={() => void list.refetch()}>Tentar novamente</button>} />
         ) : (
           <>
+            <TerritoryFilters rows={rows} filters={filters} change={changeFilter} clear={clearFilters} canViewContracts={canViewContracts} active={active} error={filterError} />
             <div className="overflow-x-auto" role="region" aria-label="Tabela de territórios" tabIndex={0}>
               <table className="w-full min-w-[720px] text-left text-[12.5px]">
                 <thead className="border-y border-line bg-surface-2 text-ink-2"><tr>
@@ -204,14 +212,14 @@ function Territories({ editable }: { editable: boolean }) {
                 </tbody>
               </table>
             </div>
-            {!shown.length && <Empty title={query.trim() ? "Sem resultados" : "Ainda não há territórios registados"} text={query.trim() ? "Experimenta pesquisar por outra localização." : editable ? "Cria o primeiro território ou importa uma folha Excel." : undefined} />}
-            {filtered.length > 0 && <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 text-xs text-ink-2">
-              <span>{start + 1}–{start + shown.length} de {filtered.length}</span>
-              {pageCount > 1 && <div className="flex items-center gap-2">
+            {!shown.length && <Empty title={filterError ? "Revê os filtros" : active ? "Sem resultados" : "Ainda não há territórios registados"} text={!filterError && active ? "Ajusta ou limpa os filtros." : !active && editable ? "Cria o primeiro território ou importa uma folha Excel." : undefined} />}
+            {filtered.length > 0 && <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-xs text-ink-2">
+              <span role="status">{start + 1}–{start + shown.length} de {filtered.length} registos</span>
+              {pageCount > 1 && <nav aria-label="Paginação de territórios" className="flex items-center gap-2">
                 <button type="button" className="btn-icon" aria-label="Página anterior" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={16} /></button>
-                <span>{currentPage} / {pageCount}</span>
+                <span>Página {currentPage} de {pageCount}</span>
                 <button type="button" className="btn-icon" aria-label="Página seguinte" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={16} /></button>
-              </div>}
+              </nav>}
             </div>}
             <p className="border-t border-line px-4 py-3 text-[11px] text-ink-2">
               Distâncias aproximadas. Fontes: <a className="underline" href="https://www.dgterritorio.gov.pt/atividades/cartografia/cartografia-tematica/caop" target="_blank" rel="noreferrer">CAOP 2025 · DGT</a> e <a className="underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© contribuidores do OpenStreetMap</a>.
@@ -222,7 +230,7 @@ function Territories({ editable }: { editable: boolean }) {
       {historyOpen && <TerritoryHistory onClose={() => setHistoryOpen(false)} />}
       {editable && editing !== undefined && <TerritoryForm row={editing} onClose={() => setEditing(undefined)} onSave={async (data) => {
         if (editing) await update.mutateAsync({ id: editing.id, data });
-        else { await create.mutateAsync(data); setQuery(""); setPage(1); }
+        else { await create.mutateAsync(data); clearFilters(); }
         setNotice({ text: editing ? "Território atualizado." : "Território criado." });
       }} />}
       {editable && deleting && <ConfirmDeleteModal open title="Eliminar território?" onClose={() => setDeleting(null)} onConfirm={async () => {
@@ -266,5 +274,6 @@ export default function GestaoTerritoriosPage() {
   if (me.isLoading) return <div className="skeleton h-64 rounded-[14px]" />;
   const permission = me.data?.permissions?.["gestao-territorios"];
   if (!permission?.view) return <PageHeader title="Gestão de Territórios" subtitle="Não tens acesso a esta página." />;
-  return <Territories editable={permission.edit && !permission.readOnly} />;
+  const canViewContracts = !!me.data?.permissions?.vendas.view && me.data?.role !== "vendedor" && me.data?.role !== "chefe";
+  return <Territories editable={permission.edit && !permission.readOnly} canViewContracts={canViewContracts} />;
 }
