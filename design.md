@@ -43,3 +43,4 @@
 - A ação Eliminar pede confirmação e afeta só a linha ativa, sem alterar Vendas nem o arquivo histórico.
 - Pesquisa, distrito e concelho ficam acima da tabela. Os filtros avançados, num painel recolhível com os mesmos controlos do CRM, combinam varrimento, descanso, contratos (só com acesso global a Vendas) e distância. A lista aplica os filtros antes de paginar, com 20 registos por página.
 - O nome do concelho abre um detalhe só para perfis com acesso global a Vendas. A interface separa o total em fornecimento do total de todos os estados e agrupa os registos por funcionário e mês/ano da venda, com referências e estado atual, sem dados de clientes.
+- Cada linha tem uma ação «PDF», também para perfis de consulta. O ficheiro A4 usa branco e azul-petróleo, um mapa numerado ligado às tabelas e cabeçalhos repetidos na paginação; a secção de penetração só existe no PDF de quem tem acesso global a Vendas.

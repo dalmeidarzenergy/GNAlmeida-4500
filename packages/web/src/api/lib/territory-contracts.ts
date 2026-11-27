@@ -8,6 +8,7 @@ import { territoryMunicipality } from "../shared/territory-municipalities";
 const details = sql`case when json_valid(${sales.details}) then ${sales.details} else null end`;
 const district = sql<unknown>`json_extract(${details}, '$.district')`;
 const municipality = sql<unknown>`json_extract(${details}, '$.municipality')`;
+const city = sql<unknown>`case when json_type(${details}, '$.city') = 'text' then json_extract(${details}, '$.city') else null end`;
 const contractNumber = sql<string | null>`case when json_type(${details}, '$.contractNumber') in ('text', 'integer') then cast(json_extract(${details}, '$.contractNumber') as text) else null end`;
 
 function saleMunicipalityCode(district: unknown, municipality: unknown) {
@@ -27,6 +28,13 @@ export async function territoryContractCounts() {
     if (code) totals.set(code, (totals.get(code) ?? 0) + total);
   }
   return totals;
+}
+
+export async function territoryContractLocations(code: string) {
+  const groups = await db.select({ district, municipality, city, total: count() }).from(sales)
+    .where(inArray(sales.status, SALE_COUNTED)).groupBy(district, municipality, city);
+  return groups.flatMap((group) => saleMunicipalityCode(group.district, group.municipality) === code
+    ? [{ city: typeof group.city === "string" ? group.city : null, total: group.total }] : []);
 }
 
 export async function territoryContractDetails(code: string) {

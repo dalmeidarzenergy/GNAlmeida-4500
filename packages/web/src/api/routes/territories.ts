@@ -8,6 +8,7 @@ import { canViewTerritoryContracts, territoryInput, territoryKey, TERRITORY_IMPO
 import { mergeTerritorySweeps, territoryMunicipality } from "../shared/territory-municipalities";
 import { territoryContractCounts, territoryContractDetails } from "../lib/territory-contracts";
 import { territoryPopulation } from "../lib/territory-population";
+import { territoryReport } from "../lib/territory-report";
 
 const view = requireView("gestao-territorios");
 const edit = requireEdit("gestao-territorios").use(async ({ context, next }) => {
@@ -45,6 +46,13 @@ function duplicate() {
 
 export const territories = {
   list: view.handler(async ({ context }) => withMetrics(await db.select(columns).from(table).orderBy(asc(table.district), asc(table.municipality)), context)),
+  report: view.input(z.object({ id: z.uuid() })).handler(async ({ input, context }) => {
+    const [row] = await db.select(columns).from(table).where(eq(table.id, input.id));
+    if (!row) throw new ORPCError("NOT_FOUND", { message: "Território não encontrado." });
+    const report = await territoryReport(row, canViewTerritoryContracts(context));
+    if (!report) throw new ORPCError("NOT_FOUND", { message: "Confirma o distrito e o nome oficial do concelho antes de descarregar o PDF." });
+    return report;
+  }),
   contracts: view.input(z.object({ id: z.uuid() })).handler(async ({ input, context }) => {
     if (!canViewTerritoryContracts(context)) throw new ORPCError("FORBIDDEN", { message: "É necessário acesso global a Vendas." });
     const [row] = await db.select({ district: table.district, municipality: table.municipality }).from(table).where(eq(table.id, input.id));

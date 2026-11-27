@@ -32,6 +32,32 @@ bun test packages/web/tools/territory-routing
 
 Nos testes, confirma os valores de referência sempre que mudares o ano do catálogo. As instruções seguintes documentam o catálogo de distâncias anterior, que já não é usado pelo ecrã e se mantém apenas para referência.
 
+## Ficha territorial em PDF
+
+O botão usa `territories.report` para carregar o catálogo offline e a população municipal já usada na lista. O servidor aplica a mesma permissão de acesso global a Vendas da lista: sem essa permissão não consulta Vendas nem disponibiliza contagens ou taxas. A ficha não inclui dados individuais de clientes. A contagem considera apenas contratos «Em Fornecimento». Só atribui uma freguesia quando a Localidade da venda corresponde a um nome oficial, simplificado ou lugar estatístico inequívoco nesse concelho. As restantes vendas continuam a contar no total municipal.
+
+- **Mapa e divisão atual:** DGT, CAOP 2025. A província é uma referência histórica à divisão do século XX ([Decreto-Lei n.º 27 424](https://diariodarepublica.pt/dr/detalhe/decreto-lei/27424-1936-331619), [lista de referência](https://pt.wikipedia.org/wiki/Prov%C3%ADncias_de_Portugal)); não equivale a uma região administrativa atual. Se não constar da correspondência, é apresentada como «—».
+- **População:** idades segundo as freguesias em 2021. Para uma freguesia atual, só se usa a contagem dos Censos se existir o mesmo código e a diferença simétrica entre limites representar no máximo 3% da área da união dos dois polígonos. Não se extrapolam populações para freguesias novas ou com limites não comparáveis.
+- **Lugares e distâncias:** as localidades são lugares estatísticos do INE cujo centroide cai numa única freguesia atual, não um inventário completo de povoações. A ficha reutiliza o catálogo de rotas de freguesia (abaixo); a média exclui as freguesias sem rota. Não se usam distâncias até Viseu da referência de Seia.
+- **Brasões:** `public/territory-arms/{DTMN}.webp`, miniaturas de ficheiros Wikimedia Commons. O catálogo `territory-report-arms.json` liga cada código à ficha que identifica a origem e as condições de reutilização, e fornece autoria e licença estruturadas onde disponíveis.
+
+Para regenerar `territory-report.json`, preparar os quatro GeoPackages `*_CAOP2025.gpkg` da DGT, o catálogo rodoviário de freguesias e os seguintes JSON do [serviço BGRI 2021 do INE](https://gisserver.ine.pt/arcgis/rest/services/BGRI2021/BGRI/FeatureServer). Usar `/query` de cada camada, `where=1=1` e `f=json`; para paginação concatenar os elementos de `features` de todas as páginas (usar uma ordenação estável e conferir os totais):
+
+| Ficheiro | Camada e parâmetros |
+| --- | --- |
+| `age.json` | `/0`, `groupByFieldsForStatistics=DTMNFR21`, `returnGeometry=false`; `outStatistics` com somas de `N_INDIVIDUOS`, `N_INDIVIDUOS_0_14`, `N_INDIVIDUOS_15_24`, `N_INDIVIDUOS_25_64`, `N_INDIVIDUOS_65_OU_MAIS`, com os aliases `TOTAL`, `A`, `B`, `C`, `D`. |
+| `places.json` | `/2`, `outFields=LUG21COD,LUG21DESIG`, `returnCentroid=true`, `outSR=4326`, `maxAllowableOffset=0.003`, `geometryPrecision=6`. |
+| `census-names.json` | `/5`, `outFields=DTMNFR20,FREGUESIA`, `returnGeometry=false`. |
+| `old-geometry.json` | `/5`, `outFields=DTMNFR20`, `outSR=4326`, `maxAllowableOffset=0.00015`, `geometryPrecision=5`. |
+
+Com `pyproj` e `shapely` 2 instalados:
+
+```sh
+python packages/web/tools/territory-routing/build-report.py /caminho/da/caop /caminho/do/ine \
+  packages/web/src/api/data/territory-report.json
+bun test packages/web/tools/territory-routing
+```
+
 ## Referência: catálogo anterior de freguesias
 
 O CRM consultava `src/api/data/territory-road-distances.json` no servidor para calcular a coluna «KM», sem API externa, credenciais ou tarefas agendadas. Os valores em metros representam a distância do itinerário recomendado pelo perfil automóvel do OSRM (sem ferries, pode incluir portagens), desde a Rua do Mato, 1, 2000-531 Póvoa de Santarém, até um ponto viário de referência dentro da freguesia. Não são distâncias em linha reta, para uma morada na aldeia nem estimativas com trânsito em tempo real. A correspondência usa o distrito, o concelho e o nome oficial ou simplificado da freguesia (CAOP 2025). As regiões autónomas e destinos sem percurso apenas por estrada têm valor nulo, não zero.

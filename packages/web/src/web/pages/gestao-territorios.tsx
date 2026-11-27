@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { ChevronLeft, ChevronRight, Download, FileUp, History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileDown, FileUp, History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { ConfirmDeleteModal } from "../components/bulk-select";
 import { TerritoryContractDetails } from "../components/territory-contract-details";
 import { TerritoryFilters } from "../components/territory-filters";
 import { Empty, Field, Modal, PageHeader, SubmitRow } from "../components/ui/kit";
 import { useMe } from "../queries/me";
 import { useTerritories, useTerritoryHistory, useTerritoryMutations } from "../queries/territories";
+import { client } from "../lib/api";
 import { downloadTerritoryTemplate, readTerritoryExcel } from "../lib/territories-excel";
 import { emptyTerritoryFilters, filterTerritories, TERRITORY_PAGE_SIZE, territoryFilterError, type TerritoryFilters as Filters } from "../lib/territory-filters";
 import { canViewTerritoryContracts, fullRestMonths, TERRITORY_COLUMNS, TERRITORY_ROUTE_ORIGIN, territoryInput, territoryKey, territoryToday, type Territory, type TerritoryInput } from "../../api/shared/territories";
@@ -99,6 +100,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
   const [contractTerritory, setContractTerritory] = useState<Territory | null>(null);
   const [readingFile, setReadingFile] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState<string>();
   const [notice, setNotice] = useState<{ text: string; error?: boolean }>();
   const [excel, setExcel] = useState<(ExcelImport & { filename: string })>();
   const [importError, setImportError] = useState<string>();
@@ -161,6 +163,19 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
     finally { setTemplateBusy(false); }
   }
 
+  async function downloadPdf(row: Territory) {
+    setPdfBusy(row.id);
+    setNotice(undefined);
+    try {
+      const [report, { downloadTerritoryPdf }] = await Promise.all([
+        client.territories.report({ id: row.id }), import("../lib/territory-report-pdf"),
+      ]);
+      await downloadTerritoryPdf(report);
+    } catch (error) {
+      setNotice({ text: `${row.municipality}: ${message(error, "Não foi possível descarregar o PDF.")}`, error: true });
+    } finally { setPdfBusy(undefined); }
+  }
+
   return (
     <>
       <PageHeader eyebrow="Gestão Territorial" title="Gestão de Territórios" subtitle="Regista os varrimentos por concelho e acompanha os contratos e os meses de descanso.">
@@ -195,7 +210,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
                   {TERRITORY_COLUMNS.map((label, i) => <th scope="col" key={label} className={`px-3 py-3 font-medium ${i >= 4 ? "text-right" : ""}`}>{label}</th>)}
                   <th scope="col" className="px-3 py-3 text-right font-medium">População residente</th>
                   {canViewContracts && <th scope="col" className="px-3 py-3 text-right font-medium" title={penetrationFormula}>Taxa de penetração</th>}
-                  {editable && <th scope="col" className="px-3 py-3"><span className="sr-only">Ações</span></th>}
+                  <th scope="col" className="px-3 py-3"><span className="sr-only">Ações</span></th>
                 </tr></thead>
                 <tbody>
                   {shown.map((row) => {
@@ -213,12 +228,17 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
                       <DistanceCell distance={row.distance} />
                       <td className="num whitespace-nowrap px-3 py-3 text-right">{row.population == null ? "—" : intFormat.format(row.population)}</td>
                       {canViewContracts && <td className="num whitespace-nowrap px-3 py-3 text-right">{row.penetrationRate == null ? "—" : percentFormat.format(row.penetrationRate)}</td>}
-                      {editable && <td className="px-3 py-2 text-right">
+                      <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button type="button" className="btn-icon" aria-label={`Editar ${row.municipality}`} title="Editar território" onClick={() => setEditing(row)}><Pencil size={15} aria-hidden="true" /></button>
-                          <button type="button" className="btn-icon hover:!text-danger" aria-label={`Eliminar ${row.municipality}`} title="Eliminar território" onClick={() => setDeleting(row)}><Trash2 size={15} aria-hidden="true" /></button>
+                          <button type="button" className="btn btn-ghost whitespace-nowrap" aria-label={`Descarregar PDF de ${row.municipality}`} title="Descarregar ficha territorial em PDF" disabled={!!pdfBusy} aria-busy={pdfBusy === row.id} onClick={() => void downloadPdf(row)}>
+                            {pdfBusy === row.id ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <FileDown size={15} aria-hidden="true" />} PDF
+                          </button>
+                          {editable && <>
+                            <button type="button" className="btn-icon" aria-label={`Editar ${row.municipality}`} title="Editar território" onClick={() => setEditing(row)}><Pencil size={15} aria-hidden="true" /></button>
+                            <button type="button" className="btn-icon hover:!text-danger" aria-label={`Eliminar ${row.municipality}`} title="Eliminar território" onClick={() => setDeleting(row)}><Trash2 size={15} aria-hidden="true" /></button>
+                          </>}
                         </div>
-                      </td>}
+                      </td>
                     </tr>;
                   })}
                 </tbody>
