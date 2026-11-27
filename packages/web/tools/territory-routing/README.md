@@ -1,6 +1,6 @@
 # Distâncias rodoviárias até às sedes de concelho
 
-O catálogo ativo é `src/api/data/territory-municipality-distances.json`. O código CAOP 2025 (DTMN) identifica cada um dos 308 concelhos. A sede é o nó `admin_centre` da relação municipal do OpenStreetMap, associado pelo `ref:ine` e validado dentro do polígono CAOP. O OSRM calcula a ida de carro desde a morada de partida até essa sede. São 278 rotas rodoviárias no continente; os 30 concelhos insulares não têm rota exclusivamente por estrada. A aplicação não chama serviços externos.
+O catálogo ativo é `src/api/data/territory-municipality-distances.json`. O código CAOP 2025 (DTMN) identifica cada um dos 308 concelhos. A sede é o nó `admin_centre` da relação municipal do OpenStreetMap, associado pelo `ref:ine` e validado dentro do polígono CAOP. O OSRM calcula a ida de carro desde a morada de partida até essa sede. São 278 rotas rodoviárias no continente; os 30 concelhos insulares não têm rota exclusivamente por estrada. O cálculo de distâncias não chama serviços externos.
 
 Para regenerar, preparar o grafo conforme as instruções de OSRM abaixo e extrair os centros do mesmo ficheiro OSM usado no grafo:
 
@@ -13,7 +13,24 @@ python packages/web/tools/territory-routing/build-municipalities.py /caminho/da/
 bun test packages/web/tools/territory-routing
 ```
 
-O gerador usa OSRM local nas portas 4293 (sul, CH) e 4294 (norte, MLD) por omissão. Confirma no output a cobertura e revê as diferenças antes de atualizar o catálogo. As instruções seguintes documentam o catálogo anterior, que já não é usado pelo ecrã e se mantém apenas para referência.
+O gerador usa OSRM local nas portas 4293 (sul, CH) e 4294 (norte, MLD) por omissão. Confirma no output a cobertura e revê as diferenças antes de atualizar o catálogo.
+
+## População residente
+
+O servidor consulta o [indicador INE 0012918](https://www.ine.pt/xurl/indx/0012918) em segundo plano no primeiro acesso útil à lista e, quando há novos acessos, no máximo uma vez por dia por processo. Valida os 308 códigos CAOP e o total nacional antes de aceitar uma atualização. Se o INE estiver indisponível, continua a usar os últimos valores validados em memória; após um reinício começa com `src/api/data/territory-municipality-population.json` (31/12/2025, INE de 22/06/2026). Só os utilizadores com acesso global a Vendas recebem a taxa.
+
+Para atualizar o catálogo de fallback numa versão futura, a partir da raiz:
+
+```sh
+curl -fSs --max-time 20 'https://www.ine.pt/ine/json_indicador/pindica.jsp?op=2&varcd=0012918&lang=PT&Dim3=T&Dim4=T' -o /tmp/territory-population-ine.json
+bun -e 'import { parseInePopulation } from "./packages/web/src/api/lib/territory-population";
+const snapshot = parseInePopulation(await Bun.file("/tmp/territory-population-ine.json").json());
+const byMunicipality = Object.fromEntries(Object.entries(snapshot.byMunicipality).sort(([a], [b]) => a.localeCompare(b)));
+await Bun.write("packages/web/src/api/data/territory-municipality-population.json", JSON.stringify({ ...snapshot, byMunicipality }, null, 2) + "\n");'
+bun test packages/web/tools/territory-routing
+```
+
+Nos testes, confirma os valores de referência sempre que mudares o ano do catálogo. As instruções seguintes documentam o catálogo de distâncias anterior, que já não é usado pelo ecrã e se mantém apenas para referência.
 
 ## Referência: catálogo anterior de freguesias
 

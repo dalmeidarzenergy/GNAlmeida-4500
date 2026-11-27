@@ -7,6 +7,7 @@ import { requireEdit, requireView, type Permissions, type Role } from "../middle
 import { canViewTerritoryContracts, territoryInput, territoryKey, TERRITORY_IMPORT_LIMIT, type Territory, type TerritoryInput } from "../shared/territories";
 import { mergeTerritorySweeps, territoryMunicipality } from "../shared/territory-municipalities";
 import { territoryContractCounts, territoryContractDetails } from "../lib/territory-contracts";
+import { territoryPopulation } from "../lib/territory-population";
 
 const view = requireView("gestao-territorios");
 const edit = requireEdit("gestao-territorios").use(async ({ context, next }) => {
@@ -16,12 +17,20 @@ const edit = requireEdit("gestao-territorios").use(async ({ context, next }) => 
 const columns = { id: table.id, district: table.district, municipality: table.municipality, lastSweep: table.lastSweep };
 
 async function withMetrics(rows: (TerritoryInput & { id: string })[], context: { permissions: Permissions; role: Role }): Promise<Territory[]> {
-  // A contagem é global; perfis limitados a vendas próprias ou de equipa não a recebem.
-  const totals = canViewTerritoryContracts(context) && rows.length ? await territoryContractCounts() : null;
+  if (!rows.length) return [];
+  // A contagem e a taxa são globais; perfis limitados a vendas próprias ou de equipa não as recebem.
+  const totals = canViewTerritoryContracts(context) ? await territoryContractCounts() : null;
+  const census = territoryPopulation.get();
   return rows.map((row) => {
     const place = territoryMunicipality(row);
     const distance = !place ? { status: "not_found" as const } : place.meters === null ? { status: "no_route" as const } : { status: "ok" as const, meters: place.meters };
-    return { ...row, distance, contracts: totals && place ? (totals.get(place.code) ?? 0) : null };
+    const contracts = totals && place ? (totals.get(place.code) ?? 0) : null;
+    const population = place ? (census.byMunicipality[place.code] ?? null) : null;
+    return {
+      ...row, distance, contracts, population,
+      populationYear: population === null ? null : census.year,
+      penetrationRate: contracts !== null && population !== null && population > 0 ? contracts / population : null,
+    };
   });
 }
 

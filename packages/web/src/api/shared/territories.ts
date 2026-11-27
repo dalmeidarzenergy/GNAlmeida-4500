@@ -16,7 +16,15 @@ export const territoryInput = z.object({
 });
 export type TerritoryInput = z.infer<typeof territoryInput>;
 export type TerritoryDistance = { status: "ok"; meters: number } | { status: "not_found" | "no_route" };
-export type Territory = TerritoryInput & { id: string; distance: TerritoryDistance; contracts: number | null };
+export type Territory = TerritoryInput & {
+  id: string;
+  distance: TerritoryDistance;
+  contracts: number | null;
+  population: number | null;
+  populationYear: number | null;
+  /** Rácio de contratos por residente; o formato de percentagem aplica o ×100. */
+  penetrationRate: number | null;
+};
 
 export function canViewTerritoryContracts({ permissions, role }: { permissions: Permissions; role: Role }) {
   return permissions.vendas.view && role !== "vendedor" && role !== "chefe";

@@ -17,6 +17,8 @@ const monthFormat = new Intl.DateTimeFormat("pt-PT", { month: "long", timeZone: 
 const dayFormat = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 const intFormat = new Intl.NumberFormat("pt-PT");
 const kmFormat = new Intl.NumberFormat("pt-PT", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const percentFormat = new Intl.NumberFormat("pt-PT", { style: "percent", maximumFractionDigits: 4 });
+const penetrationFormula = "Contratos Em Fornecimento ÷ população residente × 100";
 const message = (error: unknown, fallback: string) => error instanceof Error && error.message ? error.message : fallback;
 type ExcelImport = Awaited<ReturnType<typeof readTerritoryExcel>>;
 
@@ -104,6 +106,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
   const [page, setPage] = useState(1);
   const today = territoryToday();
   const rows = list.data ?? noRows;
+  const populationYear = rows.find((row) => row.populationYear !== null)?.populationYear;
   const active = Object.values(filters).some(Boolean);
   const filterError = territoryFilterError(filters, canViewContracts);
   const filtered = useMemo(() => filterError ? noRows : filterTerritories(rows, filters, today, canViewContracts), [rows, filters, today, canViewContracts, filterError]);
@@ -187,9 +190,11 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
           <>
             <TerritoryFilters rows={rows} filters={filters} change={changeFilter} clear={clearFilters} canViewContracts={canViewContracts} active={active} error={filterError} />
             <div className="overflow-x-auto" role="region" aria-label="Tabela de territórios" tabIndex={0}>
-              <table className="w-full min-w-[720px] text-left text-[12.5px]">
+              <table className={`w-full text-left text-[12.5px] ${canViewContracts ? "min-w-[930px]" : "min-w-[830px]"}`}>
                 <thead className="border-y border-line bg-surface-2 text-ink-2"><tr>
                   {TERRITORY_COLUMNS.map((label, i) => <th scope="col" key={label} className={`px-3 py-3 font-medium ${i >= 4 ? "text-right" : ""}`}>{label}</th>)}
+                  <th scope="col" className="px-3 py-3 text-right font-medium">População residente</th>
+                  {canViewContracts && <th scope="col" className="px-3 py-3 text-right font-medium" title={penetrationFormula}>Taxa de penetração</th>}
                   {editable && <th scope="col" className="px-3 py-3"><span className="sr-only">Ações</span></th>}
                 </tr></thead>
                 <tbody>
@@ -206,6 +211,8 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
                       <td className="num px-3 py-3 text-right">{row.contracts === null ? <span title={row.distance.status === "not_found" ? "Concelho não reconhecido" : "Contagem disponível apenas com acesso global a Vendas"} className="text-ink-2">—</span> : intFormat.format(row.contracts)}</td>
                       <td className="num px-3 py-3 text-right">{rest === null ? "—" : intFormat.format(rest)}</td>
                       <DistanceCell distance={row.distance} />
+                      <td className="num whitespace-nowrap px-3 py-3 text-right">{row.population == null ? "—" : intFormat.format(row.population)}</td>
+                      {canViewContracts && <td className="num whitespace-nowrap px-3 py-3 text-right">{row.penetrationRate == null ? "—" : row.penetrationRate > 0 && row.penetrationRate < 0.000001 ? `< ${percentFormat.format(0.000001)}` : percentFormat.format(row.penetrationRate)}</td>}
                       {editable && <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button type="button" className="btn-icon" aria-label={`Editar ${row.municipality}`} title="Editar território" onClick={() => setEditing(row)}><Pencil size={15} aria-hidden="true" /></button>
@@ -228,6 +235,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
             </div>}
             <p className="border-t border-line px-4 py-3 text-[11px] text-ink-2">
               Distâncias aproximadas. Fontes: <a className="underline" href="https://www.dgterritorio.gov.pt/atividades/cartografia/cartografia-tematica/caop" target="_blank" rel="noreferrer">CAOP 2025 · DGT</a> e <a className="underline" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© contribuidores do OpenStreetMap</a>.
+              {populationYear != null && <> População residente em 31/12/{populationYear}: <a className="underline" href="https://www.ine.pt/xurl/indx/0012918" target="_blank" rel="noreferrer">INE · Estimativas anuais</a>.</>}
             </p>
           </>
         )}
