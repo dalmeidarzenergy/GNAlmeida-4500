@@ -17,7 +17,7 @@ const monthFormat = new Intl.DateTimeFormat("pt-PT", { month: "long", timeZone: 
 const dayFormat = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 const intFormat = new Intl.NumberFormat("pt-PT");
 const kmFormat = new Intl.NumberFormat("pt-PT", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const percentFormat = new Intl.NumberFormat("pt-PT", { style: "percent", maximumFractionDigits: 4 });
+const percentFormat = new Intl.NumberFormat("pt-PT", { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const penetrationFormula = "Contratos Em Fornecimento ÷ população residente × 100";
 const message = (error: unknown, fallback: string) => error instanceof Error && error.message ? error.message : fallback;
 type ExcelImport = Awaited<ReturnType<typeof readTerritoryExcel>>;
@@ -212,7 +212,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
                       <td className="num px-3 py-3 text-right">{rest === null ? "—" : intFormat.format(rest)}</td>
                       <DistanceCell distance={row.distance} />
                       <td className="num whitespace-nowrap px-3 py-3 text-right">{row.population == null ? "—" : intFormat.format(row.population)}</td>
-                      {canViewContracts && <td className="num whitespace-nowrap px-3 py-3 text-right">{row.penetrationRate == null ? "—" : row.penetrationRate > 0 && row.penetrationRate < 0.000001 ? `< ${percentFormat.format(0.000001)}` : percentFormat.format(row.penetrationRate)}</td>}
+                      {canViewContracts && <td className="num whitespace-nowrap px-3 py-3 text-right">{row.penetrationRate == null ? "—" : percentFormat.format(row.penetrationRate)}</td>}
                       {editable && <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button type="button" className="btn-icon" aria-label={`Editar ${row.municipality}`} title="Editar território" onClick={() => setEditing(row)}><Pencil size={15} aria-hidden="true" /></button>
