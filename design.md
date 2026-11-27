@@ -34,6 +34,7 @@
 - O botão «Exportar PDF» descarrega a simulação atual em A4 horizontal, com tabela paginada e resumo mensal. Os logótipos RZ Energy e Iberdrola (Colaborador Oficial) aparecem no cabeçalho de todas as páginas. O PDF mantém o fundo branco e as cores dos totais e do lucro, independentemente do tema do CRM.
 
 ## Gestão de Territórios
+- A página está no menu «Gestão Territorial», junto a «Terreno D2D» e «Histórico GPS», sem alterar o endereço ou as permissões.
 - Uma linha por concelho, com distrito, sem campos Freguesia ou Aldeia na tabela, formulário ou modelo Excel. A migração usa a data de varrimento mais recente de cada concelho e mantém a tabela antiga intacta como histórico. O botão «Histórico» mostra as datas dos registos anteriores em modo de consulta.
 - «KM» mostra os quilómetros de ida, de carro, desde a Rua do Mato, 1, 2000-531 Póvoa de Santarém, até à sede do concelho. O catálogo CAOP/OpenStreetMap é local e distingue concelho não reconhecido de ausência de rota exclusivamente por estrada.
 - «Nº contratos» soma todo o histórico de Vendas no estado «Em Fornecimento» por concelho, sem depender da freguesia ou localidade da venda. O total só está disponível com acesso global a Vendas.

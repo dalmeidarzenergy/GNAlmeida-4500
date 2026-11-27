@@ -58,7 +58,7 @@ export const MODULES = [
   { key: "empresa", label: "Gestão de Empresa", group: "Análise" },
   { key: "frota", label: "Frota", group: "Análise" },
   { key: "plano-mensal", label: "Plano Mensal", group: "Gestão de Empresa" },
-  { key: "gestao-territorios", label: "Gestão de Territórios", group: "Gestão de Empresa" },
+  { key: "gestao-territorios", label: "Gestão de Territórios", group: "Gestão Territorial" },
 ] as const;
 
 export type ModuleKey = (typeof MODULES)[number]["key"];

@@ -160,7 +160,7 @@ function Territories({ editable, canViewContracts }: { editable: boolean; canVie
 
   return (
     <>
-      <PageHeader eyebrow="Gestão de Empresa" title="Gestão de Territórios" subtitle="Regista os varrimentos por concelho e acompanha os contratos e os meses de descanso.">
+      <PageHeader eyebrow="Gestão Territorial" title="Gestão de Territórios" subtitle="Regista os varrimentos por concelho e acompanha os contratos e os meses de descanso.">
         <button type="button" className="btn btn-ghost" onClick={() => setHistoryOpen(true)}><History size={16} aria-hidden="true" /> Histórico</button>
         {editable && <>
           <button type="button" className="btn btn-ghost" onClick={downloadTemplate} disabled={templateBusy}><Download size={16} aria-hidden="true" /> Modelo Excel</button>
