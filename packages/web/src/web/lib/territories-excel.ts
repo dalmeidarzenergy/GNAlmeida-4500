@@ -2,7 +2,7 @@ import { normalizeTerritoryText, TERRITORY_COLUMNS, TERRITORY_IMPORT_LIMIT, TERR
 
 const headerKey = (text: unknown) => normalizeTerritoryText(String(text ?? "")).replace(/[^a-z0-9]/g, "");
 const headers = [
-  ["distrito"], ["concelho", "municipio"], ["freguesia"], ["aldeia", "localidade"],
+  ["distrito"], ["concelho", "municipio"],
   ["dataultimovarrimento", "datadoultimovarrimento"],
 ];
 const empty = (value: unknown) => value == null || (typeof value === "string" && !value.trim());
@@ -47,17 +47,17 @@ export async function readTerritoryExcel(file: File) {
         const offset = names.findIndex((name) => variants.includes(name));
         return offset < 0 ? -1 : range.s.c + offset;
       });
-      if ([0, 1, 2, 4].some((i) => idx[i] < 0)) continue;
+      if (idx.some((col) => col < 0)) continue;
       // !fullref preserva o fim real da folha quando a leitura foi limitada.
       const end = XLSX.utils.decode_range(ws["!fullref"] ?? ws["!ref"]).e.r;
       if (end - header > TERRITORY_IMPORT_LIMIT) throw new Error(`Limite de ${TERRITORY_IMPORT_LIMIT} linhas por importação. Divide a folha em ficheiros menores, incluindo o cabeçalho em cada um.`);
       const rows: TerritoryInput[] = [];
       const errors: string[] = [];
       for (let row = header + 1; row <= end; row++) {
-        const [district, municipality, parish, village, date] = idx.map((col) => cell(row, col));
-        if ([district, municipality, parish, village, date].every(empty)) continue;
+        const [district, municipality, date] = idx.map((col) => cell(row, col));
+        if ([district, municipality, date].every(empty)) continue;
         const parsed = territoryInput.safeParse({
-          district: String(district ?? ""), municipality: String(municipality ?? ""), parish: String(parish ?? ""), village: String(village ?? ""),
+          district: String(district ?? ""), municipality: String(municipality ?? ""),
           lastSweep: dateValue(date),
         });
         if (parsed.success) rows.push(parsed.data);
@@ -67,22 +67,23 @@ export async function readTerritoryExcel(file: File) {
       return { rows, errors, sheet };
     }
   }
-  throw new Error("Não encontrei os cabeçalhos Distrito, Concelho, Freguesia e Data último varrimento. Usa o modelo Excel para confirmar os nomes.");
+  throw new Error("Não encontrei os cabeçalhos Distrito, Concelho e Data último varrimento. Usa o modelo Excel para confirmar os nomes.");
 }
 
 export async function downloadTerritoryTemplate() {
   const XLSX = await import("xlsx");
   const book = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([[...TERRITORY_COLUMNS]]);
-  sheet["!cols"] = [18, 22, 24, 22, 25, 25, 16, 18, 12].map((wch) => ({ wch }));
+  sheet["!cols"] = [26, 27, 25, 25, 16, 18, 12].map((wch) => ({ wch }));
   XLSX.utils.book_append_sheet(book, sheet, "Territórios");
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([
-    ["Como preencher"], ["Uma linha por localização. Distrito, Concelho e Freguesia são obrigatórios."],
-    ["Aldeia e a data do último varrimento podem ficar em branco. Usa uma data Excel ou DD/MM/AAAA."],
+    ["Como preencher"], ["Uma linha por concelho. Distrito e Concelho são obrigatórios."],
+    ["A data do último varrimento pode ficar em branco. Usa uma data Excel ou DD/MM/AAAA."],
     ["O CRM calcula Mês último varrimento, Nº contratos, Meses descanso e KM. Deixa essas colunas em branco."],
-    ["Nº contratos: total do histórico de Vendas em «Em Fornecimento» na freguesia. Valores no Excel são ignorados."],
-    [`KM: distância de ida, de carro, desde ${TERRITORY_ROUTE_ORIGIN} até à freguesia.`],
-    ["As localizações que já existem não são atualizadas pela importação. Para as alterar, usa Editar no CRM."],
+    ["Nº contratos: total do histórico de Vendas em «Em Fornecimento» no concelho. Valores no Excel são ignorados."],
+    [`KM: distância de ida, de carro, desde ${TERRITORY_ROUTE_ORIGIN} até à sede do concelho.`],
+    ["Se um concelho novo aparecer mais do que uma vez, é usada a data mais recente."],
+    ["A importação não atualiza os concelhos já registados. Para os alterar, usa Editar no CRM."],
   ]), "Instruções");
   book.Sheets["Instruções"]["!cols"] = [{ wch: 115 }];
   XLSX.writeFile(book, "modelo-territorios.xlsx");

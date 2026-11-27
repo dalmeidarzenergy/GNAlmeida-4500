@@ -1,8 +1,8 @@
 import catalogue from "../data/territory-road-distances.json";
-import { normalizeTerritoryText, type TerritoryDistance, type TerritoryInput } from "../shared/territories";
+import { normalizeTerritoryText, type TerritoryDistance } from "../shared/territories";
 
 type Parish = [code: string, district: string, municipality: string, official: string, short: string, meters: number | null];
-type Location = Pick<TerritoryInput, "district" | "municipality" | "parish">;
+type Location = { district: string; municipality: string; parish: string };
 const normalizePlace = (text: string) => normalizeTerritoryText(text).replace(/[^a-z0-9]+/g, " ").trim();
 const key = (district: string, municipality: string, parish: string) =>
   JSON.stringify([district, municipality, parish].map(normalizePlace));

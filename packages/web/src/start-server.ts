@@ -4,6 +4,7 @@
 // sobrevivem a redeploys.
 import { existsSync, copyFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
+import { migrateTerritoryMunicipalities } from "./api/database/migrate-territory-municipalities";
 
 const bundledDb = `${import.meta.dirname}/data.db`;
 const volumeDir = "/data";
@@ -59,6 +60,7 @@ if (existsSync(dbPath)) {
       contracts INTEGER NOT NULL DEFAULT 0
     )`);
     db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_territories_location ON territories(location_key)`);
+    migrateTerritoryMunicipalities(db);
 
     // Frota: tabelas novas. `CREATE TABLE IF NOT EXISTS` e idempotente e deixa
     // as bases antigas (sem frota) a funcionar assim que o servidor arranca.

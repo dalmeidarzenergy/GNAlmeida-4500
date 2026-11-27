@@ -1,14 +1,15 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { ChevronLeft, ChevronRight, Download, FileUp, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileUp, History, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ConfirmDeleteModal } from "../components/bulk-select";
 import { Empty, Field, Modal, PageHeader, SubmitRow } from "../components/ui/kit";
 import { useMe } from "../queries/me";
-import { useTerritories, useTerritoryMutations } from "../queries/territories";
+import { useTerritories, useTerritoryHistory, useTerritoryMutations } from "../queries/territories";
 import { downloadTerritoryTemplate, readTerritoryExcel } from "../lib/territories-excel";
 import { fullRestMonths, normalizeTerritoryText, TERRITORY_COLUMNS, TERRITORY_ROUTE_ORIGIN, territoryInput, territoryKey, territoryToday, type Territory, type TerritoryInput } from "../../api/shared/territories";
+import { mergeTerritorySweeps } from "../../api/shared/territory-municipalities";
 
 const PAGE_SIZE = 25;
-const locations = [["district", "Distrito"], ["municipality", "Concelho"], ["parish", "Freguesia"], ["village", "Aldeia"]] as const;
+const locations = [["district", "Distrito"], ["municipality", "Concelho"]] as const;
 const monthFormat = new Intl.DateTimeFormat("pt-PT", { month: "long", timeZone: "UTC" });
 const dayFormat = new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 const intFormat = new Intl.NumberFormat("pt-PT");
@@ -17,7 +18,7 @@ const message = (error: unknown, fallback: string) => error instanceof Error && 
 type ExcelImport = Awaited<ReturnType<typeof readTerritoryExcel>>;
 
 function TerritoryForm({ row, onClose, onSave }: { row: Territory | null; onClose: () => void; onSave: (row: TerritoryInput) => Promise<void> }) {
-  const [fields, setFields] = useState(() => ({ district: row?.district ?? "", municipality: row?.municipality ?? "", parish: row?.parish ?? "", village: row?.village ?? "", lastSweep: row?.lastSweep ?? "" }));
+  const [fields, setFields] = useState(() => ({ district: row?.district ?? "", municipality: row?.municipality ?? "", lastSweep: row?.lastSweep ?? "" }));
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const change = (key: keyof typeof fields, value: string) => setFields((prev) => ({ ...prev, [key]: value }));
@@ -39,8 +40,8 @@ function TerritoryForm({ row, onClose, onSave }: { row: Territory | null; onClos
       <form onSubmit={save}>
         <div className="grid gap-4 sm:grid-cols-2">
           {locations.map(([key, label], index) => (
-            <Field label={key === "village" ? "Aldeia (opcional)" : label} key={key}>
-              <input className="input w-full" required={key !== "village"} maxLength={120} autoFocus={index === 0} value={fields[key]} onChange={(e) => change(key, e.target.value)} />
+            <Field label={label} key={key}>
+              <input className="input w-full" required maxLength={120} autoFocus={index === 0} value={fields[key]} onChange={(e) => change(key, e.target.value)} />
             </Field>
           ))}
           <Field label="Data do último varrimento">
@@ -57,8 +58,30 @@ function TerritoryForm({ row, onClose, onSave }: { row: Territory | null; onClos
 
 function DistanceCell({ distance }: { distance: Territory["distance"] }) {
   if (distance.status === "ok") return <td className="num whitespace-nowrap px-3 py-3 text-right" title={`Distância de ida por estrada desde ${TERRITORY_ROUTE_ORIGIN}`}>{kmFormat.format(distance.meters / 1000)} km</td>;
-  const label = distance.status === "no_route" ? "Sem rota" : "Não encontrada";
-  return <td className="whitespace-nowrap px-3 py-3 text-right text-ink-2" title={distance.status === "no_route" ? "Sem percurso exclusivamente por estrada até à freguesia." : "Freguesia não reconhecida. Confirma o distrito, o concelho e o nome oficial."}>{label}</td>;
+  const label = distance.status === "no_route" ? "Sem rota" : "Não encontrado";
+  return <td className="whitespace-nowrap px-3 py-3 text-right text-ink-2" title={distance.status === "no_route" ? "Sem percurso exclusivamente por estrada até à sede do concelho." : "Concelho não reconhecido. Confirma o distrito e o nome oficial do concelho."}>{label}</td>;
+}
+
+function TerritoryHistory({ onClose }: { onClose: () => void }) {
+  const history = useTerritoryHistory();
+  return <Modal open size="wide" title="Histórico de varrimentos" onClose={onClose}>
+    <p className="mb-4 text-sm text-ink-2">Registos anteriores à passagem para concelhos. Este arquivo é só de consulta.</p>
+    {history.isPending ? <p className="text-sm text-ink-2">A carregar histórico…</p> : history.isError ? (
+      <Empty title="Não foi possível carregar o histórico" action={<button className="btn btn-ghost" onClick={() => void history.refetch()}>Tentar novamente</button>} />
+    ) : !history.data.length ? <Empty title="Não há registos anteriores" /> : (
+      <div className="max-h-[55vh] overflow-auto rounded-lg border border-line" tabIndex={0} role="region" aria-label="Registos históricos">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 bg-surface-2 text-ink-2"><tr>
+            {["Distrito", "Concelho", "Data do varrimento"].map((label) => <th scope="col" className="px-3 py-2 font-medium" key={label}>{label}</th>)}
+          </tr></thead>
+          <tbody>{history.data.map((row) => <tr className="border-t border-line" key={row.id}>
+            <td className="px-3 py-2">{row.district}</td><td className="px-3 py-2">{row.municipality}</td>
+            <td className="whitespace-nowrap px-3 py-2">{row.lastSweep ? dayFormat.format(new Date(`${row.lastSweep}T00:00:00Z`)) : "—"}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+    )}
+  </Modal>;
 }
 
 function Territories({ editable }: { editable: boolean }) {
@@ -67,6 +90,7 @@ function Territories({ editable }: { editable: boolean }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<Territory | null | undefined>();
   const [deleting, setDeleting] = useState<Territory | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [readingFile, setReadingFile] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean }>();
@@ -85,13 +109,8 @@ function Territories({ editable }: { editable: boolean }) {
   const shown = filtered.slice(start, start + PAGE_SIZE);
   const preview = useMemo(() => {
     if (!excel) return null;
-    const seen = new Set((list.data ?? []).map(territoryKey));
-    const fresh = excel.rows.filter((row) => {
-      const key = territoryKey(row);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    const existing = new Set((list.data ?? []).map(territoryKey));
+    const fresh = mergeTerritorySweeps(excel.rows).filter((row) => !existing.has(territoryKey(row)));
     return { fresh, skipped: excel.rows.length - fresh.length };
   }, [excel, list.data]);
 
@@ -127,7 +146,8 @@ function Territories({ editable }: { editable: boolean }) {
 
   return (
     <>
-      <PageHeader eyebrow="Gestão de Empresa" title="Gestão de Territórios" subtitle="Regista os varrimentos por localidade e acompanha os contratos e os meses de descanso.">
+      <PageHeader eyebrow="Gestão de Empresa" title="Gestão de Territórios" subtitle="Regista os varrimentos por concelho e acompanha os contratos e os meses de descanso.">
+        <button type="button" className="btn btn-ghost" onClick={() => setHistoryOpen(true)}><History size={16} aria-hidden="true" /> Histórico</button>
         {editable && <>
           <button type="button" className="btn btn-ghost" onClick={downloadTemplate} disabled={templateBusy}><Download size={16} aria-hidden="true" /> Modelo Excel</button>
           <button type="button" className="btn btn-ghost" onClick={() => fileInput.current?.click()} disabled={readingFile || !list.isSuccess}>
@@ -143,8 +163,8 @@ function Territories({ editable }: { editable: boolean }) {
           <div>
             <h2 id="territory-records" className="text-[16px] font-semibold">Registos de territórios</h2>
             <p className="mt-1 text-xs text-ink-2">Descanso em meses completos desde o último varrimento.</p>
-            <p className="mt-1 text-xs text-ink-2">Nº contratos: total por freguesia de todo o histórico de Vendas em «Em Fornecimento». O total é o mesmo para todas as aldeias da freguesia.</p>
-            <p className="mt-1 text-xs text-ink-2">KM de ida, de carro, desde {TERRITORY_ROUTE_ORIGIN} até à freguesia.</p>
+            <p className="mt-1 text-xs text-ink-2">Nº contratos: total por concelho de todo o histórico de Vendas em «Em Fornecimento».</p>
+            <p className="mt-1 text-xs text-ink-2">KM de ida, de carro, desde {TERRITORY_ROUTE_ORIGIN} até à sede do concelho.</p>
           </div>
           <label className="relative w-full sm:w-72">
             <span className="sr-only">Pesquisar por localização</span>
@@ -157,9 +177,9 @@ function Territories({ editable }: { editable: boolean }) {
         ) : (
           <>
             <div className="overflow-x-auto" role="region" aria-label="Tabela de territórios" tabIndex={0}>
-              <table className="w-full min-w-[935px] text-left text-[12.5px]">
+              <table className="w-full min-w-[720px] text-left text-[12.5px]">
                 <thead className="border-y border-line bg-surface-2 text-ink-2"><tr>
-                  {TERRITORY_COLUMNS.map((label, i) => <th scope="col" key={label} className={`px-3 py-3 font-medium ${i >= 6 ? "text-right" : ""}`}>{label}</th>)}
+                  {TERRITORY_COLUMNS.map((label, i) => <th scope="col" key={label} className={`px-3 py-3 font-medium ${i >= 4 ? "text-right" : ""}`}>{label}</th>)}
                   {editable && <th scope="col" className="px-3 py-3"><span className="sr-only">Ações</span></th>}
                 </tr></thead>
                 <tbody>
@@ -170,13 +190,13 @@ function Territories({ editable }: { editable: boolean }) {
                       {locations.map(([key]) => <td key={key} className="max-w-52 break-words px-3 py-3">{row[key] || "—"}</td>)}
                       <td className="whitespace-nowrap px-3 py-3">{date ? dayFormat.format(date) : "—"}</td>
                       <td className="px-3 py-3 capitalize">{date ? monthFormat.format(date) : "—"}</td>
-                      <td className="num px-3 py-3 text-right">{row.contracts === null ? <span title={row.distance.status === "not_found" ? "Freguesia não reconhecida" : "Contagem disponível apenas com acesso global a Vendas"} className="text-ink-2">—</span> : intFormat.format(row.contracts)}</td>
+                      <td className="num px-3 py-3 text-right">{row.contracts === null ? <span title={row.distance.status === "not_found" ? "Concelho não reconhecido" : "Contagem disponível apenas com acesso global a Vendas"} className="text-ink-2">—</span> : intFormat.format(row.contracts)}</td>
                       <td className="num px-3 py-3 text-right">{rest === null ? "—" : intFormat.format(rest)}</td>
                       <DistanceCell distance={row.distance} />
                       {editable && <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button type="button" className="btn-icon" aria-label={`Editar ${row.village || row.parish}`} title="Editar território" onClick={() => setEditing(row)}><Pencil size={15} aria-hidden="true" /></button>
-                          <button type="button" className="btn-icon hover:!text-danger" aria-label={`Eliminar ${row.village || row.parish}`} title="Eliminar território" onClick={() => setDeleting(row)}><Trash2 size={15} aria-hidden="true" /></button>
+                          <button type="button" className="btn-icon" aria-label={`Editar ${row.municipality}`} title="Editar território" onClick={() => setEditing(row)}><Pencil size={15} aria-hidden="true" /></button>
+                          <button type="button" className="btn-icon hover:!text-danger" aria-label={`Eliminar ${row.municipality}`} title="Eliminar território" onClick={() => setDeleting(row)}><Trash2 size={15} aria-hidden="true" /></button>
                         </div>
                       </td>}
                     </tr>;
@@ -199,6 +219,7 @@ function Territories({ editable }: { editable: boolean }) {
           </>
         )}
       </section>
+      {historyOpen && <TerritoryHistory onClose={() => setHistoryOpen(false)} />}
       {editable && editing !== undefined && <TerritoryForm row={editing} onClose={() => setEditing(undefined)} onSave={async (data) => {
         if (editing) await update.mutateAsync({ id: editing.id, data });
         else { await create.mutateAsync(data); setQuery(""); setPage(1); }
@@ -208,13 +229,13 @@ function Territories({ editable }: { editable: boolean }) {
         await remove.mutateAsync({ id: deleting.id });
         setNotice({ text: "Território eliminado." });
       }}>
-        <p>Vai ser eliminado o registo de <strong className="text-ink">{[deleting.village, deleting.parish, deleting.municipality, deleting.district].filter(Boolean).join(" · ")}</strong>.</p>
-        <p className="mt-2">As vendas e os contratos não são alterados.</p>
+        <p>Vai ser eliminado o registo de <strong className="text-ink">{[deleting.municipality, deleting.district].filter(Boolean).join(" · ")}</strong>.</p>
+        <p className="mt-2">As vendas, os contratos e os registos históricos não são alterados.</p>
       </ConfirmDeleteModal>}
       {editable && excel && preview && <Modal open size="wide" title="Pré-visualizar importação" onClose={() => { if (!importRows.isPending) setExcel(undefined); }}>
         <form onSubmit={confirmImport}>
           <p className="break-words text-sm text-ink">{excel.filename} · Folha «{excel.sheet}»</p>
-          <p className="mt-2 text-xs text-ink-2">{preview.fresh.length} novos, {preview.skipped} duplicados e {excel.errors.length} com erro. Os duplicados são ignorados sem alterar os registos existentes.</p>
+          <p className="mt-2 text-xs text-ink-2">{preview.fresh.length} novos, {preview.skipped} duplicados e {excel.errors.length} com erro. Para concelhos novos repetidos no ficheiro, fica a data mais recente. Os concelhos já registados não são alterados.</p>
           {excel.errors.length > 0 && <div role="alert" className="mt-4 rounded-lg border border-line p-3 text-sm text-danger">
             <p className="font-medium">Corrige as linhas no Excel e volta a importar. Nenhum registo foi gravado.</p>
             <ul className="mt-2 list-disc space-y-1 pl-4">{excel.errors.slice(0, 15).map((error) => <li key={error}>{error}</li>)}</ul>
