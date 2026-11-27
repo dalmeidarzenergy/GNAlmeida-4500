@@ -8,5 +8,6 @@ export const territoryRecords = sqliteTable("territories", {
   parish: text("parish").notNull(),
   village: text("village").notNull().default(""),
   lastSweep: text("last_sweep"),
+  // Legado: preservado para não perder o histórico manual; a API lê o total de Vendas.
   contracts: integer("contracts").notNull().default(0),
 }, (t) => [uniqueIndex("idx_territories_location").on(t.locationKey)]);

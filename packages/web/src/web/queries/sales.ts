@@ -6,6 +6,7 @@ function useInv() {
   return () => {
     qc.invalidateQueries({ queryKey: orpc.sales.key() });
     qc.invalidateQueries({ queryKey: orpc.reports.key() });
+    qc.invalidateQueries({ queryKey: orpc.territories.list.key() });
   };
 }
 
@@ -46,6 +47,7 @@ export function useSetOrderStatus() {
       onSettled: () => {
         qc.invalidateQueries({ queryKey: orpc.sales.key() });
         qc.invalidateQueries({ queryKey: orpc.reports.key() });
+        qc.invalidateQueries({ queryKey: orpc.territories.list.key() });
       },
     }),
   );
@@ -111,7 +113,7 @@ export function useSaveLead() {
 }
 export const useRemoveLead = () => useMutation(orpc.sales.leads.remove.mutationOptions({ onSuccess: useLeadInv() }));
 /** Avançar: a lead passa a cliente e a venda é criada. */
-export const useAdvanceLead = () => useMutation(orpc.sales.leads.advance.mutationOptions({ onSuccess: useLeadInv() }));
+export const useAdvanceLead = () => useMutation(orpc.sales.leads.advance.mutationOptions({ onSuccess: useInv() }));
 export function useLeadDocuments() {
   const inv = useLeadInv();
   const up = useMutation(orpc.sales.leads.documents.upload.mutationOptions({ onSuccess: inv }));

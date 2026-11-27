@@ -4,7 +4,6 @@ const headerKey = (text: unknown) => normalizeTerritoryText(String(text ?? "")).
 const headers = [
   ["distrito"], ["concelho", "municipio"], ["freguesia"], ["aldeia", "localidade"],
   ["dataultimovarrimento", "datadoultimovarrimento"],
-  ["ncontratos", "nocontratos", "numerocontratos", "numerodecontratos", "nrodecontratos", "ndecontratos"],
 ];
 const empty = (value: unknown) => value == null || (typeof value === "string" && !value.trim());
 const iso = (year: number, month: number, day: number) => [String(year).padStart(4, "0"), String(month).padStart(2, "0"), String(day).padStart(2, "0")].join("-");
@@ -48,19 +47,18 @@ export async function readTerritoryExcel(file: File) {
         const offset = names.findIndex((name) => variants.includes(name));
         return offset < 0 ? -1 : range.s.c + offset;
       });
-      if ([0, 1, 2, 4, 5].some((i) => idx[i] < 0)) continue;
+      if ([0, 1, 2, 4].some((i) => idx[i] < 0)) continue;
       // !fullref preserva o fim real da folha quando a leitura foi limitada.
       const end = XLSX.utils.decode_range(ws["!fullref"] ?? ws["!ref"]).e.r;
       if (end - header > TERRITORY_IMPORT_LIMIT) throw new Error(`Limite de ${TERRITORY_IMPORT_LIMIT} linhas por importação. Divide a folha em ficheiros menores, incluindo o cabeçalho em cada um.`);
       const rows: TerritoryInput[] = [];
       const errors: string[] = [];
       for (let row = header + 1; row <= end; row++) {
-        const [district, municipality, parish, village, date, contracts] = idx.map((col) => cell(row, col));
-        if ([district, municipality, parish, village, date, contracts].every(empty)) continue;
-        const contractText = typeof contracts === "string" ? contracts.trim() : "";
+        const [district, municipality, parish, village, date] = idx.map((col) => cell(row, col));
+        if ([district, municipality, parish, village, date].every(empty)) continue;
         const parsed = territoryInput.safeParse({
           district: String(district ?? ""), municipality: String(municipality ?? ""), parish: String(parish ?? ""), village: String(village ?? ""),
-          lastSweep: dateValue(date), contracts: empty(contracts) ? 0 : typeof contracts === "number" ? contracts : /^\d+$/.test(contractText) ? Number(contractText) : -1,
+          lastSweep: dateValue(date),
         });
         if (parsed.success) rows.push(parsed.data);
         else errors.push(`Linha ${row + 1}: ${parsed.error.issues.map((issue) => issue.message).join(" ")}`);
@@ -69,7 +67,7 @@ export async function readTerritoryExcel(file: File) {
       return { rows, errors, sheet };
     }
   }
-  throw new Error("Não encontrei os cabeçalhos Distrito, Concelho, Freguesia, Data último varrimento e Nº contratos. Usa o modelo Excel para confirmar os nomes.");
+  throw new Error("Não encontrei os cabeçalhos Distrito, Concelho, Freguesia e Data último varrimento. Usa o modelo Excel para confirmar os nomes.");
 }
 
 export async function downloadTerritoryTemplate() {
@@ -80,8 +78,9 @@ export async function downloadTerritoryTemplate() {
   XLSX.utils.book_append_sheet(book, sheet, "Territórios");
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([
     ["Como preencher"], ["Uma linha por localização. Distrito, Concelho e Freguesia são obrigatórios."],
-    ["Aldeia e a data do último varrimento podem ficar em branco."], ["Usa uma data Excel ou DD/MM/AAAA. Nº contratos deve ser inteiro e não negativo; vazio equivale a 0."],
-    ["O CRM calcula Mês último varrimento, Meses descanso e KM. Deixa essas colunas em branco."],
+    ["Aldeia e a data do último varrimento podem ficar em branco. Usa uma data Excel ou DD/MM/AAAA."],
+    ["O CRM calcula Mês último varrimento, Nº contratos, Meses descanso e KM. Deixa essas colunas em branco."],
+    ["Nº contratos: total do histórico de Vendas em «Em Fornecimento» na freguesia. Valores no Excel são ignorados."],
     [`KM: distância de ida, de carro, desde ${TERRITORY_ROUTE_ORIGIN} até à freguesia.`],
     ["As localizações que já existem não são atualizadas pela importação. Para as alterar, usa Editar no CRM."],
   ]), "Instruções");

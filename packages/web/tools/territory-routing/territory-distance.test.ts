@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import catalogue from "../../src/api/data/territory-road-distances.json";
-import { territoryDistance } from "../../src/api/lib/territory-distance";
+import { territoryDistance, territoryParishCode } from "../../src/api/lib/territory-distance";
 import { TERRITORY_ROUTE_ORIGIN } from "../../src/api/shared/territories";
 
 const santarem = { district: "Santarém", municipality: "Santarém" };
@@ -29,4 +29,11 @@ test("distinguishes no road connection from unrecognised parish and records the 
   expect(territoryDistance({ ...santarem, parish: "Freguesia inventada" })).toEqual({ status: "not_found" });
   expect(catalogue.origin.address).toBe(TERRITORY_ROUTE_ORIGIN);
   expect(catalogue.rows.length).toBeGreaterThan(3200);
+});
+
+test("resolves the parish identifier for sales with an exact geographic match, including islands", () => {
+  expect(territoryParishCode({ ...santarem, parish: " alcanhoes " })).toBe("141605");
+  expect(territoryParishCode({ ...santarem, parish: "Alcanhões, zona norte" })).toBeUndefined();
+  expect(territoryParishCode({ ...santarem, municipality: "", parish: "Alcanhões" })).toBeUndefined();
+  expect(territoryParishCode({ district: "Madeira", municipality: "Calheta", parish: "Prazeres" })).toBeDefined();
 });

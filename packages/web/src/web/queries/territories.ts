@@ -11,5 +11,6 @@ export function useTerritoryMutations() {
   const create = useMutation(orpc.territories.create.mutationOptions({ onSuccess }));
   const update = useMutation(orpc.territories.update.mutationOptions({ onSuccess }));
   const importRows = useMutation(orpc.territories.importRows.mutationOptions({ onSuccess }));
-  return { create, update, importRows };
+  const remove = useMutation(orpc.territories.remove.mutationOptions({ onSuccess }));
+  return { create, update, importRows, remove };
 }

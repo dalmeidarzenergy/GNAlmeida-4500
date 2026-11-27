@@ -20,9 +20,15 @@ for (const row of catalogue.rows as Parish[]) {
   }
 }
 
-export function territoryDistance({ district, municipality, parish }: Location): TerritoryDistance {
+function resolveParish({ district, municipality, parish }: Location) {
   const exact = key(district, municipality, parish);
-  const row = index.has(exact) ? index.get(exact) : index.get(key(district, municipality, parishKey(parish)));
+  return index.has(exact) ? index.get(exact) : index.get(key(district, municipality, parishKey(parish)));
+}
+
+export const territoryParishCode = (location: Location) => resolveParish(location)?.[0];
+
+export function territoryDistance(location: Location): TerritoryDistance {
+  const row = resolveParish(location);
   if (!row) return { status: "not_found" };
   return row[5] === null ? { status: "no_route" } : { status: "ok", meters: row[5] };
 }

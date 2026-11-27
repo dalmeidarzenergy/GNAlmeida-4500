@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { ChevronLeft, ChevronRight, Download, FileUp, Loader2, Pencil, Plus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileUp, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ConfirmDeleteModal } from "../components/bulk-select";
 import { Empty, Field, Modal, PageHeader, SubmitRow } from "../components/ui/kit";
 import { useMe } from "../queries/me";
 import { useTerritories, useTerritoryMutations } from "../queries/territories";
@@ -16,7 +17,7 @@ const message = (error: unknown, fallback: string) => error instanceof Error && 
 type ExcelImport = Awaited<ReturnType<typeof readTerritoryExcel>>;
 
 function TerritoryForm({ row, onClose, onSave }: { row: Territory | null; onClose: () => void; onSave: (row: TerritoryInput) => Promise<void> }) {
-  const [fields, setFields] = useState(() => ({ district: row?.district ?? "", municipality: row?.municipality ?? "", parish: row?.parish ?? "", village: row?.village ?? "", lastSweep: row?.lastSweep ?? "", contracts: String(row?.contracts ?? 0) }));
+  const [fields, setFields] = useState(() => ({ district: row?.district ?? "", municipality: row?.municipality ?? "", parish: row?.parish ?? "", village: row?.village ?? "", lastSweep: row?.lastSweep ?? "" }));
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const change = (key: keyof typeof fields, value: string) => setFields((prev) => ({ ...prev, [key]: value }));
@@ -24,7 +25,7 @@ function TerritoryForm({ row, onClose, onSave }: { row: Territory | null; onClos
   async function save(e: FormEvent) {
     e.preventDefault();
     if (saving) return;
-    const parsed = territoryInput.safeParse({ ...fields, lastSweep: fields.lastSweep || null, contracts: Number(fields.contracts) });
+    const parsed = territoryInput.safeParse({ ...fields, lastSweep: fields.lastSweep || null });
     if (!parsed.success) { setError(parsed.error.issues[0]?.message); return; }
     setSaving(true);
     setError(undefined);
@@ -45,9 +46,6 @@ function TerritoryForm({ row, onClose, onSave }: { row: Territory | null; onClos
           <Field label="Data do último varrimento">
             <input type="date" className="input w-full" min="1900-01-01" max={territoryToday()} value={fields.lastSweep} onChange={(e) => change("lastSweep", e.target.value)} />
           </Field>
-          <Field label="Nº de contratos">
-            <input type="number" className="input w-full" min={0} max={999999999} step={1} required value={fields.contracts} onChange={(e) => change("contracts", e.target.value)} />
-          </Field>
         </div>
         <p className="mt-4 text-xs text-ink-2">O mês do último varrimento e os meses de descanso são calculados a partir da data. Podes deixá-la em branco se ainda não houve varrimento.</p>
         {error && <p role="alert" className="mt-4 text-sm text-danger">{error}</p>}
@@ -65,9 +63,10 @@ function DistanceCell({ distance }: { distance: Territory["distance"] }) {
 
 function Territories({ editable }: { editable: boolean }) {
   const list = useTerritories();
-  const { create, update, importRows } = useTerritoryMutations();
+  const { create, update, importRows, remove } = useTerritoryMutations();
   const fileInput = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<Territory | null | undefined>();
+  const [deleting, setDeleting] = useState<Territory | null>(null);
   const [readingFile, setReadingFile] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean }>();
@@ -144,6 +143,7 @@ function Territories({ editable }: { editable: boolean }) {
           <div>
             <h2 id="territory-records" className="text-[16px] font-semibold">Registos de territórios</h2>
             <p className="mt-1 text-xs text-ink-2">Descanso em meses completos desde o último varrimento.</p>
+            <p className="mt-1 text-xs text-ink-2">Nº contratos: total por freguesia de todo o histórico de Vendas em «Em Fornecimento». O total é o mesmo para todas as aldeias da freguesia.</p>
             <p className="mt-1 text-xs text-ink-2">KM de ida, de carro, desde {TERRITORY_ROUTE_ORIGIN} até à freguesia.</p>
           </div>
           <label className="relative w-full sm:w-72">
@@ -170,10 +170,15 @@ function Territories({ editable }: { editable: boolean }) {
                       {locations.map(([key]) => <td key={key} className="max-w-52 break-words px-3 py-3">{row[key] || "—"}</td>)}
                       <td className="whitespace-nowrap px-3 py-3">{date ? dayFormat.format(date) : "—"}</td>
                       <td className="px-3 py-3 capitalize">{date ? monthFormat.format(date) : "—"}</td>
-                      <td className="num px-3 py-3 text-right">{intFormat.format(row.contracts)}</td>
+                      <td className="num px-3 py-3 text-right">{row.contracts === null ? <span title={row.distance.status === "not_found" ? "Freguesia não reconhecida" : "Contagem disponível apenas com acesso global a Vendas"} className="text-ink-2">—</span> : intFormat.format(row.contracts)}</td>
                       <td className="num px-3 py-3 text-right">{rest === null ? "—" : intFormat.format(rest)}</td>
                       <DistanceCell distance={row.distance} />
-                      {editable && <td className="px-3 py-2 text-right"><button type="button" className="btn-icon" aria-label={`Editar ${row.village || row.parish}`} title="Editar território" onClick={() => setEditing(row)}><Pencil size={15} aria-hidden="true" /></button></td>}
+                      {editable && <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button type="button" className="btn-icon" aria-label={`Editar ${row.village || row.parish}`} title="Editar território" onClick={() => setEditing(row)}><Pencil size={15} aria-hidden="true" /></button>
+                          <button type="button" className="btn-icon hover:!text-danger" aria-label={`Eliminar ${row.village || row.parish}`} title="Eliminar território" onClick={() => setDeleting(row)}><Trash2 size={15} aria-hidden="true" /></button>
+                        </div>
+                      </td>}
                     </tr>;
                   })}
                 </tbody>
@@ -199,6 +204,13 @@ function Territories({ editable }: { editable: boolean }) {
         else { await create.mutateAsync(data); setQuery(""); setPage(1); }
         setNotice({ text: editing ? "Território atualizado." : "Território criado." });
       }} />}
+      {editable && deleting && <ConfirmDeleteModal open title="Eliminar território?" onClose={() => setDeleting(null)} onConfirm={async () => {
+        await remove.mutateAsync({ id: deleting.id });
+        setNotice({ text: "Território eliminado." });
+      }}>
+        <p>Vai ser eliminado o registo de <strong className="text-ink">{[deleting.village, deleting.parish, deleting.municipality, deleting.district].filter(Boolean).join(" · ")}</strong>.</p>
+        <p className="mt-2">As vendas e os contratos não são alterados.</p>
+      </ConfirmDeleteModal>}
       {editable && excel && preview && <Modal open size="wide" title="Pré-visualizar importação" onClose={() => { if (!importRows.isPending) setExcel(undefined); }}>
         <form onSubmit={confirmImport}>
           <p className="break-words text-sm text-ink">{excel.filename} · Folha «{excel.sheet}»</p>
@@ -211,7 +223,7 @@ function Territories({ editable }: { editable: boolean }) {
           {preview.fresh.length > 0 && <ul className="mt-4 divide-y divide-line rounded-lg border border-line text-sm">
             {preview.fresh.slice(0, 6).map((row) => <li key={territoryKey(row)} className="flex flex-wrap justify-between gap-x-3 gap-y-1 px-3 py-2">
               <span className="min-w-0 break-words">{locations.map(([key]) => row[key]).filter(Boolean).join(" / ")}</span>
-              <span className="text-xs text-ink-2">{row.lastSweep ? dayFormat.format(new Date(`${row.lastSweep}T00:00:00Z`)) : "Sem data"} · {row.contracts} contratos</span>
+              <span className="text-xs text-ink-2">{row.lastSweep ? dayFormat.format(new Date(`${row.lastSweep}T00:00:00Z`)) : "Sem data"}</span>
             </li>)}
             {preview.fresh.length > 6 && <li className="px-3 py-2 text-xs text-ink-2">E mais {preview.fresh.length - 6} registos.</li>}
           </ul>}
