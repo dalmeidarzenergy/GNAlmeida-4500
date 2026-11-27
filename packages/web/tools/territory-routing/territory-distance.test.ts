@@ -37,3 +37,18 @@ test("resolves the parish identifier for sales with an exact geographic match, i
   expect(territoryParishCode({ ...santarem, municipality: "", parish: "Alcanhões" })).toBeUndefined();
   expect(territoryParishCode({ district: "Madeira", municipality: "Calheta", parish: "Prazeres" })).toBeDefined();
 });
+
+test("shares the Covilhã parish code and road distance across official and historical names", () => {
+  const covilha = { district: "Castelo Branco", municipality: "Covilhã" };
+  const official = territoryDistance({ ...covilha, parish: "União das freguesias de Covilhã e Canhoso" });
+  expect(official).toEqual({ status: "ok", meters: 193566 });
+  for (const parish of ["Covilhã", "COVILHA", "Freguesia da Covilhã", "U.F. de Covilhã e Canhoso", "Covilhã (São Pedro)", "Canhoso"]) {
+    expect(territoryParishCode({ ...covilha, parish })).toBe("050335");
+    expect(territoryDistance({ ...covilha, parish })).toEqual(official);
+  }
+  expect(territoryParishCode({ ...covilha, parish: "Teixoso" })).toBe("050337");
+  expect(territoryParishCode({ ...covilha, parish: "Aldeia do Souto" })).toBe("050338");
+  expect(territoryParishCode({ ...covilha, parish: "Barco" })).toBe("050339");
+  expect(territoryParishCode({ ...covilha, parish: "Barco e Coutada" })).toBeUndefined();
+  expect(territoryDistance({ ...covilha, municipality: "Fundão", parish: "Covilhã" })).toEqual({ status: "not_found" });
+});

@@ -4,6 +4,8 @@ O CRM consulta `src/api/data/territory-road-distances.json` no servidor para cal
 
 ## Atualizar o catálogo
 
+As duas métricas partilham a resolução em `src/api/lib/territory-distance.ts`. A correspondência oficial tem prioridade sobre os nomes alternativos. Para o concelho da Covilhã, as designações históricas estão limitadas às uniões atuais confirmadas pelo [Anexo I da Lei n.º 11-A/2013](https://diariodarepublica.pt/dr/detalhe/lei/11-a-2013-373798) e pelo catálogo CAOP 2025. «Covilhã», como nome na coluna Freguesia ou no campo Localidade de Vendas, refere-se à união de Covilhã e Canhoso, não ao total do concelho. Não se distribuem as vendas das antigas uniões desagregadas pelas novas freguesias sem informação para as distinguir.
+
 1. Descarregar e extrair os GeoPackages CAOP para Continente, RAA e RAM da [DGT](https://www.dgterritorio.gov.pt/atividades/cartografia/cartografia-tematica/caop).
 2. Descarregar o extrato [`portugal-latest.osm.pbf`](https://download.geofabrik.de/europe/portugal/) da Geofabrik. Obter a data do mapa com `osmium fileinfo -g header.option.osmosis_replication_timestamp portugal.osm.pbf`.
 3. Preparar e servir o grafo localmente com [OSRM](https://github.com/Project-OSRM/osrm-backend), usando o perfil `car.lua` da mesma versão (foi usada a v26.11.0). Não usar o servidor público para gerar o catálogo.
